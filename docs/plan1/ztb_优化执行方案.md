@@ -350,6 +350,8 @@ ztb_demo/
 
 **回滚**：registry 数据驱动，摘除 spec 即回退。
 
+> **P4 执行状态（2026-09-02）**：✅ P4-1 NodeSpec 协议（agent/nodes/base.py，5 节点内置 spec）+ P4-3 声明层 CapabilityRegistry（agent/registry.py：内置 5 能力 + echo_demo 预留，进程级默认注册表）。router/graph **动态化接线未做**（属行为步骤，须 router 意图集验证后单独推进）。全量 420 passed。
+
 ---
 
 ### Phase 5：ingestion 三段式流水线重构（P2，约 2~3 周，可与 P3/P4 并行）
