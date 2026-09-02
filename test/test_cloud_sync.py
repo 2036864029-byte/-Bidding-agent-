@@ -2,6 +2,9 @@
 
 运行方式（无需额外依赖，使用标准库 unittest）：
     python -m unittest discover -s test -v
+
+注：cloud_sync.* 组件不在本仓库（历史部署组件），pytest 收集时若缺模块则整文件
+自动 skip（importorskip），避免 pytest 收集报错中断全量；组件存在时照常运行。
 """
 
 from __future__ import annotations
@@ -10,7 +13,13 @@ import tempfile
 import unittest
 from unittest import mock
 
+import pytest
 from pymilvus import MilvusClient, DataType
+
+try:  # cloud_sync.* 非本仓库组件：缺失时整文件跳过（不删除，供存在该组件的环境）
+    import cloud_sync  # noqa: F401
+except ModuleNotFoundError:
+    pytest.importorskip("cloud_sync")
 
 from cloud_sync.config import CloudSyncConfig
 from cloud_sync.connection import RedisConn, RedisProtocolError, retry_with_backoff
