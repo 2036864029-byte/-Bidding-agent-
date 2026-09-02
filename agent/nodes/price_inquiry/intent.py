@@ -12,7 +12,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-from public_kb.services.llm import create_llm
+from core.llm.registry import create_llm_for_slot
 
 from .db import _get_settings
 from .models import HardFilters, SearchIntent
@@ -33,9 +33,9 @@ _QUERY_FILLER_PATTERN = re.compile(
 def _build_llm() -> ChatOpenAI:
     """构造询价链路使用的 LLM（temperature=0，保证解析确定性）。
 
-    统一由公共知识库 LLM 工厂构建，避免与 graph/rag_engine 重复。
+    统一经 models.yaml 的 price_intent 槽位获取，避免与 graph/rag_engine 重复。
     """
-    return create_llm(_get_settings(), temperature=0.0)
+    return create_llm_for_slot("price_intent", _get_settings())
 
 _UNIFIED_INTENT_SYSTEM = """你是招投标领域的智能查询意图解析专家。
 请一次性完成两项任务：① 判断二级路由（sub_route）；② 提取结构化过滤条件。

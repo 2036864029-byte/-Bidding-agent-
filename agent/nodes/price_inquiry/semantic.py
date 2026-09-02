@@ -13,8 +13,9 @@ import pymysql
 from langchain_openai import OpenAIEmbeddings
 from pymilvus import DataType, MilvusClient
 
-from public_kb.config import Settings
-from public_kb.services.embeddings import create_embeddings
+from core.config.settings import Settings
+from core.embeddings.bge_m3 import create_embeddings
+from core.vectorstore.namespace import PRICE_SEMANTIC_COLLECTION
 
 from .db import _CLEAN_DB, _get_connection, _get_settings, _release_connection
 from .models import SearchIntent
@@ -23,7 +24,7 @@ from .schema import _HARDCODED_SCHEMA, _semantic_columns
 logger = logging.getLogger(__name__)
 
 _MYSQL_SEMANTIC_COLLECTION = os.getenv(
-    "MYSQL_SEMANTIC_COLLECTION", "mysql_price_semantic"
+    "MYSQL_SEMANTIC_COLLECTION", PRICE_SEMANTIC_COLLECTION
 )
 
 _MYSQL_SEMANTIC_BATCH_SIZE = int(os.getenv("MYSQL_SEMANTIC_BATCH_SIZE", "100"))

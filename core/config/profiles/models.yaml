@@ -1,0 +1,35 @@
+# 模型槽位 — 全局单点，改此文件即换模型（方案 Phase 0 / A-2）。
+#
+# 语义：core/llm/registry.create(slot, settings) 按槽位读取；每槽位
+#   provider   : 对应 core/llm/<provider>.py 注册的 Provider 名（当前仅 deepseek）
+#   model      : 显式模型名；null（缺省）时继承 settings.llm_model（env LLM_MODEL，
+#                默认 deepseek-chat）——复刻现状 env 覆盖能力，勿写死
+#   temperature: 覆写 settings.llm_temperature
+#   note       : 说明用途（仅注释，registry 忽略）
+#
+# 复刻现状（Phase 0 只把隐式覆盖显式化，不改任何行为）：
+#   现状三个调用点 temperature 均为 0.0 —— router/graph 走 create_llm(settings)
+#   （llm_temperature=0.0）、rag_engine 同、price_intent 显式 temperature=0.0。
+#   general_chat 为纯静态回复不调 LLM（agent/nodes/general_chat.py:43），无槽位。
+# P0 验收（A-14）：改任一槽位 model 后零代码改动生效（日志确认）。
+defaults:
+  provider: deepseek
+  model: null            # null → 继承 settings.llm_model
+  temperature: 0.0
+
+slots:
+  router:
+    provider: deepseek
+    model: null
+    temperature: 0.0
+    note: 意图分类 router（确定性输出，temperature=0）
+  kb_generation:
+    provider: deepseek
+    model: null
+    temperature: 0.0
+    note: 知识库问答生成链（现状 create_llm(settings)，llm_temperature=0.0）
+  price_intent:
+    provider: deepseek
+    model: null
+    temperature: 0.0
+    note: price_inquiry 意图/槽位解析（temperature=0 保证确定性）

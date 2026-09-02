@@ -1,39 +1,26 @@
-# 功能：统一创建 DeepSeek / OpenAI 兼容 Chat LLM。
+# 功能：统一创建 DeepSeek / OpenAI 兼容 Chat LLM（兼容壳）。
 """
-LLM 工厂 — 统一的 ChatOpenAI 构造入口。
+LLM 工厂（兼容壳）— 已上提 core.llm.deepseek（方案 Phase 0 / A-6）。
 
-agent 图构建（graph.build_graph）、询价节点（price_inquiry._build_llm）、
-知识库问答链（rag_engine._create_llm）共用此工厂，
-保证 model / api_key / temperature / timeout / max_retries / base_url 口径一致。
+保留此文件仅为兼容既有 import 路径：
+    from public_kb.services.llm import create_llm
+新代码请使用：
+    from core.llm.registry import create_llm_for_slot   # 按槽位取模型（推荐）
+    from core.llm.deepseek import create_llm             # 按 Settings 直接构造
+
+实现已迁移，本文件为 re-export，逻辑见 core/llm/deepseek.py。
 """
 
 from __future__ import annotations
 
-from typing import Optional
+import warnings
 
-from langchain_openai import ChatOpenAI
+from core.llm.deepseek import DeepSeekProvider, create_llm  # noqa: F401
 
-from ..config import Settings
-
-
-def create_llm(settings: Settings, *, temperature: Optional[float] = None) -> ChatOpenAI:
-    """根据 Settings 创建 ChatOpenAI 实例。
-
-    Args:
-        settings: 全局配置。
-        temperature: 覆盖 settings.llm_temperature（路由/意图解析等
-            需要确定性输出的场景传 0.0）。
-
-    Returns:
-        配置完成的 ChatOpenAI 实例。
-    """
-    kwargs: dict = {
-        "model": settings.llm_model,
-        "api_key": settings.llm_api_key,
-        "temperature": settings.llm_temperature if temperature is None else temperature,
-        "timeout": settings.llm_timeout,
-        "max_retries": settings.llm_max_retries,
-    }
-    if settings.llm_base_url:
-        kwargs["base_url"] = settings.llm_base_url
-    return ChatOpenAI(**kwargs)
+warnings.warn(
+    "public_kb.services.llm 已迁移至 core.llm.deepseek / core.llm.registry，"
+    "请改用 `from core.llm.registry import create_llm_for_slot` 按槽位取模型。"
+    "本兼容路径将在后续 Phase 移除。",
+    DeprecationWarning,
+    stacklevel=2,
+)

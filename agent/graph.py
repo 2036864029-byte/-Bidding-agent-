@@ -20,8 +20,8 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 
-from public_kb.config import Settings as PublicKBSettings
-from public_kb.services.llm import create_llm
+from core.config.settings import Settings as PublicKBSettings
+from core.llm.registry import create_llm_for_slot
 
 from .state import AgentState
 from .router import build_router_node
@@ -120,10 +120,10 @@ def build_graph(
         编译后的 CompiledStateGraph，可直接 invoke。
     """
     if llm is None:
-        settings = PublicKBSettings()
-        llm = create_llm(settings)
-        logger.info("LLM 初始化: model=%s timeout=%ds max_retries=%d",
-                     settings.llm_model, settings.llm_timeout, settings.llm_max_retries)
+        # 默认走 models.yaml 的 router 槽位（temperature=0，与现状 create_llm 等价）
+        llm = create_llm_for_slot("router", PublicKBSettings())
+        logger.info("LLM 初始化: slot=router model=%s",
+                     getattr(llm, "model_name", getattr(llm, "model", "?")))
 
     if checkpointer is None:
         checkpointer = create_checkpointer("memory")
