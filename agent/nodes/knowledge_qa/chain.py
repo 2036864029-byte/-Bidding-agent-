@@ -124,6 +124,9 @@ def answer_knowledge(question: str) -> Dict[str, Any]:
 
     context_ids = [c.chunk_id for c in chunks]
     report = validator.validate(citations, answer, context_ids)
+    if not report.all_passed:
+        from core.observability.metrics import record_guardrail_fail
+        record_guardrail_fail("knowledge_qa")
 
     logger.info(
         "knowledge_qa(tool): 引用校验 上下文=%d块 引用=%d条 全部通过=%s",

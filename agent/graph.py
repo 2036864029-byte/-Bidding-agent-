@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import time
 from typing import Any, Callable, Dict, Optional
 
 from langgraph.graph import StateGraph, END
@@ -22,6 +23,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from core.config.settings import Settings as PublicKBSettings
 from core.llm.registry import create_llm_for_slot
+from core.observability.metrics import record_branch_latency
 
 from .state import AgentState
 from .router import build_router_node
@@ -62,8 +64,9 @@ def _with_fallback(node_fn: Callable) -> Callable:
 
     @functools.wraps(node_fn)
     def wrapped(state: AgentState) -> dict:
+        _t0 = time.perf_counter()
         try:
-            return node_fn(state)
+            result = node_fn(state)
         except Exception as e:
             node_name = getattr(node_fn, "__name__", "unknown")
             label = _BRANCH_LABELS.get(node_name, "当前")
@@ -72,11 +75,12 @@ def _with_fallback(node_fn: Callable) -> Callable:
             error_msg = (
                 f"抱歉，「{label}」功能暂时不可用，请稍后重试或尝试其他问题。\n\n"
                 f"您可以：\n"
-                f"  📚 咨询招投标法规知识\n"
-                f"  💰 查询历史中标价格\n"
-                f"  💬 进行通用对话"
+                f"  - 咨询招投标法规知识\n"
+                f"  - 查询历史中标价格\n"
+                f"  - 进行通用对话"
             )
 
+            record_branch_latency("fallback", (time.perf_counter() - _t0) * 1000)
             return {
                 "business_result": {
                     "branch": "fallback",
@@ -88,6 +92,11 @@ def _with_fallback(node_fn: Callable) -> Callable:
                 },
                 "messages": [AIMessage(content=error_msg)],
             }
+
+        # 正常返回 → 记分支耗时
+        branch = (result.get("business_result") or {}).get("branch", "?")
+        record_branch_latency(branch, (time.perf_counter() - _t0) * 1000)
+        return result
 
     return wrapped
 

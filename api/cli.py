@@ -1,0 +1,163 @@
+# 功能：CLI 入口（原 agent/__main__.py 逻辑收编于此，方案 Phase 2 / C-6）。
+"""api.cli — Agent 命令行入口。
+
+由 agent/__main__.py 收编而来：单次问答 / 交互 / 帮助。渲染改用 core/protocol
+renderers（to_reply + render_reply），不再各自维护 _render_business_data。
+``python -m agent`` 与 ``python -m api.cli`` 行为一致（双入口）。
+
+用法：
+    python -m agent --question "招标方式有哪些？"
+    python -m agent --interactive
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+import time
+from pathlib import Path
+from typing import Any, Optional
+
+# 独立运行时确保项目根可导入
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from agent import AgentGraph
+from core.protocol.reply import to_reply
+from core.protocol.renderers.cli import render_reply
+
+__all__ = ["main", "run_single", "run_interactive"]
+
+
+def setup_logging(verbose: bool = False) -> None:
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+
+def _safe_print(text: Any = "") -> None:
+    """GBK 控制台安全打印（内容含非 GBK 字符时不抛 UnicodeEncodeError）。"""
+    s = str(text)
+    try:
+        print(s)
+        return
+    except UnicodeEncodeError:
+        pass
+    buf = getattr(sys.stdout, "buffer", None)
+    if buf is not None:
+        buf.write(s.encode(sys.stdout.encoding or "gbk", "replace") + b"\n")
+    else:
+        print(s.encode("ascii", "backslashreplace").decode("ascii"))
+
+
+def _print_reply(header: str, agent_result: dict) -> None:
+    """把 AgentGraph.invoke 结果渲染为 CLI 文本块。"""
+    business_result = agent_result.get("business_result") or {
+        "branch": "fallback", "answer": "", "data": None,
+    }
+    reply = to_reply(
+        business_result,
+        intent=str(agent_result.get("intent", "unknown")),
+    )
+    _safe_print(f" {header}:\n{render_reply(reply)}\n")
+
+
+def run_single(agent: AgentGraph, question: str) -> None:
+    """单次问答。"""
+    _safe_print(f" 问题: {question}\n")
+    print(" 思考中...\n")
+    try:
+        result = agent.invoke(question)
+        _print_reply("回答", result)
+    except Exception as e:
+        _safe_print(f"[FAIL] 错误: {e}")
+
+
+def run_interactive(agent: AgentGraph) -> None:
+    """交互问答模式（clear = 重置会话，quit/exit = 退出）。"""
+    print(" 交互问答模式 (输入 'quit' 或 'exit' 退出，'clear' 清空会话)")
+    print("─" * 60)
+    print(" 您好！我是「招投标智能助手」，很高兴为您服务！\n")
+    print("   我可以帮您处理以下事务：\n")
+    print("   1.  专业知识问答")
+    print("       招投标法律法规、招标方式、评标规则、采购流程等专业问题")
+    print("   2.  中标情报获取")
+    print("       查询历史中标项目、产品中标价格、中标公司等市场情报")
+    print("   3.  企业工商信息查询")
+    print("       查询公司基本信息、经营范围、注册资本等工商数据")
+    print("   4.  企业风险排查")
+    print("       查询公司不良记录、行政处罚、经营异常等风险信息\n")
+    print("   直接输入您的问题，我会尽力为您解答！\n")
+    print("─" * 60 + "\n")
+
+    thread_id = "interactive-session"
+    turn = 0
+
+    while True:
+        try:
+            question = input(f"[{turn}]  您: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            _safe_print("\n 再见！")
+            break
+
+        if not question:
+            continue
+        if question.lower() in ("quit", "exit"):
+            _safe_print(" 再见！")
+            break
+        if question.lower() == "clear":
+            thread_id = f"interactive-session-{turn}"
+            print(" 已清空对话历史\n")
+            continue
+
+        print(" ...")
+        try:
+            result = agent.invoke(question, thread_id=thread_id)
+            _print_reply("助手", result)
+            turn += 1
+        except Exception as e:
+            _safe_print(f"[FAIL] 错误: {e}\n")
+
+
+def main(argv: Optional[list[str]] = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="招投标智能助手 — LangGraph Agent",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  python -m agent --question
+  python -m agent --interactive
+        """,
+    )
+    parser.add_argument("--question", "-q", type=str, help="单次问答")
+    parser.add_argument("--interactive", "-i", action="store_true", help="交互问答模式")
+    parser.add_argument("--verbose", "-v", action="store_true", help="显示调试日志")
+    args = parser.parse_args(argv)
+
+    setup_logging(args.verbose)
+
+    if not args.question and not args.interactive:
+        parser.print_help()
+        return
+
+    print("正在初始化招投标智能助手...")
+    try:
+        agent = AgentGraph()
+        _safe_print("[OK] 助手就绪！\n")
+    except Exception as e:
+        _safe_print(f"[FAIL] 初始化失败: {e}")
+        sys.exit(1)
+
+    if args.interactive:
+        run_interactive(agent)
+    elif args.question:
+        run_single(agent, args.question)
+
+
+if __name__ == "__main__":
+    main()
