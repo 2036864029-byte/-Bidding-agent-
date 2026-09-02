@@ -1,11 +1,11 @@
-"""M5 Step B：citations 拆分后各子模块路径可导入性测试。"""
+"""M5 Step B / Phase1 B-3：citations 护栏迁 guardrails/ 后可导入性测试。"""
 
 from __future__ import annotations
 
 import public_kb.generation.citations as facade
-import public_kb.generation.citations_build as build
-import public_kb.generation.citations_models as models
-import public_kb.generation.citations_validate as validate
+import public_kb.guardrails.citations_build as build
+import public_kb.guardrails.citations_models as models
+import public_kb.guardrails.citations_validate as validate
 
 
 def test_facade_reexports_all_public_symbols():

@@ -50,7 +50,8 @@ ALLOWED_CONSUMERS: dict[str, set[str]] = {
         "public_kb",
         "public_kb.__main__",
         "public_kb.generation.chain",
-        "public_kb.generation.citations_validate",
+        # B-3：citations 护栏已迁 public_kb/guardrails/（本条目随迁移改新路径）
+        "public_kb.guardrails.citations_validate",
         "public_kb.ingestion.cli",
         "public_kb.ingestion.handoff",
         "public_kb.ingestion.parser_factory",
