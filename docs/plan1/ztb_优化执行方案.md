@@ -458,7 +458,8 @@ ztb_demo/
 > - ✅ B-2：`generation/context.py` → `public_kb/rendering/context.py`（chain.py 改引新路径；旧路径 re-export 壳）。
 > - ✅ B-3：citations_models/build/validate git mv → `public_kb/guardrails/`（整包搬移，内部相对 import 零改动）；`generation/citations.py` 保留门面改指 guardrails；test_citations_split 与白名单条目随迁更新。
 > - ✅ B-1（脚手架）：`public_kb/tools.py`（Chunk/RetrievalResult 三元组契约 + 带锁惰性 retriever 工厂，`_get_retriever` 可注入测试；不接线）+ `test/test_kb_search.py` 离线单测。
-> - 🔒 未做（需 106 题基线后）：B-1 接线、B-4 knowledge_qa 拆包、B-5 engine 重构、B-7/B-8 装配、开关 USE_TOOL_KB。
+> - ✅ B-4（拆包 + 开关）：`agent/nodes/knowledge_qa/` 包——node.py(开关分发) / legacy.py(旧实现含单例) / chain.py(工具编排) / prompts.py(生成模板)；`USE_TOOL_KB`(Settings.enable_kb_tool_path) **默认 false**（比计划默认 true 更稳：先零行为变更，live 验证后再切 true，见偏差记录）；新增 `test/test_knowledge_qa_tool.py` 6 用例；`test_citation_tracing` 旧节点单例打桩改指 legacy；`test_no_reverse_dep` 守卫更新为 B-4 分层（node 入口零 public_kb、chain 仅经 tools/guardrails 门面）。
+> - 🔒 未做（需 live 基线）：B-5 engine 重构、B-7/B-8 装配（当前工具链路节点自装配 + 惰性单例，未走 graph 闭包注入）、B-10 106 题对比、B-11 切 true。
 
 | # | 目标文件 | 动作 | 要点 / 验证 |
 |---|---|---|---|

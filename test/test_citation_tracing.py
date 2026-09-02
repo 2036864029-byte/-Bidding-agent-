@@ -541,6 +541,8 @@ def test_format_citations_text_cap():
 # ────────────────────────────────────────────────
 def test_node_knowledge_qa_passes_citations():
     from agent.nodes import knowledge_qa as kqa
+    # B-4 拆包后旧路径实现（含 _rag_engine 单例）收敛于 knowledge_qa/legacy.py
+    from agent.nodes.knowledge_qa import legacy as kqa_legacy
 
     citations = [{
         "context_index": 1, "chunk_id": 7001, "chunk_uid": "ck-x",
@@ -558,14 +560,14 @@ def test_node_knowledge_qa_passes_citations():
                 "citation_validation": validation,
             }
 
-    saved = kqa._rag_engine
-    kqa._rag_engine = _FakeRAG()
+    saved = kqa_legacy._rag_engine
+    kqa_legacy._rag_engine = _FakeRAG()
     try:
         result = kqa.node_knowledge_qa(
             {"messages": [HumanMessage(content="问题？")]}
         )
     finally:
-        kqa._rag_engine = saved
+        kqa_legacy._rag_engine = saved
 
     data = result["business_result"]["data"]
     assert data["sources"] == [{"doc": "法A"}]

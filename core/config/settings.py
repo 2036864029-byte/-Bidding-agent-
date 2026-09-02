@@ -357,6 +357,16 @@ class Settings:
     )
 
     # ============================================================
+    # knowledge_qa 新工具链路开关（Phase 1 / B-4、B-11）
+    # 默认 false = 走旧 rag.query()（行为不变）；true = 走 kb_search→prompt→
+    # 槽位 kb_generation→护栏 的新编排。待 live 验证后再切 true（方案偏差记录）。
+    # ============================================================
+    enable_kb_tool_path: bool = field(
+        default_factory=lambda: os.getenv("USE_TOOL_KB", "false").lower()
+        in {"1", "true", "yes"}
+    )
+
+    # ============================================================
     # 入库去重（任务 M2）— 基于 chunk_uid 的文本块级去重与幂等
     # ============================================================
     enable_dedup: bool = field(
