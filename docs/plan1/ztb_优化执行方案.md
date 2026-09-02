@@ -507,4 +507,30 @@ ztb_demo/
 
 ---
 
+---
+
 > **维护说明**：本方案每完成一个 Phase 更新一次（标记完成状态 + 偏差记录）。若执行中发现与代码事实不符之处，以代码为准修订本文件。后续 Phase（P2~P6）的文件级清单按滚动式细化原则（§0-7）在各 Phase 启动前补充。
+
+---
+
+## 附录 D：Phase 3 文件级任务清单（price_engine 下沉 + 熔断，滚动式展开 2026-09-02）
+
+> **P3 执行前提/风险**：price 链路查询 `ztb_clean`（MySQL，MYSQL_HOST 为远端/本地不可达），**price golden 无法在本机实跑**——故引擎下沉等行为改动须在"有 MySQL 的实库环境"验证，或用离线单测 + 结构对拍兜底。以下任务分「离线可做」「需实库」。
+
+| # | 目标文件 | 动作 | 要点 / 验证 |
+|---|---|---|---|
+| D-1 | `core/retrieval/{base,pipeline,stages}.py` | 新建（离线安全，先做） | `RecallStage` 协议 + `RecallPipeline(stages, deadline_ms=3000, allow_scan=False)` 熔断状态机：任一阶段超时/deadline 到 → 熔断返回"空+降级原因"，不再裸进 FULL_SCAN；`allow_scan` 默认 False。单测用 fake stage（不触库）验证 deadline/全失败熔断/放行语义 |
+| D-2 | `price_engine/__init__.py` | 新建（离线） | 能力包门面（re-export，沿用 price_inquiry 拆包范式）；包 docstring 注明边界 |
+| D-3 | `price_engine/{intent,queries,sql_builders,recall,semantic,enum_norm,schema,models}.py` | git mv（源：`price_inquiry/` 同名 8 文件） | 整包搬移后内部相对 import 不变；**仅 `.db` 引用改 `core.rdb.mysql_pool`**（`_get_connection/_release_connection/_CLEAN_DB/_get_settings`）；`agent/nodes/price_inquiry/__init__.py` 改为 re-export price_engine 保 `from agent.nodes.price_inquiry import X` 兼容（L2） |
+| D-4 | `price_engine/rendering/` | 迁移（源：`agent/nodes/answer_templates.py` + `output_templates.py`，C-0 归属） | 两模板迁 `price_engine/rendering/`（旧路径 re-export 壳）；node 渲染引用改 price_engine |
+| D-5 | `agent/nodes/price_inquiry/node.py` | 薄化 | **保留项（v1.3 清单，不得下沉）**：P0-11 守卫/引导语（:104/:128）、P0-12 纠偏注入（:216/:230）、product_query 能力边界（:50）、LLM60% 超时（:275）+ SQL 线程池超时（:303）、POST_GUARD（:343/:376）；引擎调用改 `from price_engine import ...`（绝对导入） |
+| D-6 | `core/retrieval` 接入 `price_engine/recall.py` | 改 | 5 级召回链（recall.py:36 权重表）改造为 RecallStage 接入 RecallPipeline；默认 allow_scan=False（FULL_SCAN 仅显式放行，需实库验证召回不降） |
+| D-7 | `agent/registry.py`（预留）+ intent 边界文档 | 新建/文档 | 全局意图枚举单点化属 P4；P3 只给 `price_engine/intent.py` 文档化"槽位抽取/查询改写"边界（sub_route 保留为内部分流）；`组件工作机制.md` 补两级边界 |
+| D-8 | `price_engine/tools.py` | 新建 | `price_query()` + `price_query_as_tool()`（P6 多 Agent 复用；本 Phase 不接线） |
+| D-9 | 测试 | 新增 | `test/price_engine/test_recall_pipeline.py`（熔断离线）；`test/core/test_price_engine_import.py`（旧 price_inquiry 路径 import 兼容，L2）；golden（sub_route/行数一致，**需实库**，L3） |
+| D-10 | 验收 | 手动（需实库） | 企业详情 / 中标历史 / 项目编号 3 类查询走通（L4） |
+
+**P3 完成态判据**：`pytest` 全绿；L2 旧路径兼容；L3/L4 在实库环境验证；PRICE_ENGINE_LEGACY 回滚可用（re-export 天然支持）。
+
+> **P3 执行状态**：D-1 已落地（core/retrieval 熔断状态机 + 离线单测）；D-2 起（引擎下沉 + 渲染迁移 + node 薄化）依赖实库 golden，留待实库环境。
+
