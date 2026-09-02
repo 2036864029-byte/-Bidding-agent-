@@ -459,7 +459,10 @@ ztb_demo/
 > - ✅ B-3：citations_models/build/validate git mv → `public_kb/guardrails/`（整包搬移，内部相对 import 零改动）；`generation/citations.py` 保留门面改指 guardrails；test_citations_split 与白名单条目随迁更新。
 > - ✅ B-1（脚手架）：`public_kb/tools.py`（Chunk/RetrievalResult 三元组契约 + 带锁惰性 retriever 工厂，`_get_retriever` 可注入测试；不接线）+ `test/test_kb_search.py` 离线单测。
 > - ✅ B-4（拆包 + 开关）：`agent/nodes/knowledge_qa/` 包——node.py(开关分发) / legacy.py(旧实现含单例) / chain.py(工具编排) / prompts.py(生成模板)；`USE_TOOL_KB`(Settings.enable_kb_tool_path) **默认 false**（比计划默认 true 更稳：先零行为变更，live 验证后再切 true，见偏差记录）；新增 `test/test_knowledge_qa_tool.py` 6 用例；`test_citation_tracing` 旧节点单例打桩改指 legacy；`test_no_reverse_dep` 守卫更新为 B-4 分层（node 入口零 public_kb、chain 仅经 tools/guardrails 门面）。
-> - 🔒 未做（需 live 基线）：B-5 engine 重构、B-7/B-8 装配（当前工具链路节点自装配 + 惰性单例，未走 graph 闭包注入）、B-10 106 题对比、B-11 切 true。
+> - ✅ B-7：`agent/guardrail_hooks.py`（with_guardrails 装饰器，护栏失败附注/可选抛错）+ 5 用例。
+> - ✅ **L3 基线替代（106 题 testset_knowledge.jsonl 已丢失无法找回，用户拍板）**：新增 `scripts/run_knowledge_parity_smoke.py`——本地单书(book2 850chunks 已入库本机 Milvus public_kb) 上 legacy vs 工具链路结构对拍，快照 test_report/，作为 B-5 等行为重构的前后回归护栏；实跑 6/6 一致。
+> - ✅ B-5：`rag_engine.py` → `engine.py`（git mv + rag_engine.py 留壳）；`PublicKnowledgeRAG.__init__` 构造注入化（llm/embeddings/store_manager 可选）；`query()` 暂仍走 LCEL 链（组合 kb_search 推迟到工具链路完全替换旧路径后）。全量 393 passed，harness 4/4 一致。
+> - 🔒 未做：B-6 qa_chain 委托新组合（随 query 改造）、B-8 graph 装配注入（当前工具链路节点自装配惰性单例）、B-11 切 true（待本地验证充分）。106 题质量基线永久由本地对拍 harness 替代。
 
 | # | 目标文件 | 动作 | 要点 / 验证 |
 |---|---|---|---|
