@@ -35,6 +35,25 @@ def setup_logging(verbose: bool = False) -> None:
     )
 
 
+def _safe_print(text: Any = "") -> None:
+    """GBK 控制台安全打印：内容含非 GBK 字符（如 LLM 回答偶发 emoji）时不抛错。
+
+    首选用系统编码打印；编码失败时退回用 stdout 编码以 replace 容错写 bytes，
+    保证任何 Windows 控制台（cp936/GBK）下 CLI 都不因打印而崩溃。
+    """
+    s = str(text)
+    try:
+        print(s)
+        return
+    except UnicodeEncodeError:
+        pass
+    buf = getattr(sys.stdout, "buffer", None)
+    if buf is not None:
+        buf.write(s.encode(sys.stdout.encoding or "gbk", "replace") + b"\n")
+    else:
+        print(s.encode("ascii", "backslashreplace").decode("ascii"))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="招投标智能助手 — LangGraph Agent",
@@ -72,9 +91,9 @@ def main() -> None:
     print("正在初始化招投标智能助手...")
     try:
         agent = AgentGraph()
-        print("✅ 助手就绪！\n")
+        print("[OK] 助手就绪！\n")
     except Exception as e:
-        print(f"❌ 初始化失败: {e}")
+        _safe_print(f"[FAIL] 初始化失败: {e}")
         sys.exit(1)
 
     if args.interactive:
@@ -107,12 +126,12 @@ def _render_business_data(data: Any) -> None:
 
 def run_single(agent: AgentGraph, question: str) -> None:
     """单次问答。"""
-    print(f"🙋 问题: {question}\n")
-    print("⏳ 思考中...\n")
+    _safe_print(f" 问题: {question}\n")
+    print(" 思考中...\n")
 
     try:
         result = agent.invoke(question)
-        print(f"🤖 回答:\n{result['answer']}\n")
+        _safe_print(f" 回答:\n{result['answer']}\n")
 
         biz = result.get("business_result", {})
         branch = biz.get("branch", "unknown")
@@ -121,22 +140,22 @@ def run_single(agent: AgentGraph, question: str) -> None:
         _render_business_data(biz.get("data"))
 
     except Exception as e:
-        print(f"❌ 错误: {e}")
+        _safe_print(f"[FAIL] 错误: {e}")
 
 
 def run_interactive(agent: AgentGraph) -> None:
     """交互问答模式。"""
-    print("💬 交互问答模式 (输入 'quit' 或 'exit' 退出，'clear' 清空会话)")
+    print(" 交互问答模式 (输入 'quit' 或 'exit' 退出，'clear' 清空会话)")
     print("─" * 60)
-    print("👋 您好！我是「招投标智能助手」，很高兴为您服务！\n")
+    print(" 您好！我是「招投标智能助手」，很高兴为您服务！\n")
     print("   我可以帮您处理以下事务：\n")
-    print("   1️⃣  专业知识问答")
+    print("   1.  专业知识问答")
     print("       招投标法律法规、招标方式、评标规则、采购流程等专业问题")
-    print("   2️⃣  中标情报获取")
+    print("   2.  中标情报获取")
     print("       查询历史中标项目、产品中标价格、中标公司等市场情报")
-    print("   3️⃣  企业工商信息查询")
+    print("   3.  企业工商信息查询")
     print("       查询公司基本信息、经营范围、注册资本等工商数据")
-    print("   4️⃣  企业风险排查")
+    print("   4.  企业风险排查")
     print("       查询公司不良记录、行政处罚、经营异常等风险信息\n")
     print("   直接输入您的问题，我会尽力为您解答！\n")
     print("─" * 60 + "\n")
@@ -146,34 +165,34 @@ def run_interactive(agent: AgentGraph) -> None:
 
     while True:
         try:
-            question = input(f"[{turn}] 🙋 您: ").strip()
+            question = input(f"[{turn}]  您: ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\n👋 再见！")
+            print("\n 再见！")
             break
 
         if not question:
             continue
 
         if question.lower() in ("quit", "exit"):
-            print("👋 再见！")
+            print(" 再见！")
             break
 
         if question.lower() == "clear":
             thread_id = f"interactive-session-{turn}"
-            print("🔄 已清空对话历史\n")
+            print(" 已清空对话历史\n")
             continue
 
-        print("⏳ ...")
+        print(" ...")
 
         try:
             result = agent.invoke(question, thread_id=thread_id)
-            print(f"🤖 助手: {result['answer']}\n")
+            _safe_print(f" 助手: {result['answer']}\n")
             _render_business_data(
                 (result.get("business_result") or {}).get("data")
             )
             turn += 1
         except Exception as e:
-            print(f"❌ 错误: {e}\n")
+            _safe_print(f"[FAIL] 错误: {e}\n")
 
 
 if __name__ == "__main__":

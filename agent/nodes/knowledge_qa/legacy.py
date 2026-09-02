@@ -82,5 +82,5 @@ def run_legacy_node(state: AgentState) -> dict:
                 "answer": "知识库尚未初始化，请先执行入库操作。",
                 "data": {"sources": [], "error": str(e)},
             },
-            "messages": [AIMessage(content="⚠️ 知识库尚未初始化，请联系管理员。")],
+            "messages": [AIMessage(content="知识库尚未初始化，请联系管理员。")],
         }
