@@ -454,6 +454,12 @@ ztb_demo/
 
 ## 附录 B：Phase 1 文件级任务清单
 
+> **P1 执行状态（2026-09-02，离线安全步骤先行）**：Milvus 基线（106 题 live eval）待恢复（本地/远端 19530 均不可达）期间，先做零行为变更步骤。
+> - ✅ B-2：`generation/context.py` → `public_kb/rendering/context.py`（chain.py 改引新路径；旧路径 re-export 壳）。
+> - ✅ B-3：citations_models/build/validate git mv → `public_kb/guardrails/`（整包搬移，内部相对 import 零改动）；`generation/citations.py` 保留门面改指 guardrails；test_citations_split 与白名单条目随迁更新。
+> - ✅ B-1（脚手架）：`public_kb/tools.py`（Chunk/RetrievalResult 三元组契约 + 带锁惰性 retriever 工厂，`_get_retriever` 可注入测试；不接线）+ `test/test_kb_search.py` 离线单测。
+> - 🔒 未做（需 106 题基线后）：B-1 接线、B-4 knowledge_qa 拆包、B-5 engine 重构、B-7/B-8 装配、开关 USE_TOOL_KB。
+
 | # | 目标文件 | 动作 | 要点 / 验证 |
 |---|---|---|---|
 | B-1 | `public_kb/tools.py` | 新建 | `RetrievalResult{chunks, citations_meta, rendered_context, recall_trace}`；`kb_search(query, top_k=8)` 内部惰性构建 HybridRetriever（装配逻辑抽自 `generation/chain.py:53-66`），走 retrieve → format_docs/build_sources/build_citations，**不调 LLM**；retriever 实例用**带锁工厂**持有（解 R4 竞态）；`kb_search_as_tool()` 只建不接线（P6 用） |
