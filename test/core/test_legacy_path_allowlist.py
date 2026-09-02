@@ -58,7 +58,7 @@ ALLOWED_CONSUMERS: dict[str, set[str]] = {
         "public_kb.ingestion.transforms.pdf_mineru_router",
         "public_kb.ingestion.transforms.pdf_router",
         "public_kb.qa_chain",
-        "public_kb.rag_engine",
+        "public_kb.engine",  # B-5: rag_engine -> engine
         "public_kb.retrieval.fallback",
         "public_kb.retrieval.milvus_search",
         "public_kb.retrieval.retriever",
@@ -89,7 +89,7 @@ ALLOWED_CONSUMERS: dict[str, set[str]] = {
         "test.test_retrieval_strategies",
     },
     "public_kb.services.llm": {
-        "public_kb.rag_engine",
+        "public_kb.engine",  # B-5: rag_engine -> engine
         "scripts.poc_verify_hybrid",
         "test.core.test_import_compat",
         "test.test_public_kb_layout",
@@ -97,7 +97,7 @@ ALLOWED_CONSUMERS: dict[str, set[str]] = {
     "public_kb.services.embeddings": {
         "public_kb.ingestion.cli",
         "public_kb.ingestion.handoff",
-        "public_kb.rag_engine",
+        "public_kb.engine",  # B-5: rag_engine -> engine
         "scripts.poc_ingest_sample",
         "scripts.poc_validate_csv_ingestion",
         "scripts.poc_verify_hybrid",
