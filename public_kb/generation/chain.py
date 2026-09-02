@@ -16,7 +16,7 @@ from ..config import Settings
 from ..contracts import validate_question
 from ..retrieval.reranker import Reranker
 from ..retrieval.retriever import HybridRetriever, RetrievalResult
-from .context import build_sources, format_docs
+from ..rendering.context import build_sources, format_docs
 from .prompts import build_prompt
 
 
