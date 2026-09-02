@@ -501,6 +501,8 @@ ztb_demo/
 | C-9 | 测试 | 新增 3 文件 + 1 脚本 | `test/api/test_schemas.py`（空/超长 question → 422，默认值）；`test/api/test_chat_endpoint.py`（FastAPI TestClient + mock AgentGraph：/chat 200 且结构合法、session_id 映射为 thread_id、/health 200）；`test/core/test_reply_protocol.py`（5 个分支的 business_result → AgentReply 映射）；`test/api/smoke_concurrent.py`（live 手动：10 并发不同 session 无串扰） |
 | C-10 | 验收 | 手动 | `uvicorn` 启动；`/openapi.json` 可生成；前端/curl 验证 SSE 逐块到达；`python -m agent -q "..."` 与 `python -m api.cli` 行为一致 |
 
+> **P2 执行状态（2026-09-02）**：✅ C-1 AgentReply 薄协议 + to_reply（不改节点）；C-2 renderers cli/api（cli 自含通用引用渲染，**不反向依赖 public_kb**——偏差：原拟复用 public_kb.generation.citations.format_citations，违反 core 分层，改自含实现）；C-3 schemas；C-4 deps（进程级单例 + CHECKPOINTER_BACKEND + --workers 1 限制）；C-5 server（invoke/SSE/health/CORS/uvicorn 入口）；C-6 CLI 收编 api/cli + agent/__main__ 薄转发（双入口行为一致）；C-7 最小指标（metrics 3 指标 + _with_fallback 计时/护栏失败两处埋点）；C-9 测试（protocol 8 + api schemas/chat_endpoint 9 + 并发冒烟脚本）；C-10 live 验收通过（/health、/chat、SSE done、openapi、并发 10/10）。C-8 节点零改动保持。**依赖新增**：fastapi/uvicorn/httpx（requirements.txt）。全量 410 passed。
+
 **P2 完成态判据**：`pytest test/` 全绿；并发 smoke 无串扰；CLI 双入口行为一致；前端可对接 `/chat`（含 SSE）。
 
 ---
