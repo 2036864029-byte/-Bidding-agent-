@@ -462,7 +462,8 @@ ztb_demo/
 > - ✅ B-7：`agent/guardrail_hooks.py`（with_guardrails 装饰器，护栏失败附注/可选抛错）+ 5 用例。
 > - ✅ **L3 基线替代（106 题 testset_knowledge.jsonl 已丢失无法找回，用户拍板）**：新增 `scripts/run_knowledge_parity_smoke.py`——本地单书(book2 850chunks 已入库本机 Milvus public_kb) 上 legacy vs 工具链路结构对拍，快照 test_report/，作为 B-5 等行为重构的前后回归护栏；实跑 6/6 一致。
 > - ✅ B-5：`rag_engine.py` → `engine.py`（git mv + rag_engine.py 留壳）；`PublicKnowledgeRAG.__init__` 构造注入化（llm/embeddings/store_manager 可选）；`query()` 暂仍走 LCEL 链（组合 kb_search 推迟到工具链路完全替换旧路径后）。全量 393 passed，harness 4/4 一致。
-> - 🔒 未做：B-6 qa_chain 委托新组合（随 query 改造）、B-8 graph 装配注入（当前工具链路节点自装配惰性单例）、B-11 切 true（待本地验证充分）。106 题质量基线永久由本地对拍 harness 替代。
+> - ✅ **B-11 本地验证完成（部署时再切）**：harness 12/12 一致；CLI 冒烟 legacy 与 `USE_TOOL_KB=true` 工具链路在真实图上均走通（router→knowledge_qa(tool)→kb_search→kb_generation→护栏全过）。**默认保持 false**——因本地仅单书+纯稠密降级（本地集合无稀疏字段，`ENABLE_MILVUS_BM25` 默认关），未到全量混合检索/生产验证；上线时置 `USE_TOOL_KB=true` 即可，一行 env 变更。
+> - 🔒 未做：B-6 qa_chain 委托新组合（随 query 改造）、B-8 graph 装配注入（当前工具链路节点自装配惰性单例）。106 题质量基线永久由本地对拍 harness 替代。
 
 | # | 目标文件 | 动作 | 要点 / 验证 |
 |---|---|---|---|
