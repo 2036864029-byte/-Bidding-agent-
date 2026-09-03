@@ -70,3 +70,21 @@ def test_knowledge_qa_entry_and_tool_chain_coupling():
         for module in _imported_modules(tree):
             if module.startswith("public_kb"):
                 assert module.startswith(allowed_surfaces), f"{name} 直连 public_kb 内部: {module}"
+
+
+def test_orchestration_has_no_public_kb_infra_imports():
+    """P6/G-5 分层守卫：orchestration/ 编排层不得直连 public_kb 基础设施。
+
+    编排层（supervisor/主图）应经 agent 节点与 public_kb.tools 门面复用能力；
+    public_kb.services/config 属已迁移基础设施（P0），出现即回潮。
+    """
+    orch_root = AGENT_ROOT.parent / "orchestration"
+    violations: list[str] = []
+    for path in orch_root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for module in _imported_modules(tree):
+            if module.startswith(_FORBIDDEN_PREFIXES):
+                violations.append(f"{path.relative_to(AGENT_ROOT.parent)}: {module}")
+    assert not violations, (
+        "orchestration/ 反向依赖已迁移的 public_kb 基础设施:\n" + "\n".join(violations)
+    )
