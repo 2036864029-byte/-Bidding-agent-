@@ -14,6 +14,7 @@ from __future__ import annotations
 import functools
 import inspect
 import logging
+import os
 import time
 from typing import Any, Callable, Dict, Optional
 
@@ -215,6 +216,33 @@ def build_graph(
 
 
 # ═════════════════════════════════════════════════════════
+# 模式分发（P6 / G-4）：single 单图 ↔ supervisor 多 Agent
+# ═════════════════════════════════════════════════════════
+
+def build_agent_graph(
+    *,
+    mode: str = "single",
+    llm: Optional[BaseChatModel] = None,
+    checkpointer: Optional[BaseCheckpointSaver] = None,
+    registry: Optional[CapabilityRegistry] = None,
+) -> Any:
+    """按模式构建主图。
+
+    - "single"（默认）：单图（router → 业务节点）。
+    - "supervisor"：多 Agent 主图（orchestration/，三级路由 + handoff）。
+
+    二者共享 llm/checkpointer/registry 装配面；AGENT_MODE 环境变量可在外层切换。
+    """
+    if mode == "supervisor":
+        from orchestration.main_graph import build_supervisor_graph  # 延迟：避免循环
+
+        return build_supervisor_graph(
+            llm=llm, checkpointer=checkpointer, registry=registry,
+        )
+    return build_graph(llm=llm, checkpointer=checkpointer, registry=registry)
+
+
+# ═════════════════════════════════════════════════════════
 # AgentGraph — 对外统一入口
 # ═════════════════════════════════════════════════════════
 
@@ -233,6 +261,7 @@ class AgentGraph:
         llm: Optional[BaseChatModel] = None,
         checkpointer_backend: str = "memory",
         registry: Optional[CapabilityRegistry] = None,
+        mode: Optional[str] = None,
     ) -> None:
         """初始化 Agent。
 
@@ -240,14 +269,23 @@ class AgentGraph:
             llm: 对话模型。None 则自动创建 ChatOpenAI(deepseek-chat)。
             checkpointer_backend: 记忆后端，可选 "memory" | "sqlite" | "postgres" | "redis"
             registry: 能力注册表（默认进程级默认注册表）。
+            mode: 主图模式 "single" | "supervisor"。None 时读环境变量 AGENT_MODE
+                （默认 single）；supervisor = 多 Agent 主图（orchestration/）。
         """
+        if mode is None:
+            mode = os.getenv("AGENT_MODE", "single").lower()
+        if mode not in ("single", "supervisor"):
+            logger.warning("未知 AGENT_MODE=%r，回退 single", mode)
+            mode = "single"
+        self._mode = mode
         self._llm = llm
         self._registry = registry
         self._checkpointer = create_checkpointer(checkpointer_backend)
-        self._graph = build_graph(
-            llm=self._llm, checkpointer=self._checkpointer, registry=self._registry,
+        self._graph = build_agent_graph(
+            mode=mode, llm=self._llm, checkpointer=self._checkpointer,
+            registry=self._registry,
         )
-        logger.info("AgentGraph 就绪")
+        logger.info("AgentGraph 就绪（mode=%s）", mode)
 
     def invoke(self, question: str, thread_id: str = "default") -> Dict[str, Any]:
         """单次问答。
