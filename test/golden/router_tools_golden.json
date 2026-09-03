@@ -1,0 +1,52 @@
+[
+  {
+    "name": "route_knowledge_qa",
+    "description": "招投标专业知识问答：法律法规、招标方式、评标规则、投标流程、履约验收等。\n\n    触发：用户询问招投标法规、程序、资格、责任等专业知识。",
+    "args": {
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      }
+    }
+  },
+  {
+    "name": "route_price_inquiry",
+    "description": "结构化业务数据查询（三大核心能力）：企业工商信息、风控黑名单、招投标中标情报。\n\n    触发场景：\n    - 查企业详情/工商信息/资质/经营状态/行业/注册资本 → 企业工商情报查询\n    - 查企业不良记录/处罚/违法/黑名单/信用 → 企业风控黑名单查询\n    - 查企业中标记录/采购项目/招标历史 → 招投标中标情报查询\n    - 查某个项目的中标情况/中标供应商/中标金额 → 招投标中标情报查询\n    - 查询供应商推荐/找几个公司/哪些公司 → 企业推荐",
+    "args": {
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      }
+    }
+  },
+  {
+    "name": "route_general_chat",
+    "description": "通用对话：问候、自我介绍、功能咨询、操作引导等非业务聊天。\n\n    触发：打招呼、问能力、闲聊。",
+    "args": {
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      }
+    }
+  },
+  {
+    "name": "route_doc_qa",
+    "description": "文档问答：上传文件后要求分析、解读、对比、提取文档内容。\n\n    触发：提到上传文件、分析文档、解读合同、对比标书。",
+    "args": {
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      }
+    }
+  },
+  {
+    "name": "route_fallback",
+    "description": "兜底引导：意图无法确定、模棱两可时使用。",
+    "args": {
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      }
+    }
+  }
+]
