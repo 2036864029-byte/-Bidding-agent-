@@ -685,3 +685,74 @@ harness 对拍一致；CLI 双入口冒烟一致；`USE_TOOL_KB` / legacy 路径
 >   add_messages reducer 校验 BaseMessage，真实链路本就是 HumanMessage）。
 > **P6 Step 1 完成态判据全部满足**；`orchestration/` 与 supervisor 主图属第二步，待启动。
 
+---
+
+## 附录 G：Phase 6 Step 2 文件级任务清单（Supervisor 主图，滚动式展开 2026-09-03）
+
+> **目标**：Supervisor 形态主图（`orchestration/`）——三级路由（规则快路径→语义相似度→
+> LLM 分类）+ handoff 协议 `HandoffMeta{from,to,reason,payload}`；跨 agent handoff
+> （price 查询需政策解释→转 knowledge）端到端通过。Step 1 的 knowledge_qa / price_inquiry
+> compiled subgraph 直接作 supervisor 图的 agent 节点（「agent = 子图」）。
+> 方案一 Step 3.3 参考文档已不在仓库，本附录以 §5 Phase 6 为准自行展开。
+>
+> **关键设计决策（已探针验证 langgraph 1.2.11）**：
+> - **`SupervisorState(AgentState)` 继承扩展**（TypedDict 继承作 graph schema 已验证）：
+>   agent 子图共享 channels（messages/business_result）自动合并回父图；supervisor 独有
+>   `handoff` / `supervisor_route` / `pending_context` 通道父图作用域隔离。**AgentState
+>   本身零改动**（state.py 明示设计原则保持）。
+> - **handoff 全在 supervisor 层**：agent 子图零改动（保证 single 模式行为逐字节不变，
+>   双跑 eval 不降）。`handoff_decider` 节点在 agent 之后决策（price 意图 + 法规解释
+>   关键词 → knowledge），不侵入 agent 内部。
+> - **handoff 上下文经 messages 传递**（P6 步骤 5 约定）：decider 注入
+>   `HumanMessage(sub_question)` 再路由目标 agent；`pending_context` 保存上一 agent 结果，
+>   终态由 decider 组合为合并回答（price 结果 + 法规解释）。
+> - **三级路由**：L1 规则快路径（问候/项目编号/文档关键词确定性匹配）→ L2 语义相似度
+>   （BGE-M3 嵌入 × registry examples 余弦，阈值可配，embedder 注入离线测）→ L3 复用
+>   既有 `build_router_node`（registry 驱动 LLM 分类，`router.py:155`）→ 全 miss 兜底
+>   fallback。
+> - **compiled subgraph 直接 add_node**（已验证）：qa_*/pg_* 内部键命名空间隔离、
+>   config(thread_id) 原生传递；agent 节点统一经 `_with_fallback` 包装（对 compiled
+>   subgraph 生效，config 按签名转发）。
+
+| # | 目标文件 | 动作 | 要点 / 验证 |
+|---|---|---|---|
+| G-1 | `orchestration/__init__.py` + `orchestration/handoff.py` | 新建 | `HandoffMeta(BaseModel){from,to,reason,payload}`；`AGENT_NODES` 常量；`build_sub_question(question)`（Step 2 先取原问题，文档化简化） |
+| G-2 | `orchestration/supervisor.py` | 新建 | `classify_rules(question)`（L1）；`classify_semantic(question, registry, embedder=None)`（L2，余弦阈值 `SEMANTIC_ROUTE_THRESHOLD`）；`route_question(messages, llm, registry, embedder, llm_router)` 三级级联；`decide_handoff(intent, question, business_result)`（price+法规关键词→knowledge）；`supervisor_node(state, config)` |
+| G-3 | `orchestration/main_graph.py` | 新建 | `SupervisorState`；`build_supervisor_graph(llm, checkpointer, registry, knowledge_subgraph, price_subgraph)`：START→supervisor→条件边→agent→handoff_decider→条件边（handoff→目标 agent；pending_context→组合终态；否则 END）。子图/节点可注入（离线测 mock） |
+| G-4 | `agent/graph.py` + `agent/__init__.py` | 改 | `AgentGraph.__init__(mode="single"\|"supervisor")` + env `AGENT_MODE`（默认 single）；`build_agent_graph(mode, ...)` 分发；`invoke/stream/get_state` 对外不变 |
+| G-5 | 测试与守卫 | 新增/更新 | `test/orchestration/test_supervisor_router.py`（三级级联离线：规则命中/语义命中/LLM兜底/全miss→fallback）；`test/orchestration/test_handoff_e2e.py`（主图注入 fake 子图：price→handoff→knowledge 组合终态、无 handoff→END、handoff 清空防循环、子图内部键不泄漏）；`test_no_reverse_dep`/`test_public_kb_layout` 加 orchestration 分层断言；CLI 双入口冒烟 |
+
+**P6 Step 2 完成态判据**：`pytest` 全绿；三级路由离线级联通过；handoff 端到端
+（price→knowledge 组合回答）通过；`AGENT_MODE=supervisor` 走通 CLI；单图行为零改动。
+**回滚**：`AGENT_MODE=single`（默认）立即回单图；orchestration/ 纯新增。
+
+> **P6 执行状态（2026-09-03，Step 2 Supervisor 主图 + Step 3 工具化复用完成）**：
+> - ✅ G-1~G-4（Step 2 主图）：`orchestration/{handoff,supervisor,main_graph}.py` +
+>   `AgentGraph(mode=...)`（env `AGENT_MODE`，默认 single）。三级路由（L1 规则快路径 /
+>   L2 语义相似度默认关——embedder 为 API 成本高，`SUPERVISOR_SEMANTIC_ROUTE` 开启 /
+>   L3 复用 `build_router_node`）；`HandoffMeta{from,to,reason,payload}`；handoff 决策全
+>   在 supervisor 层（agent 子图零认知，单图行为逐字节不变）；handoff 上下文经 messages
+>   传递 + pending_context 组合终态。`SupervisorState(AgentState)` 继承扩展（AgentState
+>   零改动）；compiled subgraph 直挂父图经 `_as_agent_callable` 适配（**langgraph 1.2.11
+>   CompiledStateGraph 不可 callable，仅 .invoke**——已探针 + 回归测试固化）。条件边须
+>   用 `{"end": END}` 映射（1.2.11 不支持条件函数直接返回 END 对象）。
+> - ✅ **G-6 角色感知修复（guardrail ③）**：POST_GUARD 按意图角色校验——「X中标」
+>   （successful_bidder）只验 successful_bidder 列、「X招标」（purchaser）只验 purchaser
+>   列；实体存在于另一角色（非盲目召回）→ 空结果回答（bidder_query 空模板「暂未查询到
+>   中标信息」），完全无匹配 → 统一引导。**修复「X中标」返回 X 作为采购人的记录**
+>   （如福建师范大学纯采购方 21 行被当"中标"返回；数据本身无误——successful_bidder=0）。
+>   验证：中标→0 条空答 / 招标→20 条采购项目；golden Q5 基线 17→0 属修复生效（记录原因），
+>   Q5「招标/中标」解析存在 LLM 非确定性（修复前 17/20 之间也翻），属问题质量范畴。
+> - ✅ **Step 3（工具化复用验证）**：`agent/tool_agent.py` 通用工具驱动 agent
+>   （bind_tools + max_iterations 有界循环 + tool_trace）；`agent/nodes/doc_agent.py`
+>   挂 `kb_search_as_tool()` + `price_query_as_tool()` + 自有 prompt（models.yaml 增
+>   `doc_agent` 槽位，第 4 槽）；registry **enabled=False 预留**（同 echo_demo 先例，
+>   不惊动 router golden/意图集）；base 登记 entry，「登记即接入」离线验证。**路由给
+>   真实用户 = 置 enabled=True + 重生成 router golden + 重跑意图集**，待数据清理后。
+> - 全量 **561 passed**（Step1 522 + Step2 20 + Step3 19 + 守卫更新）。live 验证：
+>   supervisor 模式 L3 路由→knowledge 带引用回答、handoff（中标+法律效力→组合回答）
+>   端到端通过；CLI 双入口 supervisor/single 均通。
+> - ⏸️ **Step 4（灰度双跑 eval）**：机制就绪（`AGENT_MODE` 已通），但按用户决策——
+>   数据修复 + 高数据集建在最终验收前做（guardrail ②），届时单图 vs supervisor 双跑
+>   的数字才有可发布意义；当前可用现有数据集做 drift 对比（provisional）。
+
