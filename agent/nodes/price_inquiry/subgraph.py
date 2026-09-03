@@ -405,27 +405,56 @@ def _post_guard_node(state: PriceSubgraphState) -> dict:
     records = query_result.get("records", [])
     question = state["pg_question"]
 
-    # ── P0-11：后置回溯 — bid_project 召回结果校验 ──
+    # ── P0-11：后置回溯 — bid_project 召回结果校验（G-6 角色感知）──
     # 当 bidding_query 以公司名检索时，验证返回结果的 successful_bidder/purchaser
-    # 是否确实匹配目标公司名；若全不匹配则视为盲目召回，返回统一引导话术
+    # 是否确实匹配目标公司名。G-6 修复：意图指定「中标人」只校验 successful_bidder
+    # 列、「采购人」只校验 purchaser 列——避免「X中标」返回 X 作为采购人的记录
+    # （如福建师范大学纯采购方被当作中标人返回其采购项目，数据本身无误）。
+    # 实体存在于另一角色（非盲目召回）→ 空结果回答；完全无匹配 → 统一引导。
     if intent.sub_route == "bidding_query" and records:
         target_company = intent.hard_filters.successful_bidder or intent.hard_filters.purchaser or ""
         if target_company and _is_valid_company_name(target_company):
-            verified = [
-                r for r in records
-                if target_company in str(r.get("successful_bidder", ""))
-                or target_company in str(r.get("purchaser", ""))
-            ]
-            if not verified:
-                logger.info(
-                    "[POST_GUARD] bid_project 召回 %d 条但无一匹配目标公司 '%s'，"
-                    "视为盲目召回，触发引导话术。",
-                    len(records),
-                    target_company[:30],
+            hf = intent.hard_filters
+            if hf.successful_bidder and not hf.purchaser:
+                role_field = "successful_bidder"
+            elif hf.purchaser and not hf.successful_bidder:
+                role_field = "purchaser"
+            else:
+                role_field = None  # 两列均提 → 任一侧匹配（保持现状）
+            if role_field:
+                verified = [r for r in records if target_company in str(r.get(role_field, ""))]
+                any_role_match = any(
+                    target_company in str(r.get("successful_bidder", ""))
+                    or target_company in str(r.get("purchaser", ""))
+                    for r in records
                 )
-                return {"pg_exit": "guidance",
-                        "pg_reason": f"post_recall_no_match:{target_company[:20]}",
-                        "pg_intent": intent}
+            else:
+                verified = [
+                    r for r in records
+                    if target_company in str(r.get("successful_bidder", ""))
+                    or target_company in str(r.get("purchaser", ""))
+                ]
+                any_role_match = bool(verified)
+
+            if not verified:
+                if any_role_match:
+                    # 实体存在于另一角色（如采购方被当中标人）→ 空结果，非盲目召回
+                    logger.info(
+                        "[POST_GUARD] bid_project 召回 %d 条但无 %s='%s' 记录"
+                        "（实体存在于另一角色），返回空结果",
+                        len(records), role_field or "successful_bidder", target_company[:30],
+                    )
+                    records = []
+                else:
+                    logger.info(
+                        "[POST_GUARD] bid_project 召回 %d 条但无一匹配目标公司 '%s'，"
+                        "视为盲目召回，触发引导话术。",
+                        len(records),
+                        target_company[:30],
+                    )
+                    return {"pg_exit": "guidance",
+                            "pg_reason": f"post_recall_no_match:{target_company[:20]}",
+                            "pg_intent": intent}
             elif len(verified) < len(records):
                 logger.info(
                     "[POST_GUARD] bid_project 召回 %d 条，经后置校验保留 %d 条匹配 '%s' 的记录",

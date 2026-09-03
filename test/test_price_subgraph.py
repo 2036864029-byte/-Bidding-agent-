@@ -163,6 +163,77 @@ def test_post_guard_no_match_routes_guidance(monkeypatch):
     assert out["business_result"]["data"]["intent"]["guard_reason"].startswith("post_recall_no_match:")
 
 
+# ── 4b. POST_GUARD 角色感知（P6 / G-6：successful_bidder vs purchaser 混同修复）──
+
+def _post_guard_state(intent, records):
+    return {
+        "pg_intent": intent,
+        "pg_question": "测试问题",
+        "pg_query_result": {"records": records},
+    }
+
+
+def test_post_guard_role_bidder_excludes_purchaser_only_records():
+    """「X中标」意图：实体仅作为采购人出现 → 剪枝为空结果，不触发引导。"""
+    from agent.nodes.price_inquiry.subgraph import _post_guard_node
+
+    intent = _intent(sub_route="bidding_query", query_type="bidder_query",
+                     successful_bidder="福建师范大学")
+    out = _post_guard_node(_post_guard_state(intent, [
+        {"successful_bidder": "某科技公司", "purchaser": "福建师范大学", "project_name": "台式计算机"},
+    ]))
+    assert "pg_exit" not in out                       # 非盲目召回，不引导
+    assert out["pg_records"] == []                    # 空结果（角色不符）
+
+
+def test_post_guard_role_bidder_prunes_purchaser_matches():
+    """「X中标」意图：只保留 successful_bidder 列匹配，剪掉 X 作为采购人的行。"""
+    from agent.nodes.price_inquiry.subgraph import _post_guard_node
+
+    intent = _intent(sub_route="bidding_query", query_type="bidder_query",
+                     successful_bidder="华为技术有限公司")
+    out = _post_guard_node(_post_guard_state(intent, [
+        {"successful_bidder": "华为技术有限公司", "purchaser": "采购A", "project_name": "项目1"},
+        {"successful_bidder": "无关公司", "purchaser": "华为技术有限公司", "project_name": "项目2"},
+    ]))
+    assert "pg_exit" not in out
+    assert [r["project_name"] for r in out["pg_records"]] == ["项目1"]
+
+
+def test_post_guard_role_purchaser_intent_uses_purchaser_column():
+    """「X招标/采购」意图：只校验 purchaser 列（实体仅出现在中标人列 → 空结果）。"""
+    from agent.nodes.price_inquiry.subgraph import _post_guard_node
+
+    intent = _intent(sub_route="bidding_query", query_type="bidder_query",
+                     purchaser="南京市公安局")
+    out = _post_guard_node(_post_guard_state(intent, [
+        {"successful_bidder": "南京市公安局", "purchaser": "某采购平台", "project_name": "项目X"},
+    ]))
+    assert "pg_exit" not in out
+    assert out["pg_records"] == []
+
+
+def test_post_guard_role_bidder_end_to_end_empty_answer(monkeypatch):
+    """端到端：「X中标」角色不符 → render 空结果模板（未查询到中标信息），非引导。"""
+    intent = _intent(sub_route="bidding_query", query_type="bidder_query",
+                     successful_bidder="福建师范大学")
+    _patch_parse(monkeypatch, intent)
+    fake_settings = SimpleNamespace(node_total_timeout=30)
+    monkeypatch.setattr(sg, "_get_settings", lambda: fake_settings)
+    sql_value = {
+        "records": [{"successful_bidder": "某科技公司", "purchaser": "福建师范大学",
+                     "project_name": "台式计算机", "project_number": "P1",
+                     "winning_amount": 100, "winning_date": "2020-01-01"}],
+        "queried_tables": ["bid_project"], "sql_count": 1, "total_sql_time": 0.1,
+        "total_found": 1,
+    }
+    out = _run(monkeypatch, question="福建师范大学中标了哪些项目", sql_value=sql_value)
+    br = out["business_result"]
+    assert br["data"]["records"] == []
+    assert "未查询到" in br["answer"] or "中标信息" in br["answer"]
+    assert out["messages"][-1].content == br["answer"]
+
+
 # ── 3. 正常渲染出口（空结果分支，避免模板字段依赖）─────────────
 
 def test_render_empty_result_branch(monkeypatch):
