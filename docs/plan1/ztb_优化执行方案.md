@@ -444,7 +444,10 @@ ztb_demo/
 > - ✅ A-1~A-7、A-9、A-12（graph/intent/semantic 调用点切 core）、A-13（新增 test/core/ 4 文件：registry/import_compat/no_reverse_dep/schema_registry）。
 > - ✅ A-10 上提为 `core/rdb/mysql_pool.py`，`price_inquiry/db.py` 留壳 re-export；MYSQL_* 并入 Settings（v1.3 A-10 修正已实现，硬编码内网地址移除）。
 > - ✅ A-11 落地为 `public_kb/schema_registry.py`（登记两集合 + embedding 版本 + 校验函数）；**启动期强校验接线推迟 P3**（集合生命周期统一到 core 后），避免 P0 扩 ingestion/retrieval 行为面。
-> - ⚠️ **A-8 延后**：`services/milvus_store.py` 深度耦合 `public_kb.chunk_ids/contracts`（:20-28），原样迁 core 会制造 core→public_kb 反向依赖；待 chunk 契约上提 core 后再迁。无 agent 直接依赖，不影响 R1 验收。
+> - ✅ **A-8 完成（2026-09-03）**：`chunk_ids.py`/`contracts.py` 上提 `core/contracts/`，
+>   `services/milvus_store.py` 上提 `core/vectorstore/milvus_client.py`（`MilvusStoreManager`）；
+>   三处旧路径 re-export 壳 + DeprecationWarning。`test_dedup_ingestion` 的 patch 目标改指
+>   core 真身。core 不再有 public_kb 反向依赖，R1 解净。
 > - ✂️ **A-3/A-7 范围收紧（忠于现状）**：LLM/Embedding 运行时对象必须保持 LangChain Runnable（router 依赖 with_structured_output/bind_tools、generation 依赖 `|`），故 ABC 只抽象*构造*差异点（`LLMProvider.build()`）；chat/structured_output/stream 门面推迟 P6 工具化。`core/embeddings/base.py` 未建（bge_m3.py 提供 model_id/version 常量供 A-11）。
 > - ℹ️ 新增 `test/core/test_import_compat.py` 含双路径 Settings 字段全等断言（A-1 验证）。
 > - ✅ **`test/test_cloud_sync.py` 处置（P6 结构收敛）**：该文件已内置 `pytest.importorskip("cloud_sync")` 自动跳过（cloud_sync 为非仓库组件），`pytest test/` 全量可干净运行（564 passed + 1 skipped），**`--ignore` 变通不再需要**（2026-09-03 验证）。
@@ -481,7 +484,11 @@ ztb_demo/
 > - ✅ **L3 基线替代（106 题 testset_knowledge.jsonl 已丢失无法找回，用户拍板）**：新增 `scripts/run_knowledge_parity_smoke.py`——本地单书(book2 850chunks 已入库本机 Milvus public_kb) 上 legacy vs 工具链路结构对拍，快照 test_report/，作为 B-5 等行为重构的前后回归护栏；实跑 6/6 一致。
 > - ✅ B-5：`rag_engine.py` → `engine.py`（git mv + rag_engine.py 留壳）；`PublicKnowledgeRAG.__init__` 构造注入化（llm/embeddings/store_manager 可选）；`query()` 暂仍走 LCEL 链（组合 kb_search 推迟到工具链路完全替换旧路径后）。全量 393 passed，harness 4/4 一致。
 > - ✅ **B-11 本地验证完成（部署时再切）**：harness 12/12 一致；CLI 冒烟 legacy 与 `USE_TOOL_KB=true` 工具链路在真实图上均走通（router→knowledge_qa(tool)→kb_search→kb_generation→护栏全过）。**默认保持 false**——因本地仅单书+纯稠密降级（本地集合无稀疏字段，`ENABLE_MILVUS_BM25` 默认关），未到全量混合检索/生产验证；上线时置 `USE_TOOL_KB=true` 即可，一行 env 变更。
-> - 🔒 未做：B-6 qa_chain 委托新组合（随 query 改造）、B-8 graph 装配注入（当前工具链路节点自装配惰性单例）。106 题质量基线永久由本地对拍 harness 替代。
+> - 🔒 B-6 qa_chain 委托新组合未做（随 query 改造，行为等价由 parity harness 覆盖）。
+>   **B-8 由架构吸收（2026-09-03）**：knowledge 运行时已是集中带锁单例（`public_kb.tools`
+>   retriever + `knowledge_qa/chain` llm/validator/prompt），price `_build_llm` 每次新建
+>   ChatOpenAI（构造便宜、无网络，有意的无状态设计）——「节点自装配导致重复实例」已不
+>   存在，graph 闭包注入属纯 churn，不再执行。106 题质量基线永久由本地对拍 harness 替代。
 
 | # | 目标文件 | 动作 | 要点 / 验证 |
 |---|---|---|---|
@@ -624,8 +631,8 @@ ztb_demo/
 > - ✅ handoff `ingest_documents` 直连 MilvusSink（`HandoffIngestResult`，去 sources 依赖）。
 > - ✅ `test/test_cloud_sync.py` 内置 `pytest.importorskip` 自动跳过，`pytest test/` 全量干净
 >   （564 passed + 1 skipped），`--ignore` 变通不再需要。
-> - ⏸️ **A-8 仍延后**：`services/milvus_store.py` 上提 core 需先抽 chunk 契约（chunk_ids/
->   contracts）到 core——属独立大型重构，随数据阶段或独立 pass 处理。
+> - ✅ **A-8**：chunk 契约 + milvus_store 上提 core（`core/contracts/` + `core/vectorstore/
+>   milvus_client.py`），re-export 壳保兼容；core 反向依赖解净。
 
 ---
 
