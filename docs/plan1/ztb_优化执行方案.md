@@ -604,5 +604,7 @@ ztb_demo/
 
 > **P5 执行状态（2026-09-03）**：✅ E-1~E-3（IR 建模/FormatRouter/IngestLedger，18 用例，
 > 全量 465 passed）；✅ E-4~E-6（Normalizer ABC + text 直通 + csv 双 IR：table 摘要供
-> SQL 路 + 行块语义供向量路，7 用例，全量 472 passed）。E-7（pdf 收敛）起按序推进。
+> SQL 路 + 行块语义供向量路，7 用例，全量 472 passed）；✅ E-7（9 个 pdf_* 收敛
+> normalizers/pdf/ + PdfNormalizer 入口 + 旧路径镜像壳，白名单同步，全量 473 passed）。
+> E-8（pipeline 三段式）起按序推进——属行为级，需 golden/幂等对拍。
 
