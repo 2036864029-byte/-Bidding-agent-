@@ -569,5 +569,38 @@ ztb_demo/
 >   （引擎直调无 agent 反向依赖，product 边界一致；不接线）+ 离线单测 5 用例。
 > - ✅ D-7（2026-09-03）：price_engine/intent.py docstring 补"槽位抽取/查询改写"边界
 >   （sub_route 为引擎内部分流，一级意图归 registry，P4 已单点化）。
-> - ⏸️ D-10 待做（L4 三类查询冒烟——企业详情/中标历史已实测，项目编号待补）。
+> - ✅ D-10（2026-09-03）：L4 冒烟通过——企业详情 / 中标历史 / 项目编号三类查询
+>   全图 live 走通（[350001]FJGGZY[GK]2024013 → project_detail 1 条，含熔断 trace）。
+
+---
+
+## 附录 E：Phase 5 文件级任务清单（ingestion 三段式重构，滚动式展开 2026-09-03）
+
+> **P5 目标**：解 R7（无显式三段式/无断点续跑/csv 走文本管道）与 R13（9 个 pdf_* 平铺
+> transforms/）。终态目录见 §3 框架；关键约束：`contracts.py` / `chunk_ids.py` 的 chunk
+> 契约**不动**（稳定边界）；`pipeline.py` 旧行为保留为 `pipeline_legacy.py` + CLI `--legacy`
+> 开关（回滚）；csv 双 IR 输出（table 摘要供 SQL 路 + 行块语义供向量路）。
+> 全部离线安全，与 P6 无文件交集。每项一个 commit，全绿过门。
+
+| # | 目标文件 | 动作 | 要点 / 验证 |
+|---|---|---|---|
+| E-1 | `public_kb/ingestion/ir.py` | 新建 | `NormalizedDocument{doc_id, source_format, ir_format: markdown\|table, content, metadata(parser_version/quality_score/...)}`；`compute_source_hash(path)`（文件字节 MD5）+ `simhash(text)`（文档级去重用）。纯 dataclass + 纯函数，无依赖 |
+| E-2 | `public_kb/ingestion/router.py` | 新建 | `FormatRouter.route(path) -> NormalizedDocument`：按扩展名（.txt/.md→text、.csv→csv、.pdf→pdf）+ 内容嗅探分发 |
+| E-3 | `public_kb/ingestion/ledger.py` | 新建 | `IngestLedger`：文档级解析前去重登记（`ingest_ledger.jsonl`：doc_id → source MD5/SimHash → status）；`should_process()`/`mark_done()`。**对接** `pdf_mineru_router.compute_cache_key`（字节哈希口径一致），避免重复烧 MinerU |
+| E-4 | `public_kb/ingestion/normalizers/base.py` | 新建 | `Normalizer ABC: normalize(source) -> NormalizedDocument`；quality_score 约定（默认 1.0，解析失败降级） |
+| E-5 | `public_kb/ingestion/normalizers/text.py` | 新建 | 文本直通 → markdown IR（clean 后原样） |
+| E-6 | `public_kb/ingestion/normalizers/csv.py` | 新建（源：`sources/csv_loader.py` 逻辑） | **双 IR**：table 摘要（表头+行块，供 price 侧 SQL 消费示例）+ 行块语义（现行 CsvLoader 行为）；reuse `_COLUMN_ALIAS_MAP`/`structure_plain_text` |
+| E-7 | `public_kb/ingestion/normalizers/pdf/` | 收敛（源：`transforms/pdf_*.py` ×9） | 9 文件 git mv → `normalizers/pdf/`（内部相对 import 不变）；`transforms/pdf_*.py` 旧路径改镜像壳（沿用 price_engine 下沉范式，L2 import 兼容）；`pdf.py` Normalizer 入口（PdfRouter/parser_factory 装配） |
+| E-8 | `public_kb/ingestion/pipeline.py` | 重构 | 显式三段：`normalize → clean/dedup/chunk → embed/sink`；`IngestionPipeline` 兼容入口保留；旧逻辑 `pipeline_legacy.py` |
+| E-9 | `public_kb/ingestion/sinks/milvus_sink.py` | 改 | **upsert by chunk_uid**（pk 为 auto_id → 先按 chunk_uid 查重/删旧再插，或依赖 M2 跳过；实现时核 `MilvusStoreManager.add_documents` 现状决定） |
+| E-10 | `public_kb/ingestion/checkpoint.py` | 新建 | 每 stage 落盘中间产物 + `run_manifest.json`；`--resume`（从断点 stage 续）/ `--rerun-from=B`（解析器升级只重跑 B+C） |
+| E-11 | `public_kb/ingestion/quality.py` | 新建 | quality_score 低于阈值 → `review_queue/` 旁路输出，不入库 |
+| E-12 | `public_kb/ingestion/cli.py` | 改 | 增 `--resume/--rerun-from/--ledger/--legacy`；`--legacy` 走 `pipeline_legacy` 保旧行为 |
+| E-13 | 测试 | 新增 | `test/ingestion/test_ir_models.py`（IR 构造/哈希/SimHash）；`test_router_ledger.py`（分发 + 文档级去重幂等）；`test_normalizers_text_csv.py`（双 IR 输出、price 侧 table 摘要消费示例）；`test_pipeline_stages.py`（三段式 + 幂等：同批文件跑两遍向量数不变）；`test_checkpoint_resume.py`（杀进程模拟 --resume 成功） |
+
+**P5 完成态判据**：`pytest` 全绿；同一批文件两次入库 Milvus 向量数不变；杀进程后
+`--resume` 成功；csv table IR 可被 price 侧消费示例；旧 `pipeline_legacy` + `--legacy`
+回滚可用。
+
+> **P5 执行状态**：启动 2026-09-03，E-1 起按序推进。
 
