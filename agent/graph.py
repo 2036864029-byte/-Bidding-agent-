@@ -27,14 +27,9 @@ from core.observability.metrics import record_branch_latency
 
 from .state import AgentState
 from .router import build_router_node
+from .registry import CapabilityRegistry, get_default_registry
+from .nodes.base import get_node_spec
 from .checkpointer import create_checkpointer
-from .nodes import (
-    node_knowledge_qa,
-    node_price_inquiry,
-    node_general_chat,
-    node_doc_qa,
-    node_fallback,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -118,12 +113,15 @@ def build_graph(
     *,
     llm: Optional[BaseChatModel] = None,
     checkpointer: Optional[BaseCheckpointSaver] = None,
+    registry: Optional[CapabilityRegistry] = None,
 ) -> Any:
     """构建并编译 StateGraph。
 
     Args:
         llm: 对话模型实例。若为 None 则自动从配置创建。
         checkpointer: 检查点存储器。若为 None 则使用 MemorySaver。
+        registry: 能力注册表（默认进程级）。节点与条件边按 registry 的 enabled
+            能力动态注册；新增能力登记即接线，本文件零改动（解 R9）。
 
     Returns:
         编译后的 CompiledStateGraph，可直接 invoke。
@@ -137,49 +135,54 @@ def build_graph(
     if checkpointer is None:
         checkpointer = create_checkpointer("memory")
 
+    reg = registry or get_default_registry()
+    specs = reg.enabled_specs()
+    if not specs:
+        raise ValueError("registry 无可路由能力（enabled_specs 为空）")
+
     # ── 创建图 ──
     graph = StateGraph(AgentState)
 
     # ── 注册节点 ──
     # Router（不需要 _with_fallback，自身有异常处理）
-    router_node = build_router_node(llm)
+    router_node = build_router_node(llm, registry=reg)
     graph.add_node("router", router_node)
 
-    # 业务节点 — 统一包裹 _with_fallback
-    graph.add_node("knowledge_qa", _with_fallback(node_knowledge_qa))
-    graph.add_node("price_inquiry", _with_fallback(node_price_inquiry))
-    graph.add_node("general_chat", _with_fallback(node_general_chat))
-    graph.add_node("doc_qa", _with_fallback(node_doc_qa))
-    # fallback 本身已是兜底，不包装
-    graph.add_node("fallback", node_fallback)
+    # 业务节点 — 按 registry enabled 能力动态注册；fallback 本身已是兜底不包装
+    path_map: Dict[str, str] = {}
+    wired_nodes: set[str] = set()
+    for spec in specs:
+        node_name = spec.graph_node
+        if node_name in wired_nodes:
+            path_map[spec.id] = node_name
+            continue
+        ns = get_node_spec(node_name)
+        if ns is None:
+            raise ValueError(
+                f"capability {spec.id!r} 引用的节点 {node_name!r} 未登记 NodeSpec，"
+                "请在 agent.nodes.base 中 register 该节点 entry"
+            )
+        entry = ns.entry if node_name == "fallback" else _with_fallback(ns.entry)
+        graph.add_node(node_name, entry)
+        wired_nodes.add(node_name)
+        path_map[spec.id] = node_name
+        logger.info("动态注册节点: %s (capability=%s)", node_name, spec.id)
 
     # ── 边 ──
     # START → router
     graph.set_entry_point("router")
 
-    # router → 条件边分发到业务节点
-    graph.add_conditional_edges(
-        "router",
-        _route_by_intent,
-        {
-            "knowledge_qa": "knowledge_qa",
-            "price_inquiry": "price_inquiry",
-            "general_chat": "general_chat",
-            "doc_qa": "doc_qa",
-            "fallback": "fallback",
-        },
-    )
+    # router → 条件边分发到业务节点（map 由 registry 生成）
+    graph.add_conditional_edges("router", _route_by_intent, path_map)
 
     # 所有业务节点 → END（直接终止，无中间 format_output 层）
-    graph.add_edge("knowledge_qa", END)
-    graph.add_edge("price_inquiry", END)
-    graph.add_edge("general_chat", END)
-    graph.add_edge("doc_qa", END)
-    graph.add_edge("fallback", END)
+    for node_name in wired_nodes:
+        graph.add_edge(node_name, END)
 
     # ── 编译 ──
     compiled = graph.compile(checkpointer=checkpointer)
-    logger.info("StateGraph 编译完成，checkpointer=%s", type(checkpointer).__name__)
+    logger.info("StateGraph 编译完成，checkpointer=%s，capabilities=%s",
+                type(checkpointer).__name__, list(spec.id for spec in specs))
 
     return compiled
 
@@ -202,16 +205,21 @@ class AgentGraph:
         *,
         llm: Optional[BaseChatModel] = None,
         checkpointer_backend: str = "memory",
+        registry: Optional[CapabilityRegistry] = None,
     ) -> None:
         """初始化 Agent。
 
         Args:
             llm: 对话模型。None 则自动创建 ChatOpenAI(deepseek-chat)。
             checkpointer_backend: 记忆后端，可选 "memory" | "sqlite" | "postgres" | "redis"
+            registry: 能力注册表（默认进程级默认注册表）。
         """
         self._llm = llm
+        self._registry = registry
         self._checkpointer = create_checkpointer(checkpointer_backend)
-        self._graph = build_graph(llm=self._llm, checkpointer=self._checkpointer)
+        self._graph = build_graph(
+            llm=self._llm, checkpointer=self._checkpointer, registry=self._registry,
+        )
         logger.info("AgentGraph 就绪")
 
     def invoke(self, question: str, thread_id: str = "default") -> Dict[str, Any]:
