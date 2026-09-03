@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from langchain_core.documents import Document
 
 from ..chunk_ids import compute_chunk_uid
+from .checkpoint import StageCheckpoint, STAGE_A, STAGE_C
 from .ir import NormalizedDocument, simhash
 from .ledger import IngestLedger
 from .normalizers import build_normalizer
@@ -64,6 +65,9 @@ class FileIngestionPipeline:
         ledger: Optional[IngestLedger] = None,
         cleaner: Any = None,
         chunker: Any = None,
+        checkpoint: Optional[StageCheckpoint] = None,
+        resume: bool = False,
+        rerun_from: Optional[str] = None,
     ) -> None:
         self._settings = settings
         self._sink = sink  # 可为 None（预览/不导入模式）
@@ -71,6 +75,9 @@ class FileIngestionPipeline:
         self._ledger = ledger
         self._cleaner = cleaner
         self._chunker = chunker
+        self._checkpoint = checkpoint
+        self._resume = resume
+        self._rerun_from = rerun_from  # "B" = 复用 A 产物重做 B+C
 
     # ── 入口 ───────────────────────────────────────────────
 
@@ -96,9 +103,43 @@ class FileIngestionPipeline:
                     res.reason = decision.reason
                     return res
 
-            # Stage A：规范化 → IR
-            normalizer = build_normalizer(fmt, settings=self._settings)
-            irs = normalizer.normalize(routed)
+            # checkpoint：--resume 跳过 C 已完成的文件
+            if self._checkpoint is not None and self._resume and self._checkpoint.is_done(path, STAGE_C):
+                res.status = "skipped"
+                res.reason = "checkpoint_done"
+                return res
+
+            # Stage A：规范化 → IR（--rerun-from=B 复用 A 中间产物）
+            if (
+                self._checkpoint is not None
+                and self._rerun_from == "B"
+                and self._checkpoint.has_artifact(path)
+            ):
+                content = self._checkpoint.load_artifact(path)
+                irs = [
+                    NormalizedDocument(
+                        doc_id=f"{routed.doc_id}#markdown",
+                        source_format=fmt,
+                        ir_format="markdown",
+                        content=content,
+                        source_path=str(path),
+                        metadata={
+                            "source_hash": source_hash,
+                            "quality_score": 1.0,
+                            "parser_version": "checkpoint-A",
+                        },
+                    )
+                ]
+                res.detail["stage_a_reused"] = True
+            else:
+                normalizer = build_normalizer(fmt, settings=self._settings)
+                irs = normalizer.normalize(routed)
+                if self._checkpoint is not None:
+                    md_irs = [ir for ir in irs if ir.ir_format == "markdown"]
+                    if md_irs:
+                        self._checkpoint.save_artifact(path, md_irs[0].content)
+                    self._checkpoint.mark(path, STAGE_A)
+
             table_irs = [ir for ir in irs if ir.ir_format == "table"]
             md_irs = [ir for ir in irs if ir.ir_format == "markdown"]
 
@@ -123,6 +164,9 @@ class FileIngestionPipeline:
                 res.inserted_count = self._sink.write(all_docs, records=[])
 
             res.status = "completed"
+
+            if self._checkpoint is not None:
+                self._checkpoint.mark(path, STAGE_C)
 
             if self._ledger is not None:
                 sh = simhash(irs[0].content) if irs else 0
