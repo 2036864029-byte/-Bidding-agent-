@@ -602,9 +602,13 @@ ztb_demo/
 `--resume` 成功；csv table IR 可被 price 侧消费示例；旧 `pipeline_legacy` + `--legacy`
 回滚可用。
 
-> **P5 执行状态（2026-09-03）**：✅ E-1~E-3（IR 建模/FormatRouter/IngestLedger，18 用例，
-> 全量 465 passed）；✅ E-4~E-6（Normalizer ABC + text 直通 + csv 双 IR：table 摘要供
-> SQL 路 + 行块语义供向量路，7 用例，全量 472 passed）；✅ E-7（9 个 pdf_* 收敛
-> normalizers/pdf/ + PdfNormalizer 入口 + 旧路径镜像壳，白名单同步，全量 473 passed）。
-> E-8（pipeline 三段式）起按序推进——属行为级，需 golden/幂等对拍。
+> **P5 执行状态（2026-09-03，完成）**：✅ E-1~E-3（IR/FormatRouter/IngestLedger）；✅ E-4~E-6
+> （Normalizer ABC + text + csv 双 IR）；✅ E-7（9 pdf_* 收敛 normalizers/pdf/ + PdfNormalizer）；
+> ✅ E-8（pipeline 三段式 FileIngestionPipeline，旧流 pipeline_legacy）；✅ E-9（MilvusSink
+> upsert by chunk_uid 语义固化——add_documents 已实现 chunk_uid 幂等判重，跳过式等价 upsert）；
+> ✅ E-10（StageCheckpoint 断点续跑 run_manifest + A 产物复用）；✅ E-11（QualityGate 低质量旁路
+> review_queue）；✅ E-12（CLI --files/--ledger/--work-dir/--resume/--rerun-from/--quality-threshold/
+> --legacy）；✅ E-13（验收：幂等两次入库向量数不变、杀进程 resume、csv table IR price 侧消费示例）。
+> 全量 **497 passed**。P5 完成态判据满足：pytest 全绿；幂等/续跑/table IR 消费均有离线用例；
+> 旧 pipeline_legacy + --legacy 回滚可用。
 
