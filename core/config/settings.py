@@ -319,6 +319,19 @@ class Settings:
     )
 
     # ============================================================
+    # price 召回链熔断（P3 D-6）— 全局 deadline 与全表扫描放行开关
+    # ============================================================
+    # RecallPipeline 全局召回预算：到点未命中即熔断返回空（不再裸进全表扫描）。
+    # 全表扫描兜底默认禁入，仅在显式配置下放行。
+    price_recall_deadline_ms: int = field(
+        default_factory=lambda: int(os.getenv("PRICE_RECALL_DEADLINE_MS", "3000"))
+    )
+    price_allow_full_scan: bool = field(
+        default_factory=lambda: os.getenv("PRICE_ALLOW_FULL_SCAN", "false").lower()
+        in {"1", "true", "yes"}
+    )
+
+    # ============================================================
     # 全局总超时（任务4）— 单次业务节点最大允许执行时间
     # ============================================================
     node_total_timeout: int = field(

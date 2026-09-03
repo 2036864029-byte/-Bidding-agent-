@@ -550,5 +550,24 @@ ztb_demo/
 
 **P3 完成态判据**：`pytest` 全绿；L2 旧路径兼容；L3/L4 在实库环境验证；PRICE_ENGINE_LEGACY 回滚可用（re-export 天然支持）。
 
-> **P3 执行状态**：D-1 已落地（core/retrieval 熔断状态机 + 离线单测）；D-2 起（引擎下沉 + 渲染迁移 + node 薄化）依赖实库 golden，留待实库环境。
+> **P3 执行状态（2026-09-03，本地实库已就绪后推进）**：
+> - ✅ D-1（09-02）：core/retrieval 熔断状态机 + 离线单测。
+> - ✅ D-2~D-4（09-03）：引擎 8 文件 git mv → price_engine（.db 引用改
+>   core.rdb.mysql_pool）+ 渲染两模板 → price_engine/rendering（旧路径镜像壳）；
+>   price_engine 门面 + price_inquiry 兼容门面；node.py 改 absolute import。
+>   验证：pytest 434 passed；price golden 13 题 before/after **0/91 字段差异**。
+> - ✅ D-5：node.py 保留守卫/引导/超时/POST_GUARD，引擎调用改 `from price_engine import`。
+> - ✅ D-6（2026-09-03）：5 级链改造为 RecallStage（price_engine/recall_stages.py）接入
+>   RecallPipeline ——**实现偏差**：阶段适配放 price_engine 侧（非 core/retrieval/stages.py），
+>   因阶段强依赖 SearchIntent/sql_builders，放 core 会制造 core→price_engine 反向依赖；
+>   core/stages.py 留占位说明。熔断默认 allow_scan=False（FULL_SCAN 仅
+>   PRICE_ALLOW_FULL_SCAN=true 放行），deadline=PRICE_RECALL_DEADLINE_MS 默认 3000ms
+>   且逐条 SQL 超时钳制到剩余预算。验证：离线集成测试 8 用例（扫描门控/短路/deadline
+>   熔断/FULLTEXT 缺失降级）；全量 447 passed；**live 确认 full_scan:skip(full_scan_disabled)**；
+>   price golden before/after **0/104 字段差异**（13 题无一依赖全表扫描，召回不降）。
+> - ✅ D-8（2026-09-03）：price_engine/tools.py `price_query()`/`price_query_as_tool()`
+>   （引擎直调无 agent 反向依赖，product 边界一致；不接线）+ 离线单测 5 用例。
+> - ✅ D-7（2026-09-03）：price_engine/intent.py docstring 补"槽位抽取/查询改写"边界
+>   （sub_route 为引擎内部分流，一级意图归 registry，P4 已单点化）。
+> - ⏸️ D-10 待做（L4 三类查询冒烟——企业详情/中标历史已实测，项目编号待补）。
 

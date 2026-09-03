@@ -51,7 +51,18 @@ The system has two independent packages connected by a thin contract:
 - **`router.py`**: LLM-based intent classifier, **candidate set fully generated from the registry** — no hardcoded `RouterIntent`/route tools/prompt. Builds per-registry tools (`route_*`), a dynamic decision model (`Literal` over enabled ids), and the system prompt from each capability's routing copy. Tries `with_structured_output` first; falls back to Tool Calling if the API doesn't support it. Carries the last 3 conversation turns for context-aware routing. All failures → `fallback`.
 - **`graph.py`**: Builds and compiles the StateGraph. **Nodes and conditional edges are registered dynamically from `registry.enabled_specs()`** (entries resolved via `nodes.base.get_node_spec`). All business nodes are wrapped in `_with_fallback()` — any unhandled exception returns a friendly degradation message instead of crashing. The `AgentGraph` class is the public entry point.
 - **`state.py`**: Single `AgentState(TypedDict)` with three fields: `messages` (Annotated list with `add_messages` reducer for ID dedup), `router_intent` (str; value domain = registry enabled ids), `business_result` (generic dict). All branches share this same state — new branches do NOT add fields.
-- **`nodes/`**: Business nodes, each following the signature `(AgentState) → dict`. `price_inquiry/` is a package (split 2026-08-15): `node.py` (entry + guards + guidance), `queries.py` (table-specific query paths), `recall.py` (multi-stage retrieval chain: Milvus semantic → FULLTEXT → LIKE → full scan with descending weights), `sql_builders.py`, `intent.py` (unified intent parsing), `semantic.py` (Milvus semantic collection bootstrap/recall), `enum_norm.py`, `db.py` (connection pool), `schema.py`, `models.py`. The package `__init__.py` re-exports all symbols, so `from agent.nodes.price_inquiry import ...` is unchanged for external callers.
+- **`nodes/`**: Business nodes, each following the signature `(AgentState) → dict`. `price_inquiry/` is now a **thin node + facade** (P3): `node.py` (entry + P0-11/P0-12 guards + guidance + dual timeout + POST_GUARD) lives here; the engine (intent/queries/recall/semantic/sql_builders/enum_norm/schema/models) moved to `price_engine/`. `agent/nodes/answer_templates.py` / `output_templates.py` are mirror shells for `price_engine/rendering/`. The package `__init__.py` re-exports engine symbols via `price_engine`, so `from agent.nodes.price_inquiry import ...` is unchanged for external callers.
+
+### `price_engine/` — 价格/标讯查询引擎（P3 下沉）
+
+- **引擎 8 文件**（intent / queries / sql_builders / recall / semantic / enum_norm / schema / models）+ **rendering/**（answer/output 模板）自 `agent/nodes` 下沉；`.db` 引用统一走 `core.rdb.mysql_pool`。
+- **召回链（D-6）**：`recall.py` 的 5 级链（Milvus 语义→FULLTEXT→LIKE→逐词拆分→全表扫描）经 `recall_stages.py`（`_SqlRecallStage`/`_SplitKeywordStage`/`build_recall_stages`）接入 `core/retrieval.RecallPipeline` 熔断状态机。**FULL_SCAN 默认禁入**（`PRICE_ALLOW_FULL_SCAN=true` 才放行），全局 deadline=`PRICE_RECALL_DEADLINE_MS`（默认 3000ms）逐条 SQL 钳制。
+- **配置开关**：`price_allow_full_scan` / `price_recall_deadline_ms`（`core/config/settings.py`）。
+- `price_engine/__init__.py` 引擎门面（re-export 106 符号 + 连接池）。
+
+### `core/retrieval/` — 共享召回熔断状态机（P3 D-1/D-6）
+
+- `base.py`（`RecallStage` 协议 + `RecallOutcome`）+ `pipeline.py`（`RecallPipeline`：阶段短路 / deadline 熔断 / 超时熔断 / `allow_scan` 门控）。`stages.py` 为通用占位——price 特有阶段适配在 `price_engine/recall_stages.py`（避免 core→price_engine 反向依赖）。
 - **`checkpointer.py`**: Factory that returns `MemorySaver` (default, ephemeral). Supports `sqlite`/`postgres`/`redis` backends via the same interface — one-line change, zero business code impact.
 
 ### `public_kb/` — RAG engine

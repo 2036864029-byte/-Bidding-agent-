@@ -1,4 +1,14 @@
-"""统一意图解析 — LLM 结构化抽取 + 关键词/实体/项目编号的确定性提取与去噪。"""
+"""统一意图解析 — 槽位抽取 / 查询改写（方案 Phase 3 / D-7 边界）。
+
+定位：一次 LLM 调用同时产出 sub_route（二级路由）与结构化槽位（hard_filters /
+query_type 等）——sub_route 是**引擎内部分流**（company_query / bidding_query /
+all → queries.py 对应查询路径），不是一级意图 taxonomy。一级意图
+（knowledge_qa / price_inquiry / ...）由 agent/registry.py CapabilityRegistry
+驱动 router 决策（P4），本模块只负责 price 引擎侧的槽位抽取与查询改写。
+
+含关键词/实体/项目编号的确定性提取、去噪、超长截断（P0-12 项目编号纠偏在
+agent 侧 node 层，本模块不重复实现）。
+"""
 
 from __future__ import annotations
 

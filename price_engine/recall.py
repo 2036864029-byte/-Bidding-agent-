@@ -12,14 +12,12 @@ from typing import Any, Optional
 import pymysql
 
 from core.rdb.mysql_pool import _CLEAN_DB, _get_connection, _get_settings, _release_connection
+from core.retrieval.pipeline import RecallPipeline
 from .models import SearchIntent
 from .schema import _get_classification
 from .semantic import _semantic_recall_candidates
 from .sql_builders import (
-    _build_candidate_sql,
     _build_constraint_conditions,
-    _build_full_scan_sql,
-    _build_like_fallback_sql,
     _build_vector_recall_sql,
     _has_preference_filters,
     _strip_preference_filters,
@@ -159,13 +157,17 @@ def _execute_sql_with_timeout(
     params: tuple[Any, ...],
     table: str,
     stage: str,
+    timeout: Optional[float] = None,
 ) -> tuple[list[dict[str, Any]], float]:
     """带超时的 SQL 执行包装器。
 
     使用 ThreadPoolExecutor 实现跨平台超时控制，超时后返回空结果并记录日志。
+    ``timeout`` 缺省取 Settings.sql_query_timeout；D-6 起阶段可传入剩余预算
+    （RecallPipeline deadline）作为上限，让全局熔断约束到单条 SQL。
     """
     settings = _get_settings()
-    timeout = settings.sql_query_timeout
+    if timeout is None:
+        timeout = float(settings.sql_query_timeout)
 
     future = _sql_executor.submit(_execute_sql_fetch_rows, conn, sql, params)
     try:
@@ -184,105 +186,28 @@ def _execute_recall_chain_core(
     classification: dict[str, list[str]],
     intent: SearchIntent,
 ) -> tuple[list[dict[str, Any]], int, float]:
-    """P1-1：多级降级检索链。
+    """P3 D-6：多级降级检索链 — 接入 RecallPipeline（deadline 熔断 + 全表扫描默认禁入）。
 
-    Level 1: OR FULLTEXT
-    Level 2: LIKE 通配
-    Level 3: 逐关键词拆分重试（单关键词 FULLTEXT / LIKE）
-    Level 4: 全表扫描兜底（LIMIT 100）
+    阶段（与 _RECALL_STAGE_WEIGHTS 对应）：
+      fulltext_or(1) → like_fallback(3) → split_keyword(4) → full_scan(5, is_scan)。
+    Milvus 语义召回（stage 0）由 _query_tables 先行执行，不属于本链。
 
-    阶段编号（写入 _recall_stage_）与 _RECALL_STAGE_WEIGHTS 对应：
-    1=FULLTEXT_OR、3=LIKE_FALLBACK、4=SPLIT_KEYWORD、5=FULL_SCAN。
+    熔断语义：全局 deadline 由 Settings.price_recall_deadline_ms 控制，到点未命中
+    即返回空（不再裸进全表扫描）；FULL_SCAN 仅 Settings.price_allow_full_scan=True
+    时放行。SQL 计数/耗时经 stages 回写到 ctx["stats"]。
     """
-    total_sql_time = 0.0
-    sql_count = 0
-    keywords = [kw for kw in intent.semantic_keywords if kw]
+    from .recall_stages import build_recall_stages  # 局部 import 避免 recall↔stages 循环
 
-    strategies: list[tuple[int, str, Optional[tuple[str, tuple[Any, ...]]]]] = [
-        (1, "FULLTEXT_OR", _build_candidate_sql(table_name, classification, intent)),
-    ]
-    strategies.append((3, "LIKE_FALLBACK", _build_like_fallback_sql(table_name, classification, intent)))
-
-    for stage, label, sql_tuple in strategies:
-        if sql_tuple is None:
-            continue
-        try:
-            rows, elapsed = _execute_sql_with_timeout(conn, sql_tuple[0], sql_tuple[1], table_name, label)
-            total_sql_time += elapsed
-            sql_count += 1
-            if rows:
-                for row in rows:
-                    row["_recall_stage_"] = stage
-                logger.info("[RECALL_CHAIN] table=%s stage=%s rows=%d", table_name, label, len(rows))
-                return rows, sql_count, total_sql_time
-        except Exception as e:
-            if "fulltext" in str(e).lower():
-                logger.warning("[FULLTEXT_MISSING] db=%s table=%s: %s", _CLEAN_DB, table_name, e)
-            else:
-                logger.debug("检索链阶段 %s 查询失败 %s.%s: %s", label, _CLEAN_DB, table_name, e)
-
-    if len(keywords) > 1:
-        split_rows: list[dict[str, Any]] = []
-        seen_ids: set[str] = set()
-        for kw in keywords[:3]:
-            retry_sql = _build_candidate_sql(
-                table_name,
-                classification,
-                replace(intent, semantic_keywords=[kw]),
-                include_exact_tokens=False,
-            )
-            if retry_sql is not None:
-                try:
-                    rows, elapsed = _execute_sql_with_timeout(conn, retry_sql[0], retry_sql[1], table_name, f"FULLTEXT_RETRY_{kw}")
-                    total_sql_time += elapsed
-                    sql_count += 1
-                    for row in rows:
-                        row_id = str(row.get("_id_", ""))
-                        if row_id and row_id not in seen_ids:
-                            row["_recall_stage_"] = 4
-                            split_rows.append(row)
-                            seen_ids.add(row_id)
-                except Exception as e:
-                    logger.debug("逐关键词 FULLTEXT 重试失败 %s.%s: %s", _CLEAN_DB, table_name, e)
-
-            like_retry = _build_like_fallback_sql(
-                table_name,
-                classification,
-                replace(intent, semantic_keywords=[kw]),
-            )
-            if like_retry is not None:
-                try:
-                    rows, elapsed = _execute_sql_with_timeout(conn, like_retry[0], like_retry[1], table_name, f"LIKE_RETRY_{kw}")
-                    total_sql_time += elapsed
-                    sql_count += 1
-                    for row in rows:
-                        row_id = str(row.get("_id_", ""))
-                        if row_id and row_id not in seen_ids:
-                            row["_recall_stage_"] = 4
-                            split_rows.append(row)
-                            seen_ids.add(row_id)
-                except Exception as e:
-                    logger.debug("逐关键词 LIKE 重试失败 %s.%s: %s", _CLEAN_DB, table_name, e)
-
-        if split_rows:
-            logger.info("[RECALL_CHAIN] table=%s stage=SPLIT_KEYWORD rows=%d", table_name, len(split_rows))
-            return split_rows, sql_count, total_sql_time
-
-    full_scan = _build_full_scan_sql(table_name, classification, intent)
-    if full_scan is not None:
-        try:
-            rows, elapsed = _execute_sql_with_timeout(conn, full_scan[0], full_scan[1], table_name, "FULL_SCAN")
-            total_sql_time += elapsed
-            sql_count += 1
-            if rows:
-                for row in rows:
-                    row["_recall_stage_"] = 5
-                logger.info("[RECALL_CHAIN] table=%s stage=FULL_SCAN rows=%d", table_name, len(rows))
-                return rows, sql_count, total_sql_time
-        except Exception as e:
-            logger.debug("全表扫描兜底失败 %s.%s: %s", _CLEAN_DB, table_name, e)
-
-    return [], sql_count, total_sql_time
+    stats = {"sql_count": 0, "sql_time": 0.0}
+    settings = _get_settings()
+    stages = build_recall_stages(table_name, classification, intent, stats)
+    pipeline = RecallPipeline(
+        stages,
+        deadline_ms=settings.price_recall_deadline_ms,
+        allow_scan=settings.price_allow_full_scan,
+    )
+    outcome = pipeline.run({"conn": conn})
+    return outcome.rows, stats["sql_count"], stats["sql_time"]
 
 def _log_recall_funnel(
     conn: pymysql.Connection,
