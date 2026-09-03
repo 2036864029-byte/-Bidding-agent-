@@ -40,8 +40,9 @@ _SEEDED = False
 
 
 def _node_entries() -> dict[str, Callable[[AgentState], dict]]:
-    """惰性返回 5 个既有节点入口（避免 agent.nodes 顶层循环 import）。"""
+    """惰性返回既有节点入口（避免 agent.nodes 顶层循环 import）。"""
     from agent.nodes import (  # noqa: PLC0415
+        node_doc_agent,
         node_doc_qa,
         node_fallback,
         node_general_chat,
@@ -54,6 +55,7 @@ def _node_entries() -> dict[str, Callable[[AgentState], dict]]:
         "price_inquiry": node_price_inquiry,
         "general_chat": node_general_chat,
         "doc_qa": node_doc_qa,
+        "doc_agent": node_doc_agent,
         "fallback": node_fallback,
     }
 

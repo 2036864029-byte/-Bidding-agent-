@@ -33,3 +33,8 @@ slots:
     model: null
     temperature: 0.0
     note: price_inquiry 意图/槽位解析（temperature=0 保证确定性）
+  doc_agent:
+    provider: deepseek
+    model: null
+    temperature: 0.0
+    note: doc_agent 工具驱动 agent（P6 Step 3；工具选择需确定性，temperature=0）

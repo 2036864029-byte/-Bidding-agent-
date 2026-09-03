@@ -4,6 +4,7 @@ from .knowledge_qa import node_knowledge_qa
 from .price_inquiry import node_price_inquiry
 from .general_chat import node_general_chat
 from .doc_qa import node_doc_qa
+from .doc_agent import node_doc_agent
 from .fallback import node_fallback
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "node_price_inquiry",
     "node_general_chat",
     "node_doc_qa",
+    "node_doc_agent",
     "node_fallback",
 ]

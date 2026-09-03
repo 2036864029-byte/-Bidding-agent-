@@ -154,7 +154,27 @@ def _seed_echo_demo() -> CapabilitySpec:
     )
 
 
-# 进程级默认注册表（惰性 seed：5 内置 enabled + echo_demo 预留 disabled）
+def _seed_doc_agent() -> CapabilitySpec:
+    """doc_agent（P6 Step 3 工具化复用验证；enabled=False 预留）。
+
+    工具形态复用 kb_search_as_tool + price_query_as_tool；路由给真实用户需先
+    数据清理 + router golden 重生成（见附录 H 执行状态）。
+    """
+    return CapabilitySpec(
+        id="doc_agent", node="doc_agent",
+        description="工具驱动 agent（kb_search + price_query 组合，P6 验证预留）",
+        route_desc="文档/法规与数据综合问答：知识检索、政策解释、结构化查询组合",
+        route_tool_doc=(
+            "文档与数据综合问答：需要同时结合法规知识与结构化业务数据的复杂问题，"
+            "或纯知识/纯数据均可的工具化回答。"
+        ),
+        examples=["查一下这个法规怎么规定的"],
+        model_slots=["doc_agent"], tools=["kb_search", "price_query"],
+        enabled=False,
+    )
+
+
+# 进程级默认注册表（惰性 seed：5 内置 enabled + echo_demo/doc_agent 预留 disabled）
 _default_registry: Optional[CapabilityRegistry] = None
 
 
@@ -165,6 +185,7 @@ def get_default_registry() -> CapabilityRegistry:
         reg = CapabilityRegistry()
         seed_builtins(reg)
         reg.register(_seed_echo_demo())
+        reg.register(_seed_doc_agent())
         _default_registry = reg
     return _default_registry
 

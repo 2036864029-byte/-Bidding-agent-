@@ -93,8 +93,8 @@ def test_db_pool_old_path_shares_core_objects():
     assert legacy_settings() is not None
 
 
-def test_models_yaml_three_slots():
-    """A-2：models.yaml 声明 3 个实际调用点，general_chat 无槽位。"""
+def test_models_yaml_declared_slots():
+    """A-2：models.yaml 声明实际调用点槽位（3 基础 + P6 Step3 doc_agent），general_chat 无槽位。"""
     from core.llm.registry import available_slots
 
-    assert available_slots() == ["router", "kb_generation", "price_intent"]
+    assert available_slots() == ["router", "kb_generation", "price_intent", "doc_agent"]

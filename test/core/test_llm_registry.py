@@ -54,9 +54,9 @@ def _install_synth_config(monkeypatch):
     monkeypatch.setattr(registry, "_PROVIDERS", {"fake": FakeProvider})
 
 
-def test_slots_declared_match_plan_three_call_points():
-    """P0 只保留三个实际 LLM 调用点；general_chat 不调 LLM 故无槽位。"""
-    assert registry.available_slots() == ["router", "kb_generation", "price_intent"]
+def test_slots_declared_match_plan_call_points():
+    """P0 三个实际 LLM 调用点 + P6 Step3 doc_agent 槽位；general_chat 不调 LLM 故无槽位。"""
+    assert registry.available_slots() == ["router", "kb_generation", "price_intent", "doc_agent"]
 
 
 def test_get_slot_config_merges_defaults():
