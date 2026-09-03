@@ -602,5 +602,7 @@ ztb_demo/
 `--resume` 成功；csv table IR 可被 price 侧消费示例；旧 `pipeline_legacy` + `--legacy`
 回滚可用。
 
-> **P5 执行状态**：启动 2026-09-03，E-1 起按序推进。
+> **P5 执行状态（2026-09-03）**：✅ E-1~E-3（IR 建模/FormatRouter/IngestLedger，18 用例，
+> 全量 465 passed）；✅ E-4~E-6（Normalizer ABC + text 直通 + csv 双 IR：table 摘要供
+> SQL 路 + 行块语义供向量路，7 用例，全量 472 passed）。E-7（pdf 收敛）起按序推进。
 
