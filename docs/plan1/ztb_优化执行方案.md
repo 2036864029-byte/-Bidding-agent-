@@ -612,3 +612,51 @@ ztb_demo/
 > 全量 **497 passed**。P5 完成态判据满足：pytest 全绿；幂等/续跑/table IR 消费均有离线用例；
 > 旧 pipeline_legacy + --legacy 回滚可用。
 
+---
+
+## 附录 F：Phase 6 文件级任务清单（Supervisor 多 Agent，滚动式展开 2026-09-03）
+
+> **P6 目标**：Supervisor 形态上线，与单图模式灰度并行（§5 Phase 6）。本附录先展开
+> **第一步：子图化**——knowledge_qa / price_inquiry 两能力节点的 entry 换成 compiled
+> subgraph，为 supervisor 主图（第二步）提供「agent = 子图」的可调度单元。后续步骤
+> （supervisor 三级路由 / doc_agent / AGENT_MODE 灰度 / 记忆）按滚动式细化（§0-7）在各自
+> 启动前再展开。
+>
+> **P6 前置事实（已核实）**：langgraph **1.2.11**（requirements 锁 `<2.0`）完整支持
+> subgraph-as-node（父图 `add_node(name, compiled_subgraph)`）+ 子图状态命名空间隔离
+> （子图独有通道只在子图作用域内读写，与父图共享的 `messages`/`business_result` 自动合并回
+> 父图）+ 节点 `(state, config)` 双参签名（LangGraph 自动注入 config）。**本地实库已就绪**
+> （P3 备注），price golden 可实跑对拍。`orchestration/` 尚未建立（本步不建，属第二步）。
+>
+> **关键设计决策（沿用既有约束）**：
+> - **子图内部状态与 AgentState 解耦**：`KnowledgeQaState` / `PriceSubgraphState` 只定义在
+>   各自能力包子图内；子图独有键（`qa_retrieval`/`qa_attempts`/`qa_feedback` 等）经 langgraph
+>   命名空间隔离，**AgentState 不加任何分支字段**——与 `state.py:5-9` 明示设计原则一致；
+>   P4-2 State 分层继续推迟（P6 步骤 5 的 handoff 上下文经 messages 传递，复用 checkpointer）。
+> - **NodeSpec.entry 保持 `(state, config=None) -> dict`**：节点入口内部 invoke compiled
+>   subgraph 并转发 config（thread_id）；`graph.py` 接线、`_with_fallback` 兜底、registry 零
+>   改动——为「新 agent 接入 ≤1 spec + 1 子图目录」确立模板。
+> - **守卫/超时/引导不因子图化丢失**：price 的 D-5 保留清单（product 边界 / P0-11 / P0-12 /
+>   双超时 / POST_GUARD）全部成为子图内部节点与条件边，一个不落。
+> - **重试循环是唯一行为增量**：knowledge 子图引入护栏失败→带反馈重生成（≤1 次，总 ≤2 次），
+>   其余分支与现链逐键等价；Settings 开关 `kb_guardrail_retry`（默认 true）可即时关闭。
+> - **checkpointer**：子图不编译自带 saver，随父图 thread_id 运行（config 转发）；P6 记忆
+>   （步骤 5）复用现有机制。
+>
+> **执行顺序**：F-1~F-3（knowledge，离线安全）→ F-4（price，需实库对拍）→ F-5（守卫与测试
+> 同步）。每项一个 commit，全绿过门。
+
+| # | 目标文件 | 动作 | 要点 / 验证 |
+|---|---|---|---|
+| F-1 | `agent/nodes/knowledge_qa/subgraph.py` | 新建 | `KnowledgeQaState`（共享 `messages`/`business_result` + 子图独有 `qa_retrieval`/`qa_raw_answer`/`qa_feedback`）+ `build_knowledge_qa_subgraph()` → compiled subgraph（**不带** checkpointer）。内部节点：`retrieve`（调 `kb_search`）/ `generate`（prompt\|llm\|parser，槽位 kb_generation）/ `guardrail`（`CitationValidator`）/ `refuse`（空检索拒答，复用 `_REFUSAL_ANSWER`）；条件边：retrieve 空 → refuse，否则 → generate → guardrail → END。终态节点写 `business_result`+`messages`（与 `node._run_tool_node` 现封装同构）。**本步不加重试**（重试 = F-3）；`chain.py` 保留为对拍基准。首个 commit 可先落一个子图能力探针测试（验证命名空间隔离 + config 转发），降低后续风险。验证：mock kb_search/llm，子图输出与 `chain.answer_knowledge` 在相同 fixtures 上**逐键等价**（answer/sources/citations/citation_validation/retrieval_diagnostics + messages） |
+| F-2 | `agent/nodes/knowledge_qa/node.py` + `agent/graph.py` | 改 | `node_knowledge_qa` 升级签名 `(state, config=None)`：工具路径主调 `subgraph.invoke(state, config=config)`，返回子图共享通道终态；legacy 路径不动（`USE_TOOL_KB` 开关语义不变）。`_with_fallback`（`graph.py:48-96`）改 `wrapped(state, config=None)` 透传 config（LangGraph 按签名自动注入双参）。验证：mock fixtures 上经 node 入口行为与改造前逐键一致；`python -m agent` 与 `python -m api.cli` 双入口冒烟一致 |
+| F-3 | `agent/nodes/knowledge_qa/subgraph.py` + `core/config/settings.py` | 改 | 重试循环：guardrail 失败 → 把校验失败原因（report 未过项）注入 prompt 作「修改要求」反馈 → `generate` 重跑（总 ≤2 次）；仍失败返回答案 + `citation_validation` 报告（现状语义，不无限重试）。Settings 增 `kb_guardrail_retry: bool = True`。`chain.py` 标注 deprecated（保留一个 Phase，P6 验收后删）。验证：新增测试——护栏失败→重试成功、重试仍失败→返回报告且 attempts=2、空检索拒答不触发重试 |
+| F-4 | `agent/nodes/price_inquiry/subgraph.py` | 新建 | price 子图化。`PriceSubgraphState` + 内部节点：`parse_intent`（LLM 意图解析 + enum 归一 + LLM 60% 超时检查 `node.py:280-298`）→ `guard_entity`（product 边界 / P0-11 三层 / P0-12 修正与注入 `node.py:205-275`，多出口条件边 → 共享 `guidance` 终态节点）→ `run_query`（线程池 `_sql_executor` + remaining_timeout `node.py:300-338`，SQL 超时独立终态）→ `post_guard`（bidding/company 后置校验 `node.py:348-407`）→ `render`（output_template 筛选 + answer_templates 渲染 `node.py:409-499`）。**D-5 保留清单全部成为子图内部节点**；`node_price_inquiry` 薄化为子图入口（同 F-2 config 转发）。验证：**price golden 13 题 before/after 0/104 字段差异保持**（本地实库）；企业详情/中标历史/项目编号 L4 冒烟；全量 pytest |
+| F-5 | 测试与守卫 | 新增/更新 | 新增 `test/agent/test_knowledge_qa_subgraph.py`（节点序列 / 拒答 / 护栏失败 / 重试上限 / 终态 business_result 结构）；`test/price_engine/test_price_subgraph.py`（守卫出口矩阵：product/裸实体/无实体/project_detail_no_number/POST_GUARD 各出口 business_result 与现节点逐键一致）。更新 `test/test_public_kb_layout.py`（禁区清单覆盖 subgraph.py——走 `public_kb.tools` 天然满足；新增子图布局断言防回潮）、`test_no_reverse_dep.py`（若适用）；`test_knowledge_qa_tool.py` 改指子图路径。运行 `scripts/run_knowledge_parity_smoke.py`（book2 本地对拍 harness）before/after 均一致 |
+
+**P6 Step 1 完成态判据**：`pytest test/` 全绿（497 + 新增）；knowledge 子图在 mock fixtures
+与现链逐键等价，重试仅改变护栏失败分支且指标不降；price golden before/after 0 字段差异；
+harness 对拍一致；CLI 双入口冒烟一致；`USE_TOOL_KB` / legacy 路径不受影响。
+**回滚**：F-1/F-2 单 commit 可 revert（chain.py/node.py 原实现保留一个 Phase）；F-3 关
+`kb_guardrail_retry=false` 即时回退；F-4 回滚 = 保留 node.py 单函数实现一个 Phase。
+
