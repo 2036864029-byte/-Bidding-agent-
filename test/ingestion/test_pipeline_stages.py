@@ -117,3 +117,39 @@ def test_missing_file_fails(tmp_path):
     )[0]
     assert res.status == "failed"
     assert res.reason
+
+
+# ── E-9：MilvusSink 经 chunk_uid 幂等（同批两次入库向量数不变） ──
+
+class _DedupManager:
+    """按 chunk_uid 判重（镜像 MilvusStoreManager.add_documents 语义）。"""
+
+    def __init__(self) -> None:
+        self.seen: set[str] = set()
+
+    def add_documents(self, documents):
+        from public_kb.chunk_ids import compute_chunk_uid
+
+        inserted = 0
+        for doc in documents:
+            uid = doc.metadata.get("chunk_uid") or compute_chunk_uid(
+                doc.page_content, doc.metadata
+            )
+            if uid not in self.seen:
+                self.seen.add(uid)
+                inserted += 1
+        return inserted
+
+
+def test_pipeline_milvus_sink_idempotent_by_chunk_uid(tmp_path):
+    from public_kb.ingestion.sinks.milvus_sink import MilvusSink
+
+    p = tmp_path / "note.md"
+    p.write_text("# 标题\n这是足够长的正文内容说明，用于幂等验证。", encoding="utf-8")
+    mgr = _DedupManager()
+    pipe = FileIngestionPipeline(_settings(), sink=MilvusSink(mgr, mode="append"))
+    first = pipe.run([p])[0]
+    assert first.status == "completed" and first.inserted_count >= 1
+    second = pipe.run([p])[0]
+    assert second.status == "completed"
+    assert second.inserted_count == 0  # chunk_uid 判重 → 全部跳过（向量数不变）
