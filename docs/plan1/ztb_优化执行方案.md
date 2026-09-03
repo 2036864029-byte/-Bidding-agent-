@@ -632,7 +632,15 @@ ztb_demo/
 > - ✅ `test/test_cloud_sync.py` 内置 `pytest.importorskip` 自动跳过，`pytest test/` 全量干净
 >   （564 passed + 1 skipped），`--ignore` 变通不再需要。
 > - ✅ **A-8**：chunk 契约 + milvus_store 上提 core（`core/contracts/` + `core/vectorstore/
->   milvus_client.py`），re-export 壳保兼容；core 反向依赖解净。
+>   milvus_client.py`），core 反向依赖解净。
+> - ✅ **兼容壳全量清除（2026-09-03）**：删除 13 个 re-export 壳——`public_kb/config.py`、
+>   `services/{llm,embeddings,milvus_store}.py`、`rag_engine.py`、`qa_chain.py`、
+>   `generation/{citations,context}.py`、`contracts.py`、`chunk_ids.py`、
+>   `agent/nodes/{answer_templates,output_templates}.py`、`agent/nodes/price_inquiry/db.py`；
+>   消费方（public_kb 内部 + scripts + tests）全切 `core.*` / `public_kb.guardrails` /
+>   `price_engine.rendering` 真身。`guardrails/__init__` 补为规范门面；`test_legacy_path_allowlist`
+>   改写为「壳不得回潮」正面守卫。**public_kb 顶层仅剩 5 个真身文件**（__init__/__main__/engine/
+>   schema_registry/tools.py），无任何兼容壳残留。
 
 ---
 
