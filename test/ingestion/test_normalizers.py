@@ -11,6 +11,7 @@ import pytest
 from public_kb.ingestion.ir import NormalizedDocument
 from public_kb.ingestion.normalizers import (
     CsvNormalizer,
+    PdfNormalizer,
     TextNormalizer,
     build_normalizer,
 )
@@ -103,7 +104,32 @@ def test_csv_missing_file_returns_empty(tmp_path):
 def test_build_normalizer_dispatch():
     assert isinstance(build_normalizer("text"), TextNormalizer)
     assert isinstance(build_normalizer("csv"), CsvNormalizer)
-    with pytest.raises(NotImplementedError):
-        build_normalizer("pdf")
+    assert isinstance(build_normalizer("pdf"), PdfNormalizer)
     with pytest.raises(ValueError):
         build_normalizer("unknown")
+
+
+# ── E-7 PdfNormalizer（注入 fake parser，不触 MinerU） ─────
+
+def test_pdf_normalizer_with_injected_parser(tmp_path):
+    from public_kb.ingestion.normalizers.pdf.normalizer import PdfNormalizer
+
+    p = tmp_path / "a.pdf"
+    p.write_bytes(b"%PDF fake")
+    routed = FormatRouter().route(p)
+    norm = PdfNormalizer(parser=_FakeParser("# 标题\n解析正文"))
+    docs = norm.normalize(routed)
+    assert len(docs) == 1
+    doc = docs[0]
+    assert doc.ir_format == "markdown"
+    assert doc.content == "# 标题\n解析正文"
+    assert doc.metadata["quality_score"] == 1.0
+    assert doc.metadata["parser_version"] == "pdf/v1"
+
+
+class _FakeParser:
+    def __init__(self, markdown: str) -> None:
+        self._md = markdown
+
+    def parse(self, path):  # noqa: ARG002
+        return self._md

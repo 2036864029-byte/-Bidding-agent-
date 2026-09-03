@@ -55,8 +55,10 @@ ALLOWED_CONSUMERS: dict[str, set[str]] = {
         "public_kb.ingestion.cli",
         "public_kb.ingestion.handoff",
         "public_kb.ingestion.parser_factory",
-        "public_kb.ingestion.transforms.pdf_mineru_router",
-        "public_kb.ingestion.transforms.pdf_router",
+        # E-7：pdf_* 已收敛至 normalizers/pdf/（旧 transforms 路径改镜像壳）
+        "public_kb.ingestion.normalizers.pdf.normalizer",
+        "public_kb.ingestion.normalizers.pdf.pdf_mineru_router",
+        "public_kb.ingestion.normalizers.pdf.pdf_router",
         "public_kb.qa_chain",
         "public_kb.engine",  # B-5: rag_engine -> engine
         "public_kb.retrieval.fallback",
