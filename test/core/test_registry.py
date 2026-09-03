@@ -12,6 +12,7 @@ from agent.registry import (
     CapabilitySpec,
     get_default_registry,
     reset_default_registry,
+    seed_builtins,
 )
 
 
@@ -24,6 +25,15 @@ def test_default_registry_has_five_builtin_plus_echo():
     assert len(reg.all()) == 6
 
 
+def test_default_enabled_candidates_equal_five_builtins():
+    """L2 门禁：router 候选集 = 现有 5 分支（echo_demo 预留默认 disabled）。"""
+    reset_default_registry()
+    reg = get_default_registry()
+    enabled = [s.id for s in reg.enabled_specs()]
+    assert enabled == ["knowledge_qa", "price_inquiry", "general_chat", "doc_qa", "fallback"]
+    assert not reg.get("echo_demo").enabled
+
+
 def test_capability_spec_fields():
     reg = get_default_registry()
     kq = reg.get("knowledge_qa")
@@ -32,6 +42,19 @@ def test_capability_spec_fields():
     assert "kb_search" in kq.tools
     echo = reg.get("echo_demo")
     assert echo.description.startswith("回显演示")
+    assert echo.graph_node == "echo_demo"
+
+
+def test_route_copy_present_for_builtins():
+    """每个 enabled 能力都带路由原文（system prompt 条目 + tool 描述 + 示例）。"""
+    reg = get_default_registry()
+    for spec in reg.enabled_specs():
+        assert spec.route_desc, f"{spec.id} 缺 route_desc"
+        assert spec.route_tool_doc, f"{spec.id} 缺 route_tool_doc"
+    price = reg.get("price_inquiry")
+    assert len(price.examples) == 3
+    assert price.route_desc.startswith("结构化业务数据查询")
+    assert price.route_tool_doc.startswith("结构化业务数据查询（三大核心能力）")
 
 
 def test_register_overwrite_and_lookup():
@@ -40,6 +63,21 @@ def test_register_overwrite_and_lookup():
     assert reg.get("x").node == "x"
     reg.register(CapabilitySpec(id="x", node="y", description="x"))
     assert reg.get("x").node == "y"  # 覆盖
+
+
+def test_graph_node_defaults_to_id():
+    reg = CapabilityRegistry()
+    reg.register(CapabilitySpec(id="x", description="x"))
+    assert reg.get("x").graph_node == "x"
+
+
+def test_seed_builtins_reusable_on_fresh_registry():
+    """seed_builtins 可在任意注册表复刻默认候选集（demo/测试用）。"""
+    reg = CapabilityRegistry()
+    seed_builtins(reg)
+    assert [s.id for s in reg.enabled_specs()] == [
+        "knowledge_qa", "price_inquiry", "general_chat", "doc_qa", "fallback",
+    ]
 
 
 def test_builtin_nodespecs_have_callable_entries():
