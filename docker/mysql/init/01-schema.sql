@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS `company_info` (
     INDEX `idx_company_level` (`company_level`),
     INDEX `idx_business_status` (`business_status`),
     INDEX `idx_registered_capital_amount` (`registered_capital_amount_cny`),
-    INDEX `idx_company_name` (`company_name`)
+    INDEX `idx_company_name` (`company_name`),
+    -- 中文 ngram 全文索引（price recall 候选集 MATCH 依赖，schema.py 语义列）
+    FULLTEXT INDEX `ft_semantic` (`company_name`, `business_scope`, `industry`, `address`) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='企业工商信息表';
 
@@ -55,7 +57,7 @@ CREATE TABLE IF NOT EXISTS `company_penalty` (
     INDEX `idx_company_name` (`company_name`),
     INDEX `idx_credit_code` (`credit_code`),
     INDEX `idx_penalty_date` (`penalty_date`),
-    FULLTEXT INDEX `ft_penalty_semantic` (`company_name`, `illegal_behavior`, `penalty_result`)
+    FULLTEXT INDEX `ft_penalty_semantic` (`company_name`, `illegal_behavior`, `penalty_result`) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='企业处罚信息表';
 
@@ -120,6 +122,8 @@ CREATE TABLE IF NOT EXISTS `bid_project` (
     INDEX `idx_project_stage` (`project_stage`),
     INDEX `idx_publish_date` (`publish_date`),
     INDEX `idx_project_category` (`project_category`),
-    INDEX `idx_project_name` (`project_name`)
+    INDEX `idx_project_name` (`project_name`),
+    -- 中文 ngram 全文索引（P0-11 白名单：仅 purchaser/successful_bidder 检索）
+    FULLTEXT INDEX `ft_semantic` (`purchaser`, `successful_bidder`) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='招标项目交易记录表';
