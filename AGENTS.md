@@ -80,7 +80,7 @@ def node_xxx(state: AgentState) -> dict:
                 "messages": [AIMessage(content=str)]}"""
 ```
 
-When adding a new branch: (1) create `agent/nodes/new_branch.py`, (2) add the Literal to `RouterIntent` in `router.py`, (3) add a routing tool, (4) register in `graph.py`. State definition and other nodes remain untouched.
+When adding a new branch (P4 起，router/graph 由 `agent/registry.py` CapabilityRegistry 数据驱动): (1) create `agent/nodes/new_branch.py` implementing the `(AgentState) -> dict` interface, (2) register its entry via `agent.nodes.base.register()` if not one of the built-in five, (3) register an `enabled` `CapabilitySpec` in `agent/registry.py` with routing copy (`route_desc` / `route_tool_doc` / `examples`). Router/graph auto-adopt; do NOT edit `router.py` / `graph.py`. State definition and other nodes remain untouched.
 
 ## Key constraints
 

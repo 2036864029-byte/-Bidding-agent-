@@ -350,7 +350,23 @@ ztb_demo/
 
 **回滚**：registry 数据驱动，摘除 spec 即回退。
 
-> **P4 执行状态（2026-09-02）**：✅ P4-1 NodeSpec 协议（agent/nodes/base.py，5 节点内置 spec）+ P4-3 声明层 CapabilityRegistry（agent/registry.py：内置 5 能力 + echo_demo 预留，进程级默认注册表）。router/graph **动态化接线未做**（属行为步骤，须 router 意图集验证后单独推进）。全量 420 passed。
+> **P4 执行状态（2026-09-03，完成）**：
+> - ✅ P4-1 NodeSpec 协议 + P4-3 声明层（2026-09-02，见上一行）。
+> - ✅ **P4 动态化接线（router/graph，字节等价 + L3 验证，09-03）**：CapabilitySpec 增
+>   `route_desc / route_tool_doc / examples / enabled`（路由原文下沉为 registry 数据，
+>   `enabled=False`=预留防误路由）；`router.py` 删 RouterIntent/5 个 route_* tool/
+>   `_TOOL_INTENT_MAP`/`ROUTER_SYSTEM_PROMPT`，改由 `build_system_prompt /
+>   build_route_tools / build_decision_model(动态 Literal) / build_router_node(llm, registry=)`
+>   生成；`graph.py` 按 `registry.enabled_specs()` 动态建节点与条件边（base.py 增
+>   `register/get_node_spec` 节点存储）。echo_demo 登记 enabled + 注册 entry 即接入
+>   （test_p4_dynamic_wiring 6 用例离线证明零改 router/graph）。
+> - ✅ **L1 434 passed**；✅ **L2 门禁**：默认 enabled 候选集 == 现有 5 分支。
+> - ✅ **L3**：`test/core/test_router_byte_equivalence.py` 断言生成器输出 == 改动前冻结
+>   真值 `test/golden/`（系统提示 + 5 tool 逐字节）；live 33 题 before/after 逐题一致
+>   100%，accuracy 93.94% 持平（数据集 `eval/router_intent_set.json`）。
+> - ✅ L4 冒烟：general_chat / knowledge_qa 走通（price 分支待实库，见 P3）。
+> - ⏸️ **P4-2 State 分层推迟 P6**：与 state.py 明示设计原则（共享 TypedDict 不加分支
+>   字段）相悖，且属 §7 中风险（checkpointer 历史会话）；R8 随 P6 子图化自然引入分层。
 
 ---
 

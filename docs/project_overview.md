@@ -271,15 +271,17 @@ agent/
 | 文件 | 核心职责 | 关键函数/类 |
 |------|---------|------------|
 | [state.py](file:///d:/DEMO/zhaotoubiao_demo/agent/state.py) | 定义通用 `AgentState`，所有分支共享 | `AgentState(TypedDict)`: `messages`, `router_intent`, `business_result` |
-| [router.py](file:///d:/DEMO/zhaotoubiao_demo/agent/router.py) | LLM 意图分类，将用户问题路由到对应业务节点 | `RouterDecision`, `_route_via_structured_output()`, `_route_via_tool_calling()`, `build_router_node()` |
-| [graph.py](file:///d:/DEMO/zhaotoubiao_demo/agent/graph.py) | 构建 StateGraph，注册节点与条件边 | `build_graph()`, `_with_fallback()`, `AgentGraph` |
+| [registry.py](file:///d:/DEMO/zhaotoubiao_demo/agent/registry.py) | **能力登记单一来源（P4 起）**：候选枚举/路由原文/接线开关 | `CapabilitySpec`（含 `route_desc`/`route_tool_doc`/`examples`/`enabled`）, `CapabilityRegistry`, `seed_builtins()` |
+| [nodes/base.py](file:///d:/DEMO/zhaotoubiao_demo/agent/nodes/base.py) | NodeSpec 协议 + 节点 entry 登记存储 | `NodeSpec`, `register()`, `get_node_spec()`, `all_specs()` |
+| [router.py](file:///d:/DEMO/zhaotoubiao_demo/agent/router.py) | LLM 意图分类，将用户问题路由到对应业务节点；**候选集由 registry 动态生成**（无硬编码枚举/tool/prompt） | `build_router_node(llm, registry=)`, `build_system_prompt()`, `build_route_tools()`, `build_decision_model()`, `_route_via_structured_output()`, `_route_via_tool_calling()` |
+| [graph.py](file:///d:/DEMO/zhaotoubiao_demo/agent/graph.py) | 构建 StateGraph；**节点与条件边按 registry enabled 能力动态注册** | `build_graph(..., registry=)`, `_with_fallback()`, `AgentGraph` |
 | [checkpointer.py](file:///d:/DEMO/zhaotoubiao_demo/agent/checkpointer.py) | 对话记忆持久化抽象层 | `create_checkpointer(backend)`: 支持 memory/sqlite/postgres/redis |
 | [price_inquiry/](file:///d:/DEMO/zhaotoubiao_demo/agent/nodes/price_inquiry/) | **智能询价包**（2026-08-15 由 3,152 行单文件拆为 11 模块）：意图解析（含项目编号检测）→ 子路由（company/bidding/all）→ 多级降级检索（Milvus 语义 + OR FULLTEXT + LIKE 回退 + 逐关键词拆分 + 全表兜底）→ 混合重排序 → 二次回表补列 → 模板渲染；三层查询守卫 + 后置回溯校验防模糊匹配（P0-11/P0-12，见 §4.4） | `node_price_inquiry()`（[node.py](file:///d:/DEMO/zhaotoubiao_demo/agent/nodes/price_inquiry/node.py)）、`_extract_project_number_candidate()` / `_has_valid_query_entity()`（[intent.py](file:///d:/DEMO/zhaotoubiao_demo/agent/nodes/price_inquiry/intent.py)）、`_execute_recall_chain_core()` / `_rank_records()`（[recall.py](file:///d:/DEMO/zhaotoubiao_demo/agent/nodes/price_inquiry/recall.py)） |
-| [knowledge_qa.py](file:///d:/DEMO/zhaotoubiao_demo/agent/nodes/knowledge_qa.py) | 对接 `public_kb` RAG 引擎（惰性单例 + `ensure_loaded()` 显式加载） | `_get_rag()`, `node_knowledge_qa()` |
+| [knowledge_qa/](file:///d:/DEMO/zhaotoubiao_demo/agent/nodes/knowledge_qa/) | 对接 `public_kb` RAG（B-4 拆包：node/legacy/chain/prompts） | `node_knowledge_qa()` |
 | [answer_templates.py](file:///d:/DEMO/zhaotoubiao_demo/agent/nodes/answer_templates.py) | 自然语言回答模板引擎，分 query_type 渲染回答 | `AnswerTemplate`, `render_answer()` |
 | [output_templates.py](file:///d:/DEMO/zhaotoubiao_demo/agent/nodes/output_templates.py) | 字段筛选声明式配置 | `FieldDescriptor`, `OutputTemplate` |
 
-**路由意图枚举**（`RouterIntent`）：
+**路由意图**（值域 = CapabilityRegistry enabled 能力 id，非枚举常量；router.py 按 registry 动态生成候选）：
 - `knowledge_qa` → 专业知识问答（法律法规、流程、规则）
 - `price_inquiry` → 历史中标价格/企业情报/处罚记录查询
 - `general_chat` → 问候、自我介绍、功能咨询

@@ -337,11 +337,19 @@ git branch -d feat/xxx              # -d 安全（未合并会拒绝）；-D 强
 
 适用：新增一种业务能力（比如"中标候选人分析"）
 
+> P4 起 router/graph 已由 `agent/registry.py` CapabilityRegistry 数据驱动，不再改
+> `router.py` 的 `RouterIntent` / routing tool / `graph.py` 注册点——候选枚举、
+> `route_*` tool、系统提示、图节点与条件边全部由 registry 生成。
+
 1. 创建文件 `agent/nodes/bid_candidate.py`，实现 `(AgentState) -> dict` 接口
-2. 在 `agent/router.py` 的 `RouterIntent` Literal 加新值
-3. 在 `agent/router.py` 加对应的 routing tool
-4. 在 `agent/graph.py` 注册新节点 + 路由分支
-5. 写测试 `test/test_bid_candidate.py`
+2. 若节点入口不在既有 5 个（knowledge_qa/price_inquiry/general_chat/doc_qa/fallback），
+   用 `agent.nodes.base.register("bid_candidate", node_bid_candidate)` 登记 entry
+3. 在 `agent/registry.py` 登记一个 `enabled=True` 的 `CapabilitySpec`，带该能力自己的
+   路由原文：`route_desc`（系统提示条目）、`route_tool_doc`（路由 tool 描述）、
+   `examples`（few-shot 提问）——router/graph 自动接入
+4. 写测试 `test/test_bid_candidate.py`
+5. 验证：`pytest` 全绿；router 意图集（`scripts/run_router_intent_eval.py`）不降；
+   新增能力的关键词补入 `eval/router_intent_set.json` 后重跑
 6. 跑 `pytest test/ -v`
 
 详见 [CLAUDE.md §Node interface contract](CLAUDE.md)。

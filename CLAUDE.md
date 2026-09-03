@@ -47,9 +47,10 @@ The system has two independent packages connected by a thin contract:
 
 ### `agent/` — LangGraph StateGraph skeleton
 
-- **`graph.py`**: Builds and compiles the StateGraph. All business nodes are wrapped in `_with_fallback()` — any unhandled exception returns a friendly degradation message instead of crashing. The `AgentGraph` class is the public entry point.
-- **`state.py`**: Single `AgentState(TypedDict)` with three fields: `messages` (Annotated list with `add_messages` reducer for ID dedup), `router_intent` (str enum), `business_result` (generic dict). All branches share this same state — new branches do NOT add fields.
-- **`router.py`**: LLM-based intent classifier. Tries `with_structured_output(RouterDecision)` first; falls back to Tool Calling if the API doesn't support it. Carries the last 3 conversation turns for context-aware routing. All failures → `fallback`.
+- **`registry.py`** + **`nodes/base.py`**: **新增能力的单一登记点（P4 起）**。`CapabilityRegistry` 持有 `CapabilitySpec{id, node, route_desc, route_tool_doc, examples, model_slots, tools, enabled}`；`enabled=False` = 声明但预留（如 echo_demo）。`nodes/base.py` 提供 NodeSpec + `register/get_node_spec` 节点 entry 存储。新增能力 = registry 登记 enabled spec + base 登记 entry，router/graph 自动接入，**不再改 router.py / graph.py**。
+- **`router.py`**: LLM-based intent classifier, **candidate set fully generated from the registry** — no hardcoded `RouterIntent`/route tools/prompt. Builds per-registry tools (`route_*`), a dynamic decision model (`Literal` over enabled ids), and the system prompt from each capability's routing copy. Tries `with_structured_output` first; falls back to Tool Calling if the API doesn't support it. Carries the last 3 conversation turns for context-aware routing. All failures → `fallback`.
+- **`graph.py`**: Builds and compiles the StateGraph. **Nodes and conditional edges are registered dynamically from `registry.enabled_specs()`** (entries resolved via `nodes.base.get_node_spec`). All business nodes are wrapped in `_with_fallback()` — any unhandled exception returns a friendly degradation message instead of crashing. The `AgentGraph` class is the public entry point.
+- **`state.py`**: Single `AgentState(TypedDict)` with three fields: `messages` (Annotated list with `add_messages` reducer for ID dedup), `router_intent` (str; value domain = registry enabled ids), `business_result` (generic dict). All branches share this same state — new branches do NOT add fields.
 - **`nodes/`**: Business nodes, each following the signature `(AgentState) → dict`. `price_inquiry/` is a package (split 2026-08-15): `node.py` (entry + guards + guidance), `queries.py` (table-specific query paths), `recall.py` (multi-stage retrieval chain: Milvus semantic → FULLTEXT → LIKE → full scan with descending weights), `sql_builders.py`, `intent.py` (unified intent parsing), `semantic.py` (Milvus semantic collection bootstrap/recall), `enum_norm.py`, `db.py` (connection pool), `schema.py`, `models.py`. The package `__init__.py` re-exports all symbols, so `from agent.nodes.price_inquiry import ...` is unchanged for external callers.
 - **`checkpointer.py`**: Factory that returns `MemorySaver` (default, ephemeral). Supports `sqlite`/`postgres`/`redis` backends via the same interface — one-line change, zero business code impact.
 
@@ -75,7 +76,7 @@ def node_xxx(state: AgentState) -> dict:
                 "messages": [AIMessage(content=str)]}"""
 ```
 
-When adding a new branch: (1) create `agent/nodes/new_branch.py`, (2) add the Literal to `RouterIntent` in `router.py`, (3) add a routing tool, (4) register in `graph.py`. State definition and other nodes remain untouched.
+When adding a new branch (P4 起，router/graph 已由 `agent/registry.py` CapabilityRegistry 数据驱动，零改动): (1) create `agent/nodes/new_branch.py` implementing the `(AgentState) -> dict` interface, (2) register its entry via `agent.nodes.base.register()` if not one of the built-in five, (3) register an `enabled` `CapabilitySpec` in `agent/registry.py` with its routing copy (`route_desc` / `route_tool_doc` / `examples`). The router candidate set, `route_*` tools, system prompt, graph nodes, and conditional edges are all generated from the registry — do NOT edit `router.py` / `graph.py`. State definition and other nodes remain untouched.
 
 ## Key constraints
 

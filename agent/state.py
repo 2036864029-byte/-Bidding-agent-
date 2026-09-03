@@ -24,7 +24,8 @@ class AgentState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
 
     # ── 路由意图 ──
-    # 值域见 router.py 中的 RouterIntent 枚举
+    # 值域 = CapabilityRegistry 中 enabled 能力的 id（agent/registry.py）
+    # router.py 按 registry 动态生成候选，见 agent.router.build_router_node
     router_intent: str
 
     # ── 业务负载 ──
