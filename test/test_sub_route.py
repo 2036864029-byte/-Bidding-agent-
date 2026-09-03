@@ -24,6 +24,7 @@ from agent.nodes.output_templates import (
     _eval_condition,
     get_template,
 )
+from langchain_core.messages import HumanMessage
 from agent.nodes.price_inquiry import (
     HardFilters,
     SearchIntent,
@@ -484,9 +485,7 @@ class TestIntegration:
         """测试 node_price_inquiry 端到端（需要完整 Agent 环境）。"""
         from agent.nodes.price_inquiry import node_price_inquiry
         state = {
-            "messages": [
-                type("Msg", (), {"content": "福建师范大学招标过什么项目？"})()
-            ]
+            "messages": [HumanMessage(content="福建师范大学招标过什么项目？")]
         }
         result = node_price_inquiry(state)
         assert "business_result" in result
