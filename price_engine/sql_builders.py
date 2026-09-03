@@ -6,7 +6,7 @@ import logging
 from dataclasses import replace
 from typing import Any, Optional
 
-from .db import _CLEAN_DB
+from core.rdb.mysql_pool import _CLEAN_DB
 from .intent import _is_valid_company_name, _looks_like_code, _normalize_token
 from .models import HardFilters, SearchIntent
 

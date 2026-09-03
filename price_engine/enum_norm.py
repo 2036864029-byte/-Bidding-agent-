@@ -6,7 +6,7 @@ import logging
 import threading
 from typing import Optional
 
-from .db import _CLEAN_DB, _get_connection, _release_connection
+from core.rdb.mysql_pool import _CLEAN_DB, _get_connection, _release_connection
 from .models import SearchIntent
 
 logger = logging.getLogger(__name__)

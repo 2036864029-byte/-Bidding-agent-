@@ -17,7 +17,7 @@ from core.config.settings import Settings
 from core.embeddings.bge_m3 import create_embeddings
 from core.vectorstore.namespace import PRICE_SEMANTIC_COLLECTION
 
-from .db import _CLEAN_DB, _get_connection, _get_settings, _release_connection
+from core.rdb.mysql_pool import _CLEAN_DB, _get_connection, _get_settings, _release_connection
 from .models import SearchIntent
 from .schema import _HARDCODED_SCHEMA, _semantic_columns
 

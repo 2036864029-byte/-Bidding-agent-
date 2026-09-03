@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 import pymysql
 
-from .db import _CLEAN_DB, _get_connection, _release_connection
+from core.rdb.mysql_pool import _CLEAN_DB, _get_connection, _release_connection
 from .models import SearchIntent
 from .recall import _clean_result_row, _query_tables
 from .sql_builders import _build_order_clause

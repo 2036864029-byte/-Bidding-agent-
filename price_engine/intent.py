@@ -14,7 +14,7 @@ from langchain_openai import ChatOpenAI
 
 from core.llm.registry import create_llm_for_slot
 
-from .db import _get_settings
+from core.rdb.mysql_pool import _get_settings
 from .models import HardFilters, SearchIntent
 
 logger = logging.getLogger(__name__)

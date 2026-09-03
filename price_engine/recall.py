@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 import pymysql
 
-from .db import _CLEAN_DB, _get_connection, _get_settings, _release_connection
+from core.rdb.mysql_pool import _CLEAN_DB, _get_connection, _get_settings, _release_connection
 from .models import SearchIntent
 from .schema import _get_classification
 from .semantic import _semantic_recall_candidates

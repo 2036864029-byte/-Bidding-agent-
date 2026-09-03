@@ -1,4 +1,8 @@
-"""询价节点入口 — 三层查询守卫、二级路由分发、引导话术与输出渲染。"""
+"""询价节点入口 — 三层查询守卫、二级路由分发、引导话术与输出渲染。
+
+P3 引擎下沉：intent/queries/recall/... 已迁 price_engine/；本节点保留守卫与编排，
+经 price_engine 门面调用引擎（absolute import，见方案附录 D D-5）。
+"""
 
 from __future__ import annotations
 
@@ -9,22 +13,23 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 
 from langchain_core.messages import AIMessage
 
-from ..answer_templates import CAPABILITY_GUIDANCE, render_answer
-from ..output_templates import _apply_output_template, get_template
-from ...state import AgentState
-from . import queries as _queries_module
-from .db import _get_settings
-from .enum_norm import _normalize_intent_enums
-from .intent import (
+from price_engine import (
+    SearchIntent,
     _build_llm,
     _extract_project_number_candidate,
     _is_valid_company_name,
     _looks_like_code,
+    _normalize_intent_enums,
     _parse_unified_intent,
     _safe_parse_intent,
+    _sql_executor,
 )
-from .models import SearchIntent
-from .recall import _sql_executor
+from price_engine import queries as _queries_module
+from price_engine.rendering.answer_templates import CAPABILITY_GUIDANCE, render_answer
+from price_engine.rendering.output_templates import _apply_output_template, get_template
+
+from ...state import AgentState
+from core.rdb.mysql_pool import _get_settings
 
 logger = logging.getLogger(__name__)
 
