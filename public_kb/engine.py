@@ -23,7 +23,7 @@ from .ingestion.sinks.milvus_sink import MilvusSink
 from .ingestion.sources.document_source import DocumentSource
 from .ingestion.sources.pdf_source import PdfSource
 from .ingestion.transforms import SemanticChunker, TextCleaner
-from .ingestion.transforms.pdf_structure import adapt_pdf_markdown
+from .ingestion.normalizers.pdf.pdf_structure import adapt_pdf_markdown
 from .generation.chain import build_chain
 from .retrieval.reranker import SiliconFlowReranker
 from .services.llm import create_llm

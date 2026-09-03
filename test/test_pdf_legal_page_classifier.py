@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from public_kb.ingestion.transforms.pdf_page_profile import PageProfile
-from public_kb.ingestion.transforms.pdf_legal_page_classifier import (
+from public_kb.ingestion.normalizers.pdf.pdf_page_profile import PageProfile
+from public_kb.ingestion.normalizers.pdf.pdf_legal_page_classifier import (
     LegalPageClassifier,
     PageRouteDecision,
 )

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from public_kb.ingestion.transforms.pdf_complex_range import (
+from public_kb.ingestion.normalizers.pdf.pdf_complex_range import (
     aggregate_complex_ranges,
 )
-from public_kb.ingestion.transforms.pdf_legal_page_classifier import (
+from public_kb.ingestion.normalizers.pdf.pdf_legal_page_classifier import (
     PageRouteDecision,
 )
 

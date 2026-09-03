@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from public_kb.config import Settings
-from public_kb.ingestion.transforms.pdf_router import PdfRouter
+from public_kb.ingestion.normalizers.pdf.pdf_router import PdfRouter
 from public_kb.services.mineru_parser import MinerUParser
 
 
@@ -53,7 +53,7 @@ def test_tier_b_upgrade_logic():
     """从 dataclasses.replace 推导：Tier B 决策 → Tier C，reason 加前缀。"""
     from dataclasses import replace
 
-    from public_kb.ingestion.transforms.pdf_legal_page_classifier import (
+    from public_kb.ingestion.normalizers.pdf.pdf_legal_page_classifier import (
         PageRouteDecision,
     )
 
@@ -91,7 +91,7 @@ def test_router_end_to_end_with_mocked_mineru(tmp_path, monkeypatch):
     """
     import pymupdf
 
-    from public_kb.ingestion.transforms.pdf_mineru_router import MinerURouter
+    from public_kb.ingestion.normalizers.pdf.pdf_mineru_router import MinerURouter
 
     # 构造 5 页单栏 PDF
     src = tmp_path / "src.pdf"
@@ -146,13 +146,13 @@ def test_tier_a_excludes_range_covered_pages_and_fills_route(tmp_path):
     范围产物的 route 由编排器补填，保证 manifest 每页可溯源。"""
     import pymupdf
 
-    from public_kb.ingestion.transforms.pdf_complex_range import (
+    from public_kb.ingestion.normalizers.pdf.pdf_complex_range import (
         aggregate_complex_ranges,
     )
-    from public_kb.ingestion.transforms.pdf_legal_page_classifier import (
+    from public_kb.ingestion.normalizers.pdf.pdf_legal_page_classifier import (
         PageRouteDecision,
     )
-    from public_kb.ingestion.transforms.pdf_markdown_assembler import ParsedPage
+    from public_kb.ingestion.normalizers.pdf.pdf_markdown_assembler import ParsedPage
 
     # 最小 3 页 PDF（页 0/2 是 A 类、页 1 是 C 类）
     src = tmp_path / "src.pdf"

@@ -193,7 +193,7 @@ def main() -> int:
             return 2
 
     # ── 1) 三档路由全流程（Tier C 有本地缓存，重跑只补缺口）──
-    from public_kb.ingestion.transforms.pdf_router import PdfRouter
+    from public_kb.ingestion.normalizers.pdf.pdf_router import PdfRouter
 
     print(f"[1/4] PDF: {pdf_path.name} "
           f"({pdf_path.stat().st_size / 1024 / 1024:.1f} MB)", flush=True)

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from public_kb.ingestion.transforms.pdf_legal_page_classifier import PageRouteDecision
-from public_kb.ingestion.transforms.pdf_markdown_assembler import (
+from public_kb.ingestion.normalizers.pdf.pdf_legal_page_classifier import PageRouteDecision
+from public_kb.ingestion.normalizers.pdf.pdf_markdown_assembler import (
     PageBlock,
     ParsedPage,
     assemble_page_blocks,

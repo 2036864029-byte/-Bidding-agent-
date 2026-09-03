@@ -1,10 +1,10 @@
 # 功能：pdf_structure 模块单元测试（合成夹具，不依赖 MinerU）。
-"""Unit tests for ingestion/transforms/pdf_structure.py."""
+"""Unit tests for ingestion/normalizers/pdf/pdf_structure.py."""
 
 from __future__ import annotations
 
 from public_kb.ingestion.transforms.chunker import SemanticChunker
-from public_kb.ingestion.transforms.pdf_structure import (
+from public_kb.ingestion.normalizers.pdf.pdf_structure import (
     adapt_pdf_markdown,
     detect_reflow_suspect,
     split_table_blocks,

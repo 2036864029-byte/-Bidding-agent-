@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from public_kb.ingestion.transforms.pdf_fast_text import (
+from public_kb.ingestion.normalizers.pdf.pdf_fast_text import (
     TextLine,
     generate_markdown,
     remove_header_footer,
     remove_page_numbers,
     sort_single_column,
 )
-from public_kb.ingestion.transforms.pdf_two_column_reflow import (
+from public_kb.ingestion.normalizers.pdf.pdf_two_column_reflow import (
     is_full_width_line,
     reflow_two_columns,
 )

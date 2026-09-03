@@ -8,8 +8,8 @@ from typing import List
 
 import pytest
 
-from public_kb.ingestion.transforms.pdf_complex_range import ComplexRange
-from public_kb.ingestion.transforms.pdf_mineru_router import (
+from public_kb.ingestion.normalizers.pdf.pdf_complex_range import ComplexRange
+from public_kb.ingestion.normalizers.pdf.pdf_mineru_router import (
     MinerURouter,
     _LocalCache,
     compute_cache_key,

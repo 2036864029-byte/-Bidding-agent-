@@ -14,7 +14,7 @@ import logging
 
 from ..config import Settings
 from ..services.mineru_parser import MinerUParser
-from .transforms.pdf_router import PdfRouter
+from .normalizers.pdf.pdf_router import PdfRouter
 
 logger = logging.getLogger(__name__)
 

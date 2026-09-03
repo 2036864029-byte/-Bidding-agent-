@@ -34,7 +34,7 @@ from .pipeline import IngestionPipeline
 from .sinks.milvus_sink import MilvusSink, MilvusSinkMode
 from .sources.document_source import DocumentSource
 from .transforms import SemanticChunker, TextCleaner
-from .transforms.pdf_structure import adapt_pdf_markdown
+from .normalizers.pdf.pdf_structure import adapt_pdf_markdown
 
 logger = logging.getLogger(__name__)
 
