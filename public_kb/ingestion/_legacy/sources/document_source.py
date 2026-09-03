@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from langchain_core.documents import Document
 
-from ..models import SourceResult
+from ...models import SourceResult
 
 
 class DocumentSource:

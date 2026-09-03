@@ -19,8 +19,8 @@ from public_kb.config import Settings
 from public_kb.generation.citations import CitationValidator
 from public_kb.generation.chain import build_chain
 from public_kb.ingestion.models import IngestionResult, SourceResult, StageResult
-from public_kb.ingestion.pipeline import IngestionPipeline
-from public_kb.ingestion.sources.csv_loader import CsvLoader, save_chunks_to_markdown
+from public_kb.ingestion._legacy.pipeline_legacy import IngestionPipeline
+from public_kb.ingestion.csv_loader import CsvLoader, save_chunks_to_markdown
 from public_kb.ingestion.transforms.chunker import SemanticChunker
 from public_kb.ingestion.transforms.cleaner import TextCleaner
 from public_kb.qa_chain import (

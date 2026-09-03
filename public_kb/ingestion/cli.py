@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from ..config import Settings
-from .sources.csv_loader import CsvLoader
+from .csv_loader import CsvLoader
 from ..services.embeddings import create_embeddings
 from ..services.milvus_store import MilvusStoreManager
 from .models import IngestionResult
-from .sources.document_source import DocumentSource
-from .pipeline_legacy import IngestionPipeline
+from ._legacy.sources.document_source import DocumentSource
+from ._legacy.pipeline_legacy import IngestionPipeline
 from .pipeline import FileIngestionPipeline, FileIngestionResult
 from .checkpoint import StageCheckpoint
 from .ledger import IngestLedger
@@ -23,7 +23,7 @@ from .quality import QualityGate
 from .router import FormatRouter
 from .sinks.markdown_sink import MarkdownSink
 from .sinks.milvus_sink import MilvusSink, MilvusSinkMode
-from .sources.csv_source import CsvSource
+from ._legacy.sources.csv_source import CsvSource
 
 
 logger = logging.getLogger(__name__)

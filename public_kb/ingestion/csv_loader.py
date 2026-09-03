@@ -22,8 +22,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
 
-from ..transforms.chunker import SemanticChunker
-from ..transforms.cleaner import TextCleaner
+from .transforms.chunker import SemanticChunker
+from .transforms.cleaner import TextCleaner
 from .csv_loader_structure import (
     _CN_LEGAL_HEADING_RE,  # 标题提取复用（M5 Step B 拆出后单源定义）
     _MD_HEADING_RE,        # 供本模块内部标题检测使用

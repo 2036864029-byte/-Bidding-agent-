@@ -16,7 +16,7 @@ from typing import List
 
 from ..ir import NormalizedDocument
 from .base import Normalizer
-from ..sources.csv_loader import CsvLoader
+from ..csv_loader import CsvLoader
 
 logger = logging.getLogger(__name__)
 

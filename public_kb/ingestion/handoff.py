@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -30,9 +31,7 @@ from langchain_core.documents import Document
 
 from ..chunk_ids import compute_chunk_uid
 from ..config import Settings
-from .pipeline import IngestionPipeline
 from .sinks.milvus_sink import MilvusSink, MilvusSinkMode
-from .sources.document_source import DocumentSource
 from .transforms import SemanticChunker, TextCleaner
 from .normalizers.pdf.pdf_structure import adapt_pdf_markdown
 
@@ -301,21 +300,35 @@ def load_documents_jsonl(path: str | Path) -> List[Document]:
     return _freeze_chunk_uid(docs)
 
 
+@dataclass
+class HandoffIngestResult:
+    """交接产物入库结果（与旧 IngestionResult 同构字段，供 __main__ 消费）。"""
+
+    source: str
+    chunk_count: int
+    inserted_count: int
+
+
 def ingest_documents(
     documents: Sequence[Document],
     settings: Settings,
     *,
     mode: MilvusSinkMode = "append",
     manager: Any = None,
-) -> IngestionPipeline:
-    """把 Document 列表写入 Milvus（走既有 MilvusSink，含去重/幂等）。"""
+) -> HandoffIngestResult:
+    """把 Document 列表写入 Milvus（经 MilvusSink，含 chunk_uid 判重/幂等）。
+
+    直连 MilvusSink（不再走旧 Source 流水线），chunk_uid 已在导入侧固化。
+    """
     if manager is None:
         from ..services.embeddings import create_embeddings
         from ..services.milvus_store import MilvusStoreManager
 
         manager = MilvusStoreManager(settings, create_embeddings(settings))
-    return IngestionPipeline([MilvusSink(manager, mode=mode)]).run(
-        DocumentSource(documents, source_name="handoff")
+    docs = list(documents)
+    inserted = MilvusSink(manager, mode=mode).write(docs, records=[])
+    return HandoffIngestResult(
+        source="handoff", chunk_count=len(docs), inserted_count=inserted,
     )
 
 
@@ -325,7 +338,7 @@ def ingest_documents_jsonl(
     *,
     mode: MilvusSinkMode = "append",
     manager: Any = None,
-) -> IngestionPipeline:
+) -> HandoffIngestResult:
     """从导出的 documents.jsonl 直接入库（不重新分块）。"""
     documents = load_documents_jsonl(path)
     logger.info("读取 %s → %d 个 Document", Path(path).name, len(documents))
@@ -338,7 +351,7 @@ def ingest_markdown_dir(
     *,
     mode: MilvusSinkMode = "append",
     manager: Any = None,
-) -> IngestionPipeline:
+) -> HandoffIngestResult:
     """从 ``<stem>.assembled.md`` 重新分块后入库（确定性等价于 jsonl 导入）。"""
     md_dir = Path(markdown_dir)
     files = sorted(md_dir.glob(f"*{_MARKDOWN_SUFFIX}"))

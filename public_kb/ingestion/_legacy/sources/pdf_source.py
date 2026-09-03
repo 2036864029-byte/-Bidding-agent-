@@ -6,8 +6,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Union
 
-from ..models import SourceResult
-from ..transforms import SemanticChunker, TextCleaner
+from ...models import SourceResult
+from ...transforms import SemanticChunker, TextCleaner
 
 
 class PdfSource:

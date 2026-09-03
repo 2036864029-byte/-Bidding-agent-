@@ -12,8 +12,6 @@
 table IR 不入向量路，仅记录（供 price 侧 SQL 消费，E-13 出消费示例）。
 ledger 开启时做文档级解析前去重（E-3）；quality_score 关卡在 E-11 接入。
 
-旧 Source 流保留为 ``pipeline_legacy.IngestionPipeline``，此处 re-export 兼容
-（CLI ``--legacy`` 走旧路径，E-12）。
 """
 
 from __future__ import annotations
@@ -33,7 +31,6 @@ from .ledger import IngestLedger
 from .normalizers import build_normalizer
 from .quality import QualityGate
 from .router import FormatRouter
-from .pipeline_legacy import IngestionPipeline  # noqa: F401  # 兼容 re-export
 
 logger = logging.getLogger(__name__)
 
