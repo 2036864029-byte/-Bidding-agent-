@@ -18,7 +18,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from agent.nodes.output_templates import (
+from price_engine.rendering.output_templates import (
     _apply_output_template,
     _FIELD_REGISTRY,
     _eval_condition,

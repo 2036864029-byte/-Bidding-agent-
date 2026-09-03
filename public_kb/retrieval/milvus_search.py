@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from ..config import Settings
+from core.config.settings import Settings
 
 
 logger = logging.getLogger(__name__)

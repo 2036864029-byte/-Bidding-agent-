@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 
 import public_kb.services.mineru_api_parser as parser_mod
-from public_kb.config import Settings
+from core.config.settings import Settings
 from public_kb.services.mineru_api_parser import MinerUApiParser
 
 

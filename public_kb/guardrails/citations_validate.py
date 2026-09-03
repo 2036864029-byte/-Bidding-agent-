@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ..config import CitationRuleConfig
+from core.config.settings import CitationRuleConfig
 from .citations_models import (
     Citation,
     RuleResult,

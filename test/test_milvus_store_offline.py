@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 from langchain_core.documents import Document
 
-from public_kb.config import Settings
-from public_kb.contracts import ConfigurationContractError, IngestionContractError
-from public_kb.services.milvus_store import MilvusStoreManager
+from core.config.settings import Settings
+from core.contracts import ConfigurationContractError, IngestionContractError
+from core.vectorstore.milvus_client import MilvusStoreManager
 
 
 class FakeSchema:

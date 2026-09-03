@@ -9,8 +9,8 @@ from typing import Any, List, Optional, Tuple
 from langchain_core.documents import Document
 from langchain_milvus import Milvus as MilvusVectorStore
 
-from ..config import Settings
-from ..contracts import MilvusCollectionContract
+from core.config.settings import Settings
+from core.contracts import MilvusCollectionContract
 from .entities import entity_to_doc
 from .milvus_search import search_with_full_fields
 

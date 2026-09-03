@@ -25,7 +25,7 @@ from typing import Optional
 
 import httpx
 
-from ..config import Settings
+from core.config.settings import Settings
 
 logger = logging.getLogger(__name__)
 

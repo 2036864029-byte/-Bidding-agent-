@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from ..config import Settings
+from core.config.settings import Settings
 from ..services.mineru_parser import MinerUParser
 from .normalizers.pdf.pdf_router import PdfRouter
 

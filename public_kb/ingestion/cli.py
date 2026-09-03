@@ -9,10 +9,10 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from ..config import Settings
+from core.config.settings import Settings
 from .csv_loader import CsvLoader
-from ..services.embeddings import create_embeddings
-from ..services.milvus_store import MilvusStoreManager
+from core.embeddings.bge_m3 import create_embeddings
+from core.vectorstore.milvus_client import MilvusStoreManager
 from .models import IngestionResult
 from ._legacy.sources.document_source import DocumentSource
 from ._legacy.pipeline_legacy import IngestionPipeline

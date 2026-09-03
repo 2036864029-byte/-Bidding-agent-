@@ -14,7 +14,7 @@ from typing import Any, Dict, Literal, Sequence
 
 from langchain_core.documents import Document
 
-from ...contracts import validate_ingestion_documents
+from core.contracts import validate_ingestion_documents
 
 
 MilvusSinkMode = Literal["initialize", "append"]

@@ -11,8 +11,8 @@ import requests
 from langchain_core.documents import Document
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-from public_kb.config import Settings
-from public_kb.contracts import RerankerStatus
+from core.config.settings import Settings
+from core.contracts import RerankerStatus
 from public_kb.generation.chain import build_chain as build_qa_chain
 from public_kb.retrieval.fallback import dense_only_retrieve as _dense_only_retrieve
 from public_kb.retrieval.reranker import SiliconFlowReranker as _SiliconFlowReranker

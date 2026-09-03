@@ -31,7 +31,7 @@ from agent.nodes.price_inquiry import (  # noqa: E402
     _split_overlong_keyword,
     _strip_preference_filters,
 )
-from public_kb.config import Settings  # noqa: E402
+from core.config.settings import Settings  # noqa: E402
 
 
 def _intent(**hf_kwargs) -> SearchIntent:

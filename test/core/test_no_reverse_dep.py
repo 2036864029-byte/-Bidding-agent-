@@ -7,7 +7,7 @@
   - public_kb.config       → 迁移至 core.config.settings（A-1）
 保留（后续 Phase 处理，不在 P0 禁令内）：
   - `from public_kb import PublicKnowledgeRAG`（knowledge_qa legacy 路径内部懒加载，P2 随旧路径删除）
-  - `public_kb.generation.citations`（agent/__main__ CLI 渲染，P2 收编协议层）
+  - `public_kb.guardrails`（agent/__main__ CLI 引用渲染，P6 已收敛）
 B-4 后新增合法耦合面：knowledge_qa 工具路径经 public_kb.tools / guardrails /
 rendering 门面复用 RAG；旧 RAG 引擎耦合收敛于 knowledge_qa/legacy.py。
 """

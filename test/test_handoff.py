@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from public_kb.config import Settings
+from core.config.settings import Settings
 from public_kb.ingestion.handoff import (
     chunk_markdown,
     dump_documents_jsonl,

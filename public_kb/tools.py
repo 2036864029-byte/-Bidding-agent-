@@ -75,7 +75,7 @@ def _build_retriever():
     collection/store + BGE embeddings + SiliconFlow reranker）。重依赖在此延迟导入，
     保证 import public_kb.tools 轻量。
     """
-    from .services.milvus_store import MilvusStoreManager
+    from core.vectorstore.milvus_client import MilvusStoreManager
 
     from core.config.settings import Settings
     from core.embeddings.bge_m3 import create_embeddings

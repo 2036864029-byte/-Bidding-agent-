@@ -18,7 +18,7 @@ class _FakeManager:
         self.add_calls = 0
 
     def add_documents(self, documents):
-        from public_kb.chunk_ids import compute_chunk_uid
+        from core.contracts.chunk_ids import compute_chunk_uid
 
         self.add_calls += 1
         inserted = 0

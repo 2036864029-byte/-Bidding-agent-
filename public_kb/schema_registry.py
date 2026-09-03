@@ -98,7 +98,7 @@ def validate_embedding_config_strict(settings: Settings) -> None:
 
     供未来 P3 接线（ingestion / retriever 启动时调用）。
     """
-    from public_kb.contracts import ConfigurationContractError  # noqa: PLC0415
+    from core.contracts import ConfigurationContractError  # noqa: PLC0415
 
     mismatches = validate_embedding_config(settings)
     if mismatches:

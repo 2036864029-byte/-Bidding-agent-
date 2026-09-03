@@ -29,8 +29,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from langchain_core.documents import Document
 
-from ..chunk_ids import compute_chunk_uid
-from ..config import Settings
+from core.contracts.chunk_ids import compute_chunk_uid
+from core.config.settings import Settings
 from .sinks.milvus_sink import MilvusSink, MilvusSinkMode
 from .transforms import SemanticChunker, TextCleaner
 from .normalizers.pdf.pdf_structure import adapt_pdf_markdown
@@ -321,8 +321,8 @@ def ingest_documents(
     直连 MilvusSink（不再走旧 Source 流水线），chunk_uid 已在导入侧固化。
     """
     if manager is None:
-        from ..services.embeddings import create_embeddings
-        from ..services.milvus_store import MilvusStoreManager
+        from core.embeddings.bge_m3 import create_embeddings
+        from core.vectorstore.milvus_client import MilvusStoreManager
 
         manager = MilvusStoreManager(settings, create_embeddings(settings))
     docs = list(documents)

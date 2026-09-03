@@ -13,7 +13,7 @@ from typing import Sequence
 
 from langchain_core.documents import Document
 
-from ...contracts import validate_ingestion_documents
+from core.contracts import validate_ingestion_documents
 from ..models import IngestionResult, SourceResult, StageResult
 from ..sinks.base import Sink
 from .sources.base import Source

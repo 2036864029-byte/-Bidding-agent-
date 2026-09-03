@@ -11,9 +11,9 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_milvus import Milvus as MilvusVectorStore
 
-from .citations import CitationValidator, build_citations
-from ..config import Settings
-from ..contracts import validate_question
+from ..guardrails import CitationValidator, build_citations
+from core.config.settings import Settings
+from core.contracts import validate_question
 from ..retrieval.reranker import Reranker
 from ..retrieval.retriever import HybridRetriever, RetrievalResult
 from ..rendering.context import build_sources, format_docs

@@ -8,10 +8,10 @@ from typing import Any
 
 from langchain_core.documents import Document
 
-from public_kb.config import Settings
+from core.config.settings import Settings
 from public_kb.ingestion._legacy.pipeline_legacy import IngestionPipeline
 from public_kb.ingestion.sinks.milvus_sink import MilvusSink
-from public_kb.services.milvus_store import MilvusStoreManager
+from core.vectorstore.milvus_client import MilvusStoreManager
 
 
 class FakeMilvusClient:

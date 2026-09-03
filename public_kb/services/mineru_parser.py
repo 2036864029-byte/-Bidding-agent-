@@ -15,7 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from ..config import Settings
+from core.config.settings import Settings
 
 logger = logging.getLogger(__name__)
 

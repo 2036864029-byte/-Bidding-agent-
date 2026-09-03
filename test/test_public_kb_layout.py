@@ -8,34 +8,32 @@ from pathlib import Path
 
 import public_kb
 from agent.nodes.knowledge_qa import node_knowledge_qa
-from public_kb.contracts import (
+from core.contracts import (
     RetrievalDiagnostics,
     RetrievalMode,
     RerankerStatus,
     validate_ingestion_documents,
 )
-from public_kb.chunk_ids import compute_chunk_uid
-from public_kb.config import Settings
-from public_kb.generation.citations import CitationValidator
+from core.contracts.chunk_ids import compute_chunk_uid
+from core.config.settings import Settings
+from public_kb.guardrails import CitationValidator
 from public_kb.generation.chain import build_chain
 from public_kb.ingestion.models import IngestionResult, SourceResult, StageResult
 from public_kb.ingestion._legacy.pipeline_legacy import IngestionPipeline
 from public_kb.ingestion.csv_loader import CsvLoader, save_chunks_to_markdown
 from public_kb.ingestion.transforms.chunker import SemanticChunker
 from public_kb.ingestion.transforms.cleaner import TextCleaner
-from public_kb.qa_chain import (
-    HybridRetrievalError as StableHybridRetrievalError,
-    _dense_only_retrieve as stable_dense_only_retrieve,
-    _SiliconFlowReranker as stable_siliconflow_reranker,
-    build_qa_chain,
-)
-from public_kb.rag_engine import PublicKnowledgeRAG
+from public_kb.generation.chain import build_chain as build_qa_chain
+from public_kb.retrieval.fallback import dense_only_retrieve as stable_dense_only_retrieve
+from public_kb.retrieval.reranker import SiliconFlowReranker as stable_siliconflow_reranker
+from public_kb.retrieval.retriever import HybridRetrievalError as StableHybridRetrievalError
+from public_kb.engine import PublicKnowledgeRAG
 from public_kb.retrieval.fallback import dense_only_retrieve
 from public_kb.retrieval.reranker import Reranker, SiliconFlowReranker
 from public_kb.retrieval.retriever import HybridRetrievalError, HybridRetriever
-from public_kb.services.embeddings import _SafeEmbeddings, create_embeddings
-from public_kb.services.llm import create_llm
-from public_kb.services.milvus_store import MilvusStoreManager
+from core.embeddings.bge_m3 import _SafeEmbeddings, create_embeddings
+from core.llm.deepseek import create_llm
+from core.vectorstore.milvus_client import MilvusStoreManager
 from public_kb.services.mineru_parser import MinerUParser
 
 
@@ -111,7 +109,8 @@ def test_generation_and_retrieval_boundaries_are_consolidated():
 
 def test_qa_chain_is_a_thin_stable_entrypoint():
     parameters = list(inspect.signature(build_qa_chain).parameters)
-    assert parameters == ["vector_store", "llm", "settings", "collection", "embeddings"]
+    # 规范入口 generation.chain.build_chain（qa_chain 兼容壳已删，P6 收敛）
+    assert parameters == ["vector_store", "llm", "settings", "collection", "embeddings", "reranker_class"]
     assert stable_siliconflow_reranker is SiliconFlowReranker
     assert stable_dense_only_retrieve is dense_only_retrieve
     assert StableHybridRetrievalError is HybridRetrievalError

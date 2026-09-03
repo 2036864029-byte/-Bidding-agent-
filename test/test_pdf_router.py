@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from public_kb.config import Settings
+from core.config.settings import Settings
 from public_kb.ingestion.normalizers.pdf.pdf_router import PdfRouter
 from public_kb.services.mineru_parser import MinerUParser
 

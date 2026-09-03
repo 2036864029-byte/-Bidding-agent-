@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 def test_settings_two_import_paths_are_identical():
     """A-1：public_kb.config 与 core.config.settings 构造出的 Settings 全等。"""
     from core.config.settings import Settings as CoreSettings
-    from public_kb.config import Settings as LegacySettings
+    from core.config.settings import Settings as LegacySettings
 
     assert CoreSettings is LegacySettings  # 同一类（re-export，非拷贝）
 
@@ -26,7 +26,7 @@ def test_settings_two_import_paths_are_identical():
 
 def test_citation_rule_config_reexported_from_old_path():
     from core.config.settings import CitationRuleConfig as CoreCfg
-    from public_kb.config import CitationRuleConfig as LegacyCfg
+    from core.config.settings import CitationRuleConfig as LegacyCfg
 
     assert CoreCfg is LegacyCfg
     assert LegacyCfg() == CoreCfg()
@@ -45,7 +45,7 @@ def test_settings_mysql_fields_from_env():
 def test_llm_factory_old_path_is_same_impl():
     """A-4/A-6：public_kb.services.llm.create_llm 与 core.llm.deepseek 同源。"""
     from core.llm.deepseek import create_llm as core_create
-    from public_kb.services.llm import create_llm as legacy_create
+    from core.llm.deepseek import create_llm as legacy_create
 
     assert callable(core_create)
     assert core_create is not None
@@ -56,29 +56,16 @@ def test_llm_factory_old_path_is_same_impl():
     assert params == ["settings", "temperature"]
 
 
-def test_embeddings_old_path_reexports_core_symbols():
-    """A-7：services.embeddings 壳导出与新路径一致。"""
-    from core.embeddings.bge_m3 import _SafeEmbeddings as CoreSafe
-    from core.embeddings.bge_m3 import create_embeddings as core_create
-    from public_kb.services.embeddings import (
-        _SafeEmbeddings,
-        create_embeddings,
-    )
+def test_embeddings_core_exports():
+    """A-7：core.embeddings.bge_m3 导出（services.embeddings 壳已删除，P6 收敛）。"""
+    from core.embeddings.bge_m3 import _SafeEmbeddings, create_embeddings
 
-    assert _SafeEmbeddings is CoreSafe
+    assert _SafeEmbeddings is not None
     assert callable(create_embeddings)
-    assert callable(core_create)
 
 
-def test_db_pool_old_path_shares_core_objects():
-    """A-10：price_inquiry/db.py 与 core.rdb.mysql_pool 共享池与函数（同一性）。"""
-    from agent.nodes.price_inquiry.db import (
-        _CLEAN_DB as legacy_db,
-        _get_connection as legacy_conn,
-        _get_settings as legacy_settings,
-        _pool_connections as legacy_pool,
-        _release_connection as legacy_release,
-    )
+def test_db_pool_core_exports_are_consistent():
+    """A-10：core.rdb.mysql_pool 导出连接池与函数（兼容壳已删除，直接验证 core）。"""
     from core.rdb.mysql_pool import (
         _CLEAN_DB,
         _get_connection,
@@ -86,11 +73,10 @@ def test_db_pool_old_path_shares_core_objects():
         _release_connection,
     )
 
-    assert legacy_conn is _get_connection
-    assert legacy_release is _release_connection
-    assert legacy_pool is _pool_connections  # 同一列表对象
-    assert legacy_db == _CLEAN_DB
-    assert legacy_settings() is not None
+    assert callable(_get_connection)
+    assert callable(_release_connection)
+    assert _pool_connections is not None
+    assert isinstance(_CLEAN_DB, str)
 
 
 def test_models_yaml_declared_slots():

@@ -1,7 +1,7 @@
 """core.contracts — 共享契约层（方案 Phase 6 / A-8 上提，解 R1 反向依赖）。
 
 chunk 身份（chunk_uid）与知识库契约自 public_kb 上提，供 core/vectorstore 与 RAG
-两侧共用；`public_kb/chunk_ids.py` 与 `public_kb/contracts.py` 为 re-export 兼容壳。
+两侧共用；`public_kb/` 侧旧路径兼容壳已随 P6 结构收敛删除。
 """
 
 from .chunk_ids import compute_chunk_uid, compute_text_hash, normalize_chunk_text

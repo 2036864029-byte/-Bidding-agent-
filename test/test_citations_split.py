@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import public_kb.generation.citations as facade
+import public_kb.guardrails as facade
 import public_kb.guardrails.citations_build as build
 import public_kb.guardrails.citations_models as models
 import public_kb.guardrails.citations_validate as validate
@@ -18,9 +18,9 @@ def test_facade_reexports_all_public_symbols():
     assert facade.CitationValidator is validate.CitationValidator
 
 
-def test_old_import_path_still_works():
-    # 与 test_public_kb_layout / test_citation_tracing 相同的既有导入路径
-    from public_kb.generation.citations import (  # noqa: F811
+def test_guardrails_facade_path_works():
+    # 护栏门面路径（generation.citations 壳已删除，P6 收敛）
+    from public_kb.guardrails import (  # noqa: F811
         Citation,
         CitationValidator,
         build_citations,

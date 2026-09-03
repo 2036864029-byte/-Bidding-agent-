@@ -178,7 +178,7 @@ class TestBug2AnswerTemplatePerspective(unittest.TestCase):
 
     def test_bug2a_project_detail_contains_all_9_fields(self):
         """场景A：project_detail 模板必须包含全部 9 个必出字段。"""
-        from agent.nodes.answer_templates import ANSWER_TEMPLATES, render_answer
+        from price_engine.rendering.answer_templates import ANSWER_TEMPLATES, render_answer
 
         tmpl = ANSWER_TEMPLATES.get("project_detail")
         self.assertIsNotNone(tmpl, "project_detail template must exist")
@@ -205,7 +205,7 @@ class TestBug2AnswerTemplatePerspective(unittest.TestCase):
 
     def test_bug2b_bidder_query_is_company_perspective(self):
         """场景B：bidder_query 从公司视角回答，不应包含项目视角特有字段。"""
-        from agent.nodes.answer_templates import ANSWER_TEMPLATES, render_answer
+        from price_engine.rendering.answer_templates import ANSWER_TEMPLATES, render_answer
 
         tmpl = ANSWER_TEMPLATES.get("bidder_query")
         self.assertIsNotNone(tmpl, "bidder_query template must exist")
@@ -230,7 +230,7 @@ class TestBug2AnswerTemplatePerspective(unittest.TestCase):
 
     def test_bug2c_purchaser_query_is_purchaser_perspective(self):
         """场景C：purchaser_query 从采购人视角回答。"""
-        from agent.nodes.answer_templates import ANSWER_TEMPLATES, render_answer
+        from price_engine.rendering.answer_templates import ANSWER_TEMPLATES, render_answer
 
         tmpl = ANSWER_TEMPLATES.get("purchaser_query")
         self.assertIsNotNone(tmpl, "purchaser_query template must exist")
@@ -248,7 +248,7 @@ class TestBug2AnswerTemplatePerspective(unittest.TestCase):
 
     def test_bug2d_empty_result_guidance_per_query_type(self):
         """场景D：不同 query_type 的空结果引导话术不同。"""
-        from agent.nodes.answer_templates import render_answer
+        from price_engine.rendering.answer_templates import render_answer
 
         # project_detail 空结果应提示"项目编号拼写有误"（P0-10：仅 project_number 查询）
         r1 = render_answer("project_detail", [], entity="AH999")
@@ -272,8 +272,8 @@ class TestIntegration(unittest.TestCase):
 
     def test_output_templates_project_detail_required_matches_answer_temp(self):
         """验证 output_templates.py 的 project_detail required 字段与 answer_templates.py 一致。"""
-        from agent.nodes.output_templates import get_template
-        from agent.nodes.answer_templates import ANSWER_TEMPLATES
+        from price_engine.rendering.output_templates import get_template
+        from price_engine.rendering.answer_templates import ANSWER_TEMPLATES
 
         ot = get_template("bidding_query", "project_detail")
         at = ANSWER_TEMPLATES["project_detail"]
@@ -286,8 +286,8 @@ class TestIntegration(unittest.TestCase):
 
     def test_output_templates_bidder_query_required_matches_answer_temp(self):
         """验证 output_templates.py 的 bidder_query required 字段与 answer_templates.py 一致。"""
-        from agent.nodes.output_templates import get_template
-        from agent.nodes.answer_templates import ANSWER_TEMPLATES
+        from price_engine.rendering.output_templates import get_template
+        from price_engine.rendering.answer_templates import ANSWER_TEMPLATES
 
         ot = get_template("bidding_query", "bidder_query")
         at = ANSWER_TEMPLATES["bidder_query"]
@@ -300,13 +300,13 @@ class TestIntegration(unittest.TestCase):
 
     def test_credit_rating_is_removed_from_registry(self):
         """验证 credit_rating 已从字段注册表中移除。"""
-        from agent.nodes.output_templates import _FIELD_REGISTRY
+        from price_engine.rendering.output_templates import _FIELD_REGISTRY
         self.assertNotIn("credit_rating", _FIELD_REGISTRY,
                          "credit_rating should be removed from field registry")
 
     def test_capability_guidance_loaded(self):
         """验证 CAPABILITY_GUIDANCE 常量可正常加载。"""
-        from agent.nodes.answer_templates import CAPABILITY_GUIDANCE
+        from price_engine.rendering.answer_templates import CAPABILITY_GUIDANCE
         self.assertIn("三大核心能力", CAPABILITY_GUIDANCE)
 
 

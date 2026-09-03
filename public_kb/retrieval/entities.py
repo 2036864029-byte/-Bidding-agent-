@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from langchain_core.documents import Document
 
-from ..chunk_ids import compute_chunk_uid
+from core.contracts.chunk_ids import compute_chunk_uid
 
 
 _EXCLUDED_META_KEYS = ("text", "vector", "sparse_vector", "id", "distance", "entity")

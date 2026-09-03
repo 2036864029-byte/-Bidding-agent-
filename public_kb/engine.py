@@ -2,8 +2,7 @@
 """Public knowledge RAG facade — renamed from rag_engine.py (Phase 1 / B-5).
 
 构造注入化：settings / llm / embeddings / store_manager 均可传入（不传则按
-Settings 自建）。rag_engine.py 现为 re-export 兼容壳。query() 内部仍走既有
-LCEL 链（行为不变）；待工具链路完全替换旧路径后再改组合 kb_search。
+Settings 自建）。query() 内部仍走既有 LCEL 链（行为不变）；rag_engine 兼容壳已随 P6 结构收敛删除。
 """
 
 from __future__ import annotations
@@ -15,14 +14,14 @@ from typing import Any, Dict, Optional
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import OpenAIEmbeddings
 
-from .config import Settings
-from .services.embeddings import create_embeddings
+from core.config.settings import Settings
+from core.embeddings.bge_m3 import create_embeddings
 from .ingestion.pipeline import FileIngestionPipeline
 from .ingestion.sinks.milvus_sink import MilvusSink
 from .generation.chain import build_chain
 from .retrieval.reranker import SiliconFlowReranker
-from .services.llm import create_llm
-from .services.milvus_store import MilvusStoreManager
+from core.llm.deepseek import create_llm
+from core.vectorstore.milvus_client import MilvusStoreManager
 
 
 logger = logging.getLogger(__name__)

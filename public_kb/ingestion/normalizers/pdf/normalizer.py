@@ -27,7 +27,7 @@ class PdfNormalizer(Normalizer):
         from ...parser_factory import build_pdf_parser
 
         if self._settings is None:
-            from ....config import Settings
+            from core.config.settings import Settings
 
             self._settings = Settings()
         return build_pdf_parser(self._settings)

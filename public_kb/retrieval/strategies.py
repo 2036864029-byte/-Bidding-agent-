@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from ..config import Settings
+from core.config.settings import Settings
 
 
 def adaptive_threshold(

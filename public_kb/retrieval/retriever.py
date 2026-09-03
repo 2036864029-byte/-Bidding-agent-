@@ -11,8 +11,8 @@ from langchain_core.documents import Document
 from langchain_milvus import Milvus as MilvusVectorStore
 from pymilvus import AnnSearchRequest, RRFRanker
 
-from ..config import Settings
-from ..contracts import (
+from core.config.settings import Settings
+from core.contracts import (
     MilvusCollectionContract,
     RetrievalDiagnostics,
     RetrievalMode,

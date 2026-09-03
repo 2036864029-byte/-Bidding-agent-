@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Protocol
 
 import requests
 
-from ..contracts import RerankerStatus
+from core.contracts import RerankerStatus
 
 
 logger = logging.getLogger(__name__)

@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 # PyMuPDF 在调用处 lazy import（_profile_and_classify / _total_pages /
 # _dispatch_tier_a worker 内），便于测试环境即使没装 pymupdf 也能 import 模块。
 
-from ....config import Settings
+from core.config.settings import Settings
 from ....services.mineru_api_parser import MinerUApiParser
 from ....services.mineru_parser import MinerUParser
 from .pdf_complex_range import (

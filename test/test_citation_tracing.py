@@ -18,19 +18,19 @@ from langchain_core.language_models.fake_chat_models import (  # noqa: E402
 from langchain_core.messages import HumanMessage  # noqa: E402
 from langchain_core.documents import Document  # noqa: E402
 
-from public_kb.chunk_ids import (  # noqa: E402
+from core.contracts.chunk_ids import (  # noqa: E402
     compute_chunk_uid,
     compute_text_hash,
     normalize_chunk_text,
 )
-from public_kb.generation.citations import (  # noqa: E402
+from public_kb.guardrails import (  # noqa: E402
     Citation,
     CitationValidator,
     build_citations,
     format_citations,
     parse_citation_markers,
 )
-from public_kb.config import CitationRuleConfig, Settings  # noqa: E402
+from core.config.settings import CitationRuleConfig, Settings  # noqa: E402
 from public_kb.generation.chain import build_chain as build_qa_chain  # noqa: E402
 from public_kb.retrieval.entities import entity_to_doc as _entity_to_doc  # noqa: E402
 from public_kb.retrieval.fallback import dense_only_retrieve as _dense_only_retrieve  # noqa: E402

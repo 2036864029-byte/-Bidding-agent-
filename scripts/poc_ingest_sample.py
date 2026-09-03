@@ -9,10 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from public_kb.config import Settings
+from core.config.settings import Settings
 from public_kb.ingestion.transforms.chunker import SemanticChunker
-from public_kb.services.embeddings import create_embeddings
-from public_kb.services.milvus_store import MilvusStoreManager
+from core.embeddings.bge_m3 import create_embeddings
+from core.vectorstore.milvus_client import MilvusStoreManager
 
 RAW_DIR = ROOT / "DATA" / "raw_data"
 SAMPLE_SIZE = 50

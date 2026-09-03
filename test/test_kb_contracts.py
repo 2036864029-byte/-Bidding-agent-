@@ -10,7 +10,7 @@ import unittest
 
 from langchain_core.documents import Document
 
-from public_kb.contracts import (
+from core.contracts import (
     ConfigurationContractError,
     IngestionContractError,
     MilvusCollectionContract,

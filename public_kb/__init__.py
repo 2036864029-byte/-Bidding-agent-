@@ -10,7 +10,7 @@
     result = rag.query("什么是公开招标？")
 """
 
-from .config import Settings
+from core.config.settings import Settings
 
 # PublicKnowledgeRAG 使用懒加载，避免未安装 langchain 依赖时 import 失败
 # 仅 config 模块在任何情况下都可安全导入。

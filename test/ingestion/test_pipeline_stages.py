@@ -128,7 +128,7 @@ class _DedupManager:
         self.seen: set[str] = set()
 
     def add_documents(self, documents):
-        from public_kb.chunk_ids import compute_chunk_uid
+        from core.contracts.chunk_ids import compute_chunk_uid
 
         inserted = 0
         for doc in documents:

@@ -51,7 +51,7 @@ class _AssociationChecker:
     """用 Milvus 回表校验引用与实体的关联正确性。"""
 
     def __init__(self, collection_name: str) -> None:
-        from public_kb.config import Settings
+        from core.config.settings import Settings
         from pymilvus import MilvusClient
 
         settings = Settings()
@@ -80,7 +80,7 @@ class _AssociationChecker:
         Returns:
             {"checked": n, "passed": n, "failed": [...], "duplicates": [...]}
         """
-        from public_kb.chunk_ids import compute_chunk_uid
+        from core.contracts.chunk_ids import compute_chunk_uid
 
         failed, seen_uid_groups = [], {}
         checked = 0
@@ -299,7 +299,7 @@ def main() -> None:
     agent = AgentGraph()
     print(f"AgentGraph ready in {time.time()-t0:.2f}s", flush=True)
 
-    from public_kb.config import Settings
+    from core.config.settings import Settings
     checker = _AssociationChecker(Settings().collection_name)
 
     out_f = open(OUT_FILE, "w" if args.no_resume else "a", encoding="utf-8")

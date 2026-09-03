@@ -28,7 +28,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from public_kb import PublicKnowledgeRAG
-from public_kb.generation.citations import format_citations
+from public_kb.guardrails import format_citations
 
 # 配置日志输出
 logging.basicConfig(
@@ -134,7 +134,7 @@ def cmd_clear() -> None:
 
 def cmd_prepare_handoff(pdf_dir: str, out_dir: str, force: bool) -> None:
     """只解析 + 分块，产出 assembled.md 与 documents.jsonl（不向量化、不入库）。"""
-    from public_kb.config import Settings
+    from core.config.settings import Settings
     from public_kb.ingestion.handoff import prepare_handoff
 
     summary = prepare_handoff(pdf_dir, Settings(), out_dir=out_dir, force=force)
@@ -152,7 +152,7 @@ def cmd_prepare_handoff(pdf_dir: str, out_dir: str, force: bool) -> None:
 
 def cmd_ingest_handoff(kind: str, path: str, mode: str) -> None:
     """从交接产物入库（jsonl 或 assembled markdown 目录）。"""
-    from public_kb.config import Settings
+    from core.config.settings import Settings
 
     if kind == "jsonl":
         from public_kb.ingestion.handoff import ingest_documents_jsonl

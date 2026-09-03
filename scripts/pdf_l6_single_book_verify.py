@@ -33,7 +33,7 @@ from typing import Dict, List, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # 仓库根
 
-from public_kb.config import Settings  # noqa: E402
+from core.config.settings import Settings  # noqa: E402
 
 # ── 中文数字 → int（用于 第X章/第X条 序列核验）────────────────
 

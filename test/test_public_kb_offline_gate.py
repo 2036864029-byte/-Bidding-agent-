@@ -6,9 +6,9 @@ import os
 import unittest
 from unittest.mock import patch
 
-from public_kb.config import Settings
-from public_kb.contracts import ConfigurationContractError, MilvusCollectionContract
-from public_kb.services.milvus_store import MilvusStoreManager
+from core.config.settings import Settings
+from core.contracts import ConfigurationContractError, MilvusCollectionContract
+from core.vectorstore.milvus_client import MilvusStoreManager
 
 
 class SettingsOfflineGateTests(unittest.TestCase):

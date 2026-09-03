@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from public_kb.config import Settings
+from core.config.settings import Settings
 from public_kb.retrieval.strategies import adaptive_threshold
 
 
