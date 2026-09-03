@@ -15,7 +15,12 @@ from ..services.embeddings import create_embeddings
 from ..services.milvus_store import MilvusStoreManager
 from .models import IngestionResult
 from .sources.document_source import DocumentSource
-from .pipeline import IngestionPipeline
+from .pipeline_legacy import IngestionPipeline
+from .pipeline import FileIngestionPipeline, FileIngestionResult
+from .checkpoint import StageCheckpoint
+from .ledger import IngestLedger
+from .quality import QualityGate
+from .router import FormatRouter
 from .sinks.markdown_sink import MarkdownSink
 from .sinks.milvus_sink import MilvusSink, MilvusSinkMode
 from .sources.csv_source import CsvSource
@@ -25,6 +30,88 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MARKDOWN_OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "DATA" / "raw_data"
 DEFAULT_OUTPUT_DIR = DEFAULT_MARKDOWN_OUTPUT_DIR
+
+
+def run_file_ingestion(
+    files_dir: str | Path,
+    settings: Settings,
+    *,
+    manager: Any = None,
+    embeddings: Any = None,
+    ledger_path: str | Path | None = None,
+    work_dir: str | Path | None = None,
+    resume: bool = False,
+    rerun_from: str | None = None,
+    quality_threshold: float | None = None,
+) -> list[FileIngestionResult]:
+    """三段式文件入库（P5 E-12）：路由 → 规范化 → 清洗/分块 → Milvus。
+
+    Args:
+        files_dir: 源文件目录（递归收集 text/csv/pdf）。
+        manager: 注入 MilvusStoreManager（测试用）；缺省惰性构建。
+        ledger_path: 文档级去重登记（缺省不启用 ledger）。
+        work_dir: checkpoint 工作目录（缺省不启用断点）。
+        resume: --resume，跳过 C 已完成文件。
+        rerun_from: --rerun-from=B，复用 A 产物重做 B+C。
+        quality_threshold: --quality-threshold，开启质量关卡（默认关闭）。
+
+    Returns:
+        每个文件的 FileIngestionResult 列表。
+    """
+    src_dir = Path(files_dir)
+    if not src_dir.exists():
+        raise FileNotFoundError(f"文件目录不存在: {src_dir}")
+    files = sorted(
+        p for p in src_dir.rglob("*")
+        if p.is_file() and not p.name.startswith(".") and not p.name.startswith("_")
+    )
+    if not files:
+        raise FileNotFoundError(f"目录中未找到可处理文件: {src_dir}")
+
+    resolved_manager = manager
+    if resolved_manager is None:
+        resolved_embeddings = embeddings or create_embeddings(settings)
+        resolved_manager = MilvusStoreManager(settings, resolved_embeddings)
+    sink = MilvusSink(resolved_manager, mode="append")
+
+    ledger = IngestLedger(ledger_path) if ledger_path else None
+    checkpoint = StageCheckpoint(work_dir) if work_dir else None
+    quality_gate = (
+        QualityGate(
+            threshold=quality_threshold,
+            review_dir=(Path(work_dir) / "review") if work_dir else None,
+        )
+        if quality_threshold is not None
+        else None
+    )
+
+    pipeline = FileIngestionPipeline(
+        settings,
+        sink=sink,
+        ledger=ledger,
+        checkpoint=checkpoint,
+        resume=resume,
+        rerun_from=rerun_from,
+        quality_gate=quality_gate,
+    )
+    results = pipeline.run(files)
+    _report_file_results(results)
+    return results
+
+
+def _report_file_results(results: list[FileIngestionResult]) -> None:
+    counts: dict[str, int] = {}
+    for r in results:
+        counts[r.status] = counts.get(r.status, 0) + 1
+    logger.info(
+        "文件入库汇总: %s | chunks=%d inserted=%d",
+        ", ".join(f"{k}={v}" for k, v in counts.items()),
+        sum(r.chunk_count for r in results),
+        sum(r.inserted_count for r in results),
+    )
+    for r in results:
+        if r.status in ("skipped", "failed"):
+            logger.info("  [%s] %s (%s)", r.status, r.path, r.reason)
 
 
 @dataclass(frozen=True)
@@ -261,10 +348,11 @@ def run_batch_csv_ingestion(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Ingest one or more CSV files into Milvus")
+    parser = argparse.ArgumentParser(description="Ingest files (three-stage) or legacy CSV into Milvus")
     path_group = parser.add_mutually_exclusive_group(required=False)
-    path_group.add_argument("--csv-path", help="单个 CSV 文件路径")
-    path_group.add_argument("--csv-dir", help="包含 *_data.csv 的目录")
+    path_group.add_argument("--files", help="三段式：源文件目录（递归 text/csv/pdf）")
+    path_group.add_argument("--csv-path", help="（legacy）单个 CSV 文件路径")
+    path_group.add_argument("--csv-dir", help="（legacy）包含 *_data.csv 的目录")
     parser.add_argument(
         "--markdown-output-dir",
         "--output-dir",
@@ -276,12 +364,27 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("initialize", "append"),
         default="append",
     )
-    parser.add_argument("--group", choices=("A", "C"), help="仅处理指定批量分组")
+    parser.add_argument("--group", choices=("A", "C"), help="（legacy）仅处理指定批量分组")
     parser.add_argument("--no-import", action="store_true", help="只生成预览，不写入 Milvus")
     parser.add_argument(
         "--validate-only",
         action="store_true",
         help="只校验已有 Markdown 预览，不处理 CSV",
+    )
+    # ── 三段式（--files）专用开关（P5 E-12） ──
+    parser.add_argument(
+        "--legacy", action="store_true",
+        help="回滚：对 CSV 文件走旧 Source 流水线（pipeline_legacy），非 CSV 跳过",
+    )
+    parser.add_argument("--ledger", help="文档级去重登记文件（ingest_ledger.jsonl）")
+    parser.add_argument("--work-dir", help="checkpoint 工作目录（断点续跑）")
+    parser.add_argument("--resume", action="store_true", help="跳过 checkpoint 中已完成的文件")
+    parser.add_argument(
+        "--rerun-from", choices=("B",), help="复用 Stage A 中间产物，重做 B+C",
+    )
+    parser.add_argument(
+        "--quality-threshold", type=float, default=None,
+        help="质量关卡阈值（默认关闭；低于阈值旁路 review_queue）",
     )
     return parser
 
@@ -291,8 +394,8 @@ def main(argv: List[str] | None = None) -> int:
     args = parser.parse_args(argv)
     markdown_output_dir = args.markdown_output_dir
 
-    if not args.validate_only and not args.csv_path and not args.csv_dir:
-        parser.error("必须提供 --csv-path 或 --csv-dir")
+    if not args.validate_only and not args.files and not args.csv_path and not args.csv_dir:
+        parser.error("必须提供 --files、--csv-path 或 --csv-dir")
 
     if args.validate_only:
         output_dir = markdown_output_dir or DEFAULT_MARKDOWN_OUTPUT_DIR
@@ -301,6 +404,36 @@ def main(argv: List[str] | None = None) -> int:
         return 0
 
     settings = Settings()
+
+    # ── 三段式文件入库（P5 E-12） ──
+    if args.files:
+        if args.legacy:
+            # 回滚：仅 CSV 走旧流水线
+            policy_files, qa_files, unknown = scan_csv_files(args.files)
+            result = run_batch_csv_ingestion(
+                args.files,
+                settings,
+                no_import=args.no_import,
+                markdown_output_dir=markdown_output_dir,
+                mode=args.mode,
+            )
+            logger.info(
+                "legacy 回滚: 政策=%d QA=%d 未知=%d；结果见上",
+                len(policy_files), len(qa_files), len(unknown),
+            )
+            return 0
+        run_file_ingestion(
+            args.files,
+            settings,
+            ledger_path=args.ledger,
+            work_dir=args.work_dir,
+            resume=args.resume,
+            rerun_from=args.rerun_from,
+            quality_threshold=args.quality_threshold,
+        )
+        return 0
+
+    # ── legacy CSV 路径（原行为不变） ──
     if args.csv_path:
         result = run_csv_ingestion(
             args.csv_path,
