@@ -590,7 +590,7 @@ ztb_demo/
 | E-4 | `public_kb/ingestion/normalizers/base.py` | 新建 | `Normalizer ABC: normalize(source) -> NormalizedDocument`；quality_score 约定（默认 1.0，解析失败降级） |
 | E-5 | `public_kb/ingestion/normalizers/text.py` | 新建 | 文本直通 → markdown IR（clean 后原样） |
 | E-6 | `public_kb/ingestion/normalizers/csv.py` | 新建（源：`sources/csv_loader.py` 逻辑） | **双 IR**：table 摘要（表头+行块，供 price 侧 SQL 消费示例）+ 行块语义（现行 CsvLoader 行为）；reuse `_COLUMN_ALIAS_MAP`/`structure_plain_text` |
-| E-7 | `public_kb/ingestion/normalizers/pdf/` | 收敛（源：`transforms/pdf_*.py` ×9） | 9 文件 git mv → `normalizers/pdf/`（内部相对 import 不变）；`transforms/pdf_*.py` 旧路径改镜像壳（沿用 price_engine 下沉范式，L2 import 兼容）；`pdf.py` Normalizer 入口（PdfRouter/parser_factory 装配） |
+| E-7 | `public_kb/ingestion/normalizers/pdf/` | 收敛（源：`transforms/pdf_*.py` ×9） | 9 文件 git mv → `normalizers/pdf/`（内部相对 import 不变）；`transforms/pdf_*.py` 旧路径镜像壳（沿用 price_engine 下沉范式，L2 import 兼容）；`pdf.py` Normalizer 入口（PdfRouter/parser_factory 装配）。**P6 结构收敛：镜像壳已于 2026-09-03 删除**（调用方 engine/handoff/parser_factory/脚本/测试全切 normalizers/pdf 真身），`transforms/` 仅保留共享 cleaner/chunker |
 | E-8 | `public_kb/ingestion/pipeline.py` | 重构 | 显式三段：`normalize → clean/dedup/chunk → embed/sink`；`IngestionPipeline` 兼容入口保留；旧逻辑 `pipeline_legacy.py` |
 | E-9 | `public_kb/ingestion/sinks/milvus_sink.py` | 改 | **upsert by chunk_uid**（pk 为 auto_id → 先按 chunk_uid 查重/删旧再插，或依赖 M2 跳过；实现时核 `MilvusStoreManager.add_documents` 现状决定） |
 | E-10 | `public_kb/ingestion/checkpoint.py` | 新建 | 每 stage 落盘中间产物 + `run_manifest.json`；`--resume`（从断点 stage 续）/ `--rerun-from=B`（解析器升级只重跑 B+C） |
