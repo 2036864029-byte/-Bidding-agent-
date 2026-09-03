@@ -660,3 +660,28 @@ harness 对拍一致；CLI 双入口冒烟一致；`USE_TOOL_KB` / legacy 路径
 **回滚**：F-1/F-2 单 commit 可 revert（chain.py/node.py 原实现保留一个 Phase）；F-3 关
 `kb_guardrail_retry=false` 即时回退；F-4 回滚 = 保留 node.py 单函数实现一个 Phase。
 
+> **P6 执行状态（2026-09-03，Step 1 子图化完成）**：
+> - ✅ F-1：`knowledge_qa/subgraph.py`（`KnowledgeQaState` 命名空间隔离 + 四节点
+>   retrieve/generate/guardrail/refuse + 空消息/检索未就绪出口）；与 chain.answer_knowledge
+>   mock fixtures 逐键等价；子图作父图节点隔离探针。langgraph 1.2.11 能力探针先行验证。
+> - ✅ F-2：`node_knowledge_qa(state, config=None)` 主调子图；`graph.py::_with_fallback`
+>   支持 config 按签名转发（`_accepts_config`）；CLI 双入口冒烟；test_knowledge_qa_tool
+>   同步改打桩子图（`_tool_chain` 移除）。
+> - ✅ F-3：护栏失败有界重试（总 ≤2 次，反馈注入 `build_retry_prompt` 修改要求块）；
+>   Settings 增 `kb_guardrail_retry`（默认 true）；chain.py 标注 deprecated（保留一个
+>   Phase）；重试成功/耗尽/关闭/拒答不重试 4 用例。**实现注**：默认校验配置下 R7 关、
+>   R6 开——无【来源N】标注的回答会通过校验（R1~R5 只看 citations 结构），真正触发失败
+>   的是幻影来源【来源N】，测试据此构造。
+> - ✅ F-4：`price_inquiry/subgraph.py`——501 行单函数拆为 parse_intent→guard_entity→
+>   run_query→post_guard→render 五节点 + exit 终态；**D-5 保留清单（P0-11/P0-12/product
+>   边界/双超时/POST_GUARD）全部成为子图内部节点**；node.py 薄化为子图入口；包门面改从
+>   subgraph re-export。验证：**price golden 13 题 before/after 0 字段差异**（本地实库，
+>   test_report/price_golden_after_subgraph.json）；守卫出口矩阵 9 用例。
+> - ✅ F-5：subgraph.py 纳入 `test_no_reverse_dep`（public_kb 门面白名单）与
+>   `test_public_kb_layout`（禁区清单）；knowledge parity harness **12/12 一致**（本地
+>   book2，工具链路已走子图）。
+> - 全量 **522 passed**（基线 497 + 25）。**偏差**：`test_sub_route::test_node_price_
+>   inquiry_end_to_end` 的鸭子类型消息改为 `HumanMessage`（子图 messages 通道带
+>   add_messages reducer 校验 BaseMessage，真实链路本就是 HumanMessage）。
+> **P6 Step 1 完成态判据全部满足**；`orchestration/` 与 supervisor 主图属第二步，待启动。
+
