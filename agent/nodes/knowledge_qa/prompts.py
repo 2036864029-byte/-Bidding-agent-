@@ -20,6 +20,12 @@ USER_TEMPLATE = """参考资料：
 
 用户问题：{question}"""
 
+# 护栏失败重试模板（Phase 6 / F-3）：在首轮模板基础上追加「修改要求」反馈。
+RETRY_USER_TEMPLATE = USER_TEMPLATE + """
+
+修改要求（上一轮回答未通过引用校验，请修正引用标注后重新回答）：
+{feedback}"""
+
 
 def build_prompt(system_text: str, enable_inline_citations: bool = True) -> ChatPromptTemplate:
     """构建问答提示词模板。
@@ -34,4 +40,15 @@ def build_prompt(system_text: str, enable_inline_citations: bool = True) -> Chat
     return ChatPromptTemplate.from_messages([
         ("system", system),
         ("user",   USER_TEMPLATE),
+    ])
+
+
+def build_retry_prompt(system_text: str, enable_inline_citations: bool = True) -> ChatPromptTemplate:
+    """构建护栏失败重试提示词模板（首轮模板 + 修改要求块）。"""
+    system = system_text
+    if enable_inline_citations:
+        system += "\n\n" + INLINE_CITATION_INSTRUCTION
+    return ChatPromptTemplate.from_messages([
+        ("system", system),
+        ("user",   RETRY_USER_TEMPLATE),
     ])

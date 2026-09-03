@@ -379,6 +379,14 @@ class Settings:
         in {"1", "true", "yes"}
     )
 
+    # knowledge_qa 子图护栏失败重试开关（方案 Phase 6 / F-3）
+    # 默认 true：护栏（R1~R7）失败时把失败原因注入 prompt 重生成一次（总 ≤2 次），
+    # 提高引用合规率；false = 返回答案 + 校验报告（P6 前现状语义）。
+    kb_guardrail_retry: bool = field(
+        default_factory=lambda: os.getenv("KB_GUARDRAIL_RETRY", "true").lower()
+        in {"1", "true", "yes"}
+    )
+
     # ============================================================
     # 入库去重（任务 M2）— 基于 chunk_uid 的文本块级去重与幂等
     # ============================================================

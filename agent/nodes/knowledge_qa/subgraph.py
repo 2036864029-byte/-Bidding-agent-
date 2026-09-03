@@ -29,16 +29,20 @@ from .chain import (
     _chunk_to_source,
     _get_llm,
     _get_prompt,
+    _get_settings,
     _get_validator,
 )
 
 from core.observability.metrics import record_guardrail_fail
+from .prompts import build_retry_prompt
 
 logger = logging.getLogger(__name__)
 
 _KB_NOT_READY_ANSWER = "知识库尚未初始化，请先执行入库操作。"
 _KB_NOT_READY_MESSAGE = "知识库尚未初始化，请联系管理员。"
 _NO_QUESTION_ANSWER = "抱歉，没有收到您的问题，请重新输入。"
+# 护栏失败重试上限（F-3）：首轮生成 + ≤1 次带反馈重生成，有界不无限循环。
+KB_MAX_ATTEMPTS = 2
 
 
 class KnowledgeQaState(TypedDict, total=False):
@@ -52,6 +56,8 @@ class KnowledgeQaState(TypedDict, total=False):
         qa_raw_answer: LLM 生成回答（子图独有）。
         qa_error: 检索 RuntimeError 信息（子图独有；置位 → refuse_error 出口）。
         qa_aborted: 空消息守卫已写终态（子图独有；置位 → 直接 END）。
+        qa_attempts: 已生成次数（子图独有；重试有界用）。
+        qa_feedback: 护栏失败原因反馈（子图独有；注入下一轮 prompt 修改要求）。
     """
 
     messages: Annotated[list[BaseMessage], add_messages]
@@ -61,6 +67,18 @@ class KnowledgeQaState(TypedDict, total=False):
     qa_raw_answer: str
     qa_error: str
     qa_aborted: bool
+    qa_attempts: int
+    qa_feedback: str
+
+
+def _retry_enabled() -> bool:
+    return _get_settings().kb_guardrail_retry
+
+
+def _feedback_text(report) -> str:
+    """从校验报告提取失败规则 → 重试反馈文本（可读、可喂 prompt）。"""
+    failed = [r for r in report.rules if not r.passed]
+    return "；".join(f"{r.name}（{r.rule_id}）: {r.detail or '未通过'}" for r in failed)
 
 
 # ── 内部节点 ─────────────────────────────────────────────────
@@ -100,29 +118,32 @@ def _route_after_retrieve(state: KnowledgeQaState) -> str:
 
 
 def _generate_node(state: KnowledgeQaState) -> dict:
-    """② 生成：prompt|槽位 kb_generation|parser（同 chain 现状）。"""
+    """② 生成：prompt|槽位 kb_generation|parser（同 chain 现状；护栏失败后带反馈重生成）。"""
     retrieval = state["qa_retrieval"]
-    answer_chain = _get_prompt() | _get_llm() | StrOutputParser()
-    raw_answer: str = answer_chain.invoke({
-        "context": retrieval.rendered_context,
-        "question": state["qa_question"],
-    })
+    feedback = state.get("qa_feedback", "")
+    if feedback:
+        settings = _get_settings()
+        retry_prompt = build_retry_prompt(
+            settings.system_prompt,
+            enable_inline_citations=settings.enable_inline_citations,
+        )
+        answer_chain = retry_prompt | _get_llm() | StrOutputParser()
+        raw_answer: str = answer_chain.invoke({
+            "context": retrieval.rendered_context,
+            "question": state["qa_question"],
+            "feedback": feedback,
+        })
+    else:
+        answer_chain = _get_prompt() | _get_llm() | StrOutputParser()
+        raw_answer: str = answer_chain.invoke({
+            "context": retrieval.rendered_context,
+            "question": state["qa_question"],
+        })
     return {"qa_raw_answer": raw_answer.strip()}
 
 
-def _guardrail_node(state: KnowledgeQaState) -> dict:
-    """③ 护栏：R1~R7 校验 → 写终态 business_result + messages。"""
-    retrieval = state["qa_retrieval"]
-    answer = state["qa_raw_answer"]
-    validator = _get_validator()
-    context_ids = [c.chunk_id for c in retrieval.chunks]
-    report = validator.validate(retrieval.citations_meta, answer, context_ids)
-    if not report.all_passed:
-        record_guardrail_fail("knowledge_qa")
-    logger.info(
-        "knowledge_qa(subgraph): 引用校验 上下文=%d块 引用=%d条 全部通过=%s",
-        len(context_ids), len(retrieval.citations_meta), report.all_passed,
-    )
+def _finalize(retrieval: RetrievalResult, answer: str, report) -> dict:
+    """护栏通过 / 重试耗尽：写终态 business_result + messages。"""
     return {
         "business_result": {
             "branch": "knowledge_qa",
@@ -136,6 +157,37 @@ def _guardrail_node(state: KnowledgeQaState) -> dict:
         },
         "messages": [AIMessage(content=answer)],
     }
+
+
+def _guardrail_node(state: KnowledgeQaState) -> dict:
+    """③ 护栏：R1~R7 校验。失败 → 有界重试（反馈注入重生成）；耗尽 → 现状语义返回。"""
+    retrieval = state["qa_retrieval"]
+    answer = state["qa_raw_answer"]
+    validator = _get_validator()
+    context_ids = [c.chunk_id for c in retrieval.chunks]
+    report = validator.validate(retrieval.citations_meta, answer, context_ids)
+
+    if report.all_passed:
+        return _finalize(retrieval, answer, report)
+
+    record_guardrail_fail("knowledge_qa")
+    attempts = state.get("qa_attempts", 0)
+    logger.info(
+        "knowledge_qa(subgraph): 引用校验失败 上下文=%d块 引用=%d条 attempts=%d",
+        len(context_ids), len(retrieval.citations_meta), attempts,
+    )
+    if _retry_enabled() and attempts < KB_MAX_ATTEMPTS - 1:
+        logger.info("knowledge_qa(subgraph): 触发护栏失败重试（第 %d 次重生成）", attempts + 1)
+        return {
+            "qa_attempts": attempts + 1,
+            "qa_feedback": _feedback_text(report),
+        }
+    return _finalize(retrieval, answer, report)
+
+
+def _route_after_guardrail(state: KnowledgeQaState) -> str:
+    """护栏节点之后：已写终态 business_result → END；否则（重试）→ 回 generate。"""
+    return "end" if state.get("business_result") else "generate"
 
 
 def _refuse_node(state: KnowledgeQaState) -> dict:
@@ -196,7 +248,10 @@ def build_knowledge_qa_subgraph():
         },
     )
     graph.add_edge("generate", "guardrail")
-    graph.add_edge("guardrail", END)
+    graph.add_conditional_edges(
+        "guardrail", _route_after_guardrail,
+        {"generate": "generate", "end": END},
+    )
     graph.add_edge("refuse", END)
     graph.add_edge("refuse_error", END)
     return graph.compile()

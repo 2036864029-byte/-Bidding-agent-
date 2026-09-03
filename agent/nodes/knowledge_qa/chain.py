@@ -4,6 +4,12 @@
 citations_meta → models.yaml kb_generation 槽位 LLM 生成 → 护栏（R1~R7）校验
 → 拒答/回答。检索与渲染已由工具面完成，本模块只做"检索之后"的编排。
 
+⚠ DEPRECATED（方案 Phase 6 / F-3）：图化编排已迁 `agent/nodes/knowledge_qa/subgraph.py`
+（kb_search → 生成 → 护栏 → 有界重试 → 拒答），chain.answer_knowledge 保留一个
+Phase 作为 F-1 对拍基准与回滚路径，P6 验收后删除。运行时惰性单例（_get_llm /
+_get_validator / _get_prompt / _get_settings）由 subgraph 复用，删除本文件前先
+将单例迁至 subgraph 或独立 runtime 模块。
+
 离线可测：chain.answer_knowledge 依赖的 kb_search / llm 均可注入/打桩。
 """
 
