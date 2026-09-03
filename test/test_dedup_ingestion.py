@@ -137,8 +137,9 @@ def _same_content_pair() -> list[Document]:
 class DedupIngestionTests(unittest.TestCase):
     def setUp(self) -> None:
         # 拦截 _create_vector_store_wrapper 内部的真实连接（与 test_milvus_store_offline 同策略）
+        # A-8 后 MilvusStoreManager 真身位于 core/vectorstore/milvus_client.py
         self._wrapper_patcher = patch(
-            "public_kb.services.milvus_store.MilvusVectorStore",
+            "core.vectorstore.milvus_client.MilvusVectorStore",
             return_value=object(),
         )
         self._wrapper_patcher.start()
