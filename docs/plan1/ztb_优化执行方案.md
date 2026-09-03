@@ -611,6 +611,21 @@ ztb_demo/
 > --legacy）；✅ E-13（验收：幂等两次入库向量数不变、杀进程 resume、csv table IR price 侧消费示例）。
 > 全量 **497 passed**。P5 完成态判据满足：pytest 全绿；幂等/续跑/table IR 消费均有离线用例；
 > 旧 pipeline_legacy + --legacy 回滚可用。
+>
+> **P6 结构收敛（2026-09-03，E-7 收尾 + 统一流水线）**：
+> - ✅ `transforms/pdf_*.py` 9 个镜像壳删除（调用方全切 `normalizers/pdf/` 真身）；`transforms/`
+>   仅剩共享 cleaner/chunker。
+> - ✅ **engine.py 切 FileIngestionPipeline**：`PublicKnowledgeRAG.init_knowledge_base/add_pdf`
+>   走三段式流水线（doc_name 取 pdf stem，与 handoff/CLI 口径一致；重入后 chunk_uid 对齐），
+>   不再依赖旧 Source 流。
+> - ✅ **`sources/` + `pipeline_legacy` 归档 `ingestion/_legacy/`**（CLI `--legacy` CSV 回滚保留，
+>   移入 `_legacy/sources` 与 `_legacy/pipeline_legacy.py`）；`csv_loader`/`csv_loader_structure`
+>   上提 `ingestion/` 根级共享（新 csv normalizer + legacy + markdown_sink 共用）。
+> - ✅ handoff `ingest_documents` 直连 MilvusSink（`HandoffIngestResult`，去 sources 依赖）。
+> - ✅ `test/test_cloud_sync.py` 内置 `pytest.importorskip` 自动跳过，`pytest test/` 全量干净
+>   （564 passed + 1 skipped），`--ignore` 变通不再需要。
+> - ⏸️ **A-8 仍延后**：`services/milvus_store.py` 上提 core 需先抽 chunk 契约（chunk_ids/
+>   contracts）到 core——属独立大型重构，随数据阶段或独立 pass 处理。
 
 ---
 
