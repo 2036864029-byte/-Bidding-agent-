@@ -12,6 +12,7 @@ Graph — StateGraph 构建与编译。
 from __future__ import annotations
 
 import functools
+import inspect
 import logging
 import time
 from typing import Any, Callable, Dict, Optional
@@ -45,10 +46,33 @@ _BRANCH_LABELS: Dict[str, str] = {
 }
 
 
+def _accepts_config(node_fn: Callable) -> bool:
+    """节点是否接受可选的 config 参数。
+
+    LangGraph 按节点签名注入 config；`_with_fallback` 的 wrapper 固定为
+    `(state, config=None)`（保证 LangGraph 总会传入），是否继续下传由
+    `_accepts_config` 决定——单参节点（多数业务节点）照旧 `node_fn(state)`。
+    """
+    try:
+        params = inspect.signature(node_fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    has_var = any(
+        p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        for p in params
+    )
+    positional = sum(
+        p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        for p in params
+    )
+    return has_var or positional >= 2
+
+
 def _with_fallback(node_fn: Callable) -> Callable:
     """包装业务节点：任何未捕获异常 → 自动降级返回友好提示。
 
-    包装后的节点仍然符合统一接口: (AgentState) → dict
+    包装后的节点仍然符合统一接口: (AgentState) → dict（可选 config 透传，
+    供子图类节点转发 thread_id）。
 
     Args:
         node_fn: 原始业务节点函数
@@ -58,10 +82,13 @@ def _with_fallback(node_fn: Callable) -> Callable:
     """
 
     @functools.wraps(node_fn)
-    def wrapped(state: AgentState) -> dict:
+    def wrapped(state: AgentState, config: Optional[Dict] = None) -> dict:
         _t0 = time.perf_counter()
         try:
-            result = node_fn(state)
+            if _accepts_config(node_fn):
+                result = node_fn(state, config)
+            else:
+                result = node_fn(state)
         except Exception as e:
             node_name = getattr(node_fn, "__name__", "unknown")
             label = _BRANCH_LABELS.get(node_name, "当前")

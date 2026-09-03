@@ -60,12 +60,12 @@ def test_node_dispatches_to_legacy_when_switch_off(monkeypatch):
         called["legacy"] = True
         return {"business_result": {"branch": "knowledge_qa", "answer": "legacy", "data": {}}}
 
-    def boom(state):
+    def boom(state, config=None):
         called["tool"] = True
         raise AssertionError("不应走工具路径")
 
     monkeypatch.setattr(node_mod, "run_legacy_node", fake_legacy)
-    monkeypatch.setattr(node_mod, "_tool_chain", SimpleNamespace(answer_knowledge=boom))
+    monkeypatch.setattr(node_mod, "get_knowledge_qa_subgraph", lambda: SimpleNamespace(invoke=boom))
 
     out = node_mod.node_knowledge_qa({"messages": [HumanMessage(content="招标方式有哪些")]})
     assert called["legacy"] and not called["tool"]
@@ -75,17 +75,43 @@ def test_node_dispatches_to_legacy_when_switch_off(monkeypatch):
 def test_node_dispatches_to_tool_path_when_switch_on(monkeypatch):
     monkeypatch.setattr(node_mod, "_TOOL_PATH_ENABLED", True)
 
-    def fake_answer(question):
-        return {"answer": "按【来源1】…", "sources": [], "citations": [{"context_index": 1}],
-                "citation_validation": {"all_passed": True}, "retrieval_diagnostics": {}}
+    def fake_invoke(state, config=None):
+        return {
+            "business_result": {"branch": "knowledge_qa", "answer": "按【来源1】…",
+                                "data": {"citation_validation": {"all_passed": True}}},
+            "messages": [AIMessage(content="按【来源1】…")],
+        }
 
-    monkeypatch.setattr(node_mod, "_tool_chain", SimpleNamespace(answer_knowledge=fake_answer))
+    monkeypatch.setattr(node_mod, "get_knowledge_qa_subgraph",
+                        lambda: SimpleNamespace(invoke=fake_invoke))
 
     out = node_mod.node_knowledge_qa({"messages": [HumanMessage(content="招标方式有哪些")]})
     assert out["business_result"]["branch"] == "knowledge_qa"
     assert out["business_result"]["answer"] == "按【来源1】…"
     assert out["business_result"]["data"]["citation_validation"] == {"all_passed": True}
     assert out["messages"][0].content == "按【来源1】…"
+
+
+def test_node_forwards_config_to_subgraph(monkeypatch):
+    """子图化后：config（thread_id）透传子图 invoke（P6 记忆依赖）。"""
+    monkeypatch.setattr(node_mod, "_TOOL_PATH_ENABLED", True)
+    seen = {}
+
+    def fake_invoke(state, config=None):
+        seen["config"] = config
+        seen["state"] = state
+        return {"business_result": {"branch": "knowledge_qa", "answer": "x", "data": {}},
+                "messages": [AIMessage(content="x")]}
+
+    monkeypatch.setattr(node_mod, "get_knowledge_qa_subgraph",
+                        lambda: SimpleNamespace(invoke=fake_invoke))
+
+    node_mod.node_knowledge_qa(
+        {"messages": [HumanMessage(content="q")]},
+        config={"configurable": {"thread_id": "t1"}},
+    )
+    assert seen["config"] == {"configurable": {"thread_id": "t1"}}
+    assert seen["state"]["messages"][-1].content == "q"
 
 
 def test_node_empty_messages_friendly(monkeypatch):
