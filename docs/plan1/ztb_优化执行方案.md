@@ -447,7 +447,7 @@ ztb_demo/
 > - ⚠️ **A-8 延后**：`services/milvus_store.py` 深度耦合 `public_kb.chunk_ids/contracts`（:20-28），原样迁 core 会制造 core→public_kb 反向依赖；待 chunk 契约上提 core 后再迁。无 agent 直接依赖，不影响 R1 验收。
 > - ✂️ **A-3/A-7 范围收紧（忠于现状）**：LLM/Embedding 运行时对象必须保持 LangChain Runnable（router 依赖 with_structured_output/bind_tools、generation 依赖 `|`），故 ABC 只抽象*构造*差异点（`LLMProvider.build()`）；chat/structured_output/stream 门面推迟 P6 工具化。`core/embeddings/base.py` 未建（bge_m3.py 提供 model_id/version 常量供 A-11）。
 > - ℹ️ 新增 `test/core/test_import_compat.py` 含双路径 Settings 字段全等断言（A-1 验证）。
-> - ⚠️ `test/test_cloud_sync.py` 为预先存在的损坏（import 不存在的 `cloud_sync.*`，unittest 遗留），pytest 收集即中止；本地验证用 `--ignore`。与本次改动无关，待用户处置。
+> - ✅ **`test/test_cloud_sync.py` 处置（P6 结构收敛）**：该文件已内置 `pytest.importorskip("cloud_sync")` 自动跳过（cloud_sync 为非仓库组件），`pytest test/` 全量可干净运行（564 passed + 1 skipped），**`--ignore` 变通不再需要**（2026-09-03 验证）。
 
 | # | 目标文件 | 动作 | 要点 / 验证 |
 |---|---|---|---|
