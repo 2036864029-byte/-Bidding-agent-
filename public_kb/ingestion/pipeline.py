@@ -31,6 +31,7 @@ from .checkpoint import StageCheckpoint, STAGE_A, STAGE_C
 from .ir import NormalizedDocument, simhash
 from .ledger import IngestLedger
 from .normalizers import build_normalizer
+from .quality import QualityGate
 from .router import FormatRouter
 from .pipeline_legacy import IngestionPipeline  # noqa: F401  # 兼容 re-export
 
@@ -68,6 +69,7 @@ class FileIngestionPipeline:
         checkpoint: Optional[StageCheckpoint] = None,
         resume: bool = False,
         rerun_from: Optional[str] = None,
+        quality_gate: Optional[QualityGate] = None,
     ) -> None:
         self._settings = settings
         self._sink = sink  # 可为 None（预览/不导入模式）
@@ -78,6 +80,7 @@ class FileIngestionPipeline:
         self._checkpoint = checkpoint
         self._resume = resume
         self._rerun_from = rerun_from  # "B" = 复用 A 产物重做 B+C
+        self._quality_gate = quality_gate  # None = 关卡关闭
 
     # ── 入口 ───────────────────────────────────────────────
 
@@ -143,9 +146,20 @@ class FileIngestionPipeline:
             table_irs = [ir for ir in irs if ir.ir_format == "table"]
             md_irs = [ir for ir in irs if ir.ir_format == "markdown"]
 
+            # E-11 质量关卡：低质量 markdown IR 旁路 review_queue，不入库
+            if self._quality_gate is not None:
+                ingest_md, review_md = self._quality_gate.partition(md_irs)
+                for ir in review_md:
+                    self._quality_gate.dump_review(ir, path)
+                if review_md:
+                    res.detail["review_count"] = len(review_md)
+                    res.detail["review_reason"] = "quality_below_threshold"
+            else:
+                ingest_md, review_md = md_irs, []
+
             # Stage B：清洗 + 分块 + chunk_uid 固化
             all_docs: List[Document] = []
-            for ir in md_irs:
+            for ir in ingest_md:
                 all_docs.extend(self._chunk_ir(ir, path))
 
             res.ir_count = len(irs)
@@ -158,6 +172,19 @@ class FileIngestionPipeline:
                 res.detail["table_row_count"] = sum(
                     int(t.metadata.get("row_count", 0)) for t in table_irs
                 )
+
+            # 全部 markdown IR 被质量关卡旁路 → 不入库（标记 review 状态）
+            if md_irs and not ingest_md:
+                res.status = "review"
+                res.reason = "quality_below_threshold"
+                if self._checkpoint is not None:
+                    self._checkpoint.mark(path, STAGE_C)
+                if self._ledger is not None:
+                    self._ledger.mark_done(
+                        routed.doc_id, source_hash,
+                        source_format=fmt, status="review",
+                    )
+                return res
 
             # Stage C：写入 sink（无 sink = 预览模式）
             if all_docs and self._sink is not None:
