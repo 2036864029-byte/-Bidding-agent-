@@ -170,3 +170,36 @@ def test_agent_knowledge_entry_does_not_import_public_kb_internals():
         for module in imported_modules
         for prefix in forbidden_prefixes
     )
+
+
+def test_knowledge_qa_subgraph_does_not_import_public_kb_internals():
+    """P6/F-1 子图布局守卫：subgraph.py 只经 public_kb.tools 门面，禁直连 RAG 内部。
+
+    与入口守卫同禁区清单（qa_chain/rag_engine/retrieval/generation/ingestion），
+    防止子图化后回潮 import 旧 RAG 实现。
+    """
+    from agent.nodes.knowledge_qa import subgraph
+
+    subgraph_path = Path(subgraph.__file__).resolve()
+
+    tree = ast.parse(subgraph_path.read_text(encoding="utf-8"))
+    imported_modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported_modules.add(node.module)
+
+    forbidden_prefixes = (
+        "public_kb.qa_chain",
+        "public_kb.rag_engine",
+        "public_kb.retrieval",
+        "public_kb.generation",
+        "public_kb.ingestion",
+    )
+    assert not any(
+        module == prefix or module.startswith(prefix + ".")
+        for module in imported_modules
+        for prefix in forbidden_prefixes
+    )
+
