@@ -26,7 +26,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 # PyMuPDF 在调用处 lazy import（_profile_and_classify / _total_pages /
 # _dispatch_tier_a worker 内），便于测试环境即使没装 pymupdf 也能 import 模块。
@@ -324,10 +324,37 @@ class PdfRouter:
             for i in range(0, len(decisions), chunk_size)
         ]
 
+        # A1-1：文档级页眉候选集（跨页重复）——先预扫全部 Tier A 页的行做判断，
+        # 再把候选集传给各 worker，同一文档统一口径（避免逐 worker 各自为政）。
+        # 预扫失败则退化为"不去页眉"（header_candidates 为空时 remove_header_lines
+        # 不删任何行），不影响主流程。
+        from .pdf_fast_text import detect_header_candidates, iter_lines
+        header_candidates: Set[str] = set()
+        try:
+            import pymupdf
+            doc = pymupdf.open(str(pdf_path))
+            try:
+                page_lines: List[Any] = []
+                page_heights: List[float] = []
+                for d in decisions:
+                    page = doc.load_page(d.page_idx)
+                    page_lines.append(iter_lines(page))
+                    page_heights.append(float(page.rect.height or 0))
+                header_candidates = detect_header_candidates(
+                    page_lines,
+                    page_heights=page_heights,
+                    min_pages=self._settings.pdf_header_repeat_min,
+                    min_repeat=self._settings.pdf_header_repeat_plain,
+                    max_len=self._settings.pdf_header_max_len,
+                )
+            finally:
+                doc.close()
+        except Exception:  # noqa: BLE001
+            header_candidates = set()
+
         def worker(items: Sequence[PageRouteDecision]):
             import pymupdf
             from .pdf_page_profile import build_page_profile
-            from .pdf_fast_text import iter_lines
             from .pdf_two_column_reflow import reflow_page_markdown
 
             doc = pymupdf.open(str(pdf_path))  # 每线程独立 Document
@@ -350,9 +377,14 @@ class PdfRouter:
                                 lines,
                                 split_x=profile.two_col_split_x,
                                 page_width=profile.width,
+                                header_candidates=header_candidates,
                             )
                         else:
-                            md = extract_page_markdown(page, page_idx=d.page_idx)
+                            md = extract_page_markdown(
+                                page,
+                                page_idx=d.page_idx,
+                                header_candidates=header_candidates,
+                            )
                     except Exception as exc:  # noqa: BLE001
                         warnings.append(f"fast_text_failed: {exc}")
                         md = ""

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "books": {
+    "全书": {
+      "tier_a_pages": 487,
+      "two_col_pages": 484,
+      "header_leak": 0,
+      "page_number_res": 0,
+      "first_line_loss": 0,
+      "first_line_checked": 283,
+      "chars": 726244
+    },
+    "白如银": {
+      "tier_a_pages": 727,
+      "two_col_pages": 5,
+      "header_leak": 0,
+      "page_number_res": 0,
+      "first_line_loss": 0,
+      "first_line_checked": 727,
+      "chars": 471973
+    },
+    "1200问": {
+      "tier_a_pages": 438,
+      "two_col_pages": 4,
+      "header_leak": 0,
+      "page_number_res": 0,
+      "first_line_loss": 1,
+      "first_line_checked": 438,
+      "chars": 237772
+    }
+  }
+}

@@ -40,6 +40,87 @@ logger = logging.getLogger(__name__)
 _MARKDOWN_SUFFIX = ".assembled.md"
 
 
+def clean_markdown(
+    markdown: str,
+    settings: Settings,
+    *,
+    cleaner: Optional[TextCleaner] = None,
+    external: bool = False,
+) -> str:
+    """Phase A：文本清洗链路。输入原始 markdown（解析产物或外部文件），
+    输出清洗后 markdown（**不切分**）。
+
+    清洗 = TextCleaner（短行/LaTeX/页标记/元信息，A2）
+         + 结构归一（A3）：目录点线过滤 → 外部 md 治理（external，A3-3，
+           须先于 A3-2 以防交叉引用被拆成虚假条标题）→ 标题级归一（A3-1）→
+           标题行内联拆分（A3-2）→ 前置页/目录标记（A3-5，书籍路径）
+         + 结构校验闭环（A4，有界定点修复）。
+    产出是独立可验收的干净文本资产（新版 assembled.md），与切分链路解耦。
+
+    与旧链路等价的说明：`adapt_pdf_markdown` 目前仍自带 strip_toc_noise 与
+    _split_heading_inline_articles（幂等），此处重复调用无害；Phase A3 收口时
+    从 adapt_pdf_markdown 移除，避免双份。
+    """
+    from .normalizers.pdf.pdf_structure import strip_toc_noise
+    from .transforms.structure import (
+        mark_front_matter,
+        mark_toc_page,
+        normalize_external_md,
+        normalize_heading_levels_full,
+        repair_structure,
+        split_inline_articles,
+    )
+
+    cleaner = cleaner or TextCleaner()
+    cleaned = cleaner.clean(markdown)
+    if settings.enable_pdf_structure:
+        if settings.enable_pdf_toc_filter:
+            cleaned = strip_toc_noise(cleaned)
+        if external and settings.enable_external_md_normalize:
+            cleaned = normalize_external_md(cleaned)  # A3-3（须先于 A3-2）
+        cleaned = normalize_heading_levels_full(cleaned)  # A3-1
+        cleaned = split_inline_articles(cleaned)          # A3-2
+        if not external:
+            # A3-5（书籍路径）：目录页标记 → 前置页标记/剥离（Phase B 消费标记）
+            cleaned = mark_toc_page(cleaned)
+            cleaned = mark_front_matter(cleaned, skip=settings.pdf_skip_front_matter)
+        # A4 结构校验闭环（有界 3 轮；报告供 A5 验收脚本）
+        cleaned, repair_report = repair_structure(cleaned)
+        if any(
+            n for rule, n in repair_report.items() if rule != "rounds"
+        ):
+            logger.info("A4 结构校验修复 %s", repair_report)
+    return cleaned
+
+
+def chunk_cleaned_markdown(
+    clean_md: str,
+    doc_name: str,
+    settings: Settings,
+    *,
+    chunker: Optional[SemanticChunker] = None,
+) -> List[Document]:
+    """Phase B：切分链路（当前实现，Phase B 重设计时替换）。消费清洗后 markdown。
+
+    与旧 adapt_pdf_markdown 口径一致：表格原子块 + SemanticChunker。切分策略
+    与元数据挂载（page_start/end、表格原子块、目录不入 chunk）在 Phase B 重设计。
+    """
+    chunker = chunker or SemanticChunker(
+        max_chars=settings.chunk_max_chars,
+        overlap_chars=settings.chunk_overlap_chars,
+    )
+    if not settings.enable_pdf_structure:
+        return chunker.chunk(clean_md, doc_name)
+    return adapt_pdf_markdown(
+        clean_md,
+        doc_name=doc_name,
+        chunker=chunker,
+        min_table_rows=settings.pdf_min_table_rows,
+        enable_toc_filter=settings.enable_pdf_toc_filter,
+        enable_reflow_flag=settings.enable_pdf_reflow_flag,
+    )
+
+
 def chunk_markdown(
     markdown: str,
     doc_name: str,
@@ -48,27 +129,12 @@ def chunk_markdown(
     cleaner: Optional[TextCleaner] = None,
     chunker: Optional[SemanticChunker] = None,
 ) -> List[Document]:
-    """与 rag_engine._process_single_pdf 相同的分块口径（确定性）。
+    """兼容壳：clean_markdown → chunk_cleaned_markdown（Phase A 拆分前的完整链路）。
 
-    ``enable_pdf_structure=true`` 时走 ``adapt_pdf_markdown``（表格原子块 /
-    目录过滤 / 双栏打标），否则走纯 ``SemanticChunker``。
+    保持既有调用方（pipeline / parse_tool / prepare_handoff / 测试）行为不变。
     """
-    cleaner = cleaner or TextCleaner()
-    chunker = chunker or SemanticChunker(
-        max_chars=settings.chunk_max_chars,
-        overlap_chars=settings.chunk_overlap_chars,
-    )
-    cleaned = cleaner.clean(markdown)
-    if not settings.enable_pdf_structure:
-        return chunker.chunk(cleaned, doc_name)
-    return adapt_pdf_markdown(
-        cleaned,
-        doc_name=doc_name,
-        chunker=chunker,
-        min_table_rows=settings.pdf_min_table_rows,
-        enable_toc_filter=settings.enable_pdf_toc_filter,
-        enable_reflow_flag=settings.enable_pdf_reflow_flag,
-    )
+    cleaned = clean_markdown(markdown, settings, cleaner=cleaner)
+    return chunk_cleaned_markdown(cleaned, doc_name, settings, chunker=chunker)
 
 
 def _freeze_chunk_uid(documents: Sequence[Document]) -> List[Document]:
@@ -173,9 +239,12 @@ def _process_single_book(
     force: bool,
     settings: Settings,
 ) -> Dict[str, Any]:
-    """处理单本书（子进程或进程内调用）：解析 + 分块 + 落盘。返回 entry 字段。
+    """处理单本书（子进程或进程内调用）：解析 + 清洗 + 分块 + 落盘。返回 entry 字段。
 
-    doc_name 取 ``pdf.stem``；markdown 输出 ``{stem}.assembled.md``。
+    doc_name 取 ``pdf.stem``；``{stem}.assembled.md`` 写**清洗后** markdown
+    （Phase A 独立可验收资产），原始解析产物另存 ``{stem}.raw.md`` 供调试。
+    分块走 ``chunk_cleaned_markdown``（不再二次清洗，与旧 ``chunk_markdown``
+    路径 chunk 口径一致）。
     """
     from .parser_factory import build_pdf_parser
 
@@ -185,6 +254,7 @@ def _process_single_book(
     jsonl_path = out / f"{pdf_file.stem}.documents.jsonl"
 
     if md_path.exists() and not force:
+        # 缓存命中：已清洗的 assembled.md → 直接分块（清洗幂等，无需再清）
         raw_markdown = md_path.read_text(encoding="utf-8")
         documents = _freeze_chunk_uid(
             chunk_markdown(raw_markdown, pdf_file.stem, settings)
@@ -199,10 +269,12 @@ def _process_single_book(
 
     parser = build_pdf_parser(settings)
     raw_markdown = parser.parse(pdf_file)
+    clean_md = clean_markdown(raw_markdown, settings)  # Phase A 清洗产物
     documents = _freeze_chunk_uid(
-        chunk_markdown(raw_markdown, pdf_file.stem, settings)
+        chunk_cleaned_markdown(clean_md, pdf_file.stem, settings)
     )
-    md_path.write_text(raw_markdown, encoding="utf-8")
+    md_path.write_text(clean_md, encoding="utf-8")
+    (out / f"{pdf_file.stem}.raw.md").write_text(raw_markdown, encoding="utf-8")
     dump_documents_jsonl(documents, jsonl_path)
     return {
         "chunks": len(documents),

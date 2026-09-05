@@ -233,6 +233,18 @@ class Settings:
             ),
         )
     )
+    # 页眉识别（A1-1/A1-3）：跨页重复即页眉，不做按位置的硬切（旧 top-ratio 误删正文首行）。
+    pdf_header_repeat_min: int = field(
+        default_factory=lambda: int(
+            os.getenv("PDF_HEADER_REPEAT_MIN", "2")
+        )
+    )  # Signal A：归一化（去页码前缀）后出现在多少个不同页 + 出现 >=2 个不同页码 → 页眉候选
+    pdf_header_repeat_plain: int = field(
+        default_factory=lambda: int(os.getenv("PDF_HEADER_REPEAT_PLAIN", "5"))
+    )  # Signal B：无页码、原样出现在多少个不同页 → 页眉候选（与 cleaner/assembler 重复页眉口径一致）
+    pdf_header_max_len: int = field(
+        default_factory=lambda: int(os.getenv("PDF_HEADER_MAX_LEN", "25"))
+    )  # 页眉候选最大长度（字符）——正文行通常更长且不跨页重复
 
     # ============================================================
     # PDF 结构适配（任务 M1）— 电子书类 PDF 的表格原子块/目录过滤/双栏打标
@@ -242,9 +254,23 @@ class Settings:
             "ENABLE_PDF_STRUCTURE", "true"
         ).lower() in {"1", "true", "yes"}
     )
+    # A3-3：外部 markdown（cleaned_v1）治理开关——引用误读校正/列表项降级/元信息剥离
+    enable_external_md_normalize: bool = field(
+        default_factory=lambda: os.getenv(
+            "ENABLE_EXTERNAL_MD_NORMALIZE", "true"
+        ).lower() in {"1", "true", "yes"}
+    )
     pdf_min_table_rows: int = 2  # 连续 | 表格行达到该行数才视为表格原子段
     enable_pdf_toc_filter: bool = True  # 剔除点线目录行（"……(82)"）
     enable_pdf_reflow_flag: bool = True  # 疑似双栏乱序块打标（供人工抽检）
+    # A3-5：书籍前置页（封面/CIP/前言/目录）处理——false=标记（默认，Phase B
+    # 消费 frontmatter 标记决定不入 chunk）；true=直接剥离
+    pdf_skip_front_matter: bool = field(
+        default_factory=lambda: os.getenv(
+            "PDF_SKIP_FRONT_MATTER", "false"
+        ).lower() in {"1", "true", "yes"}
+    )
+
     # ============================================================
     # ingestion CLI 路径（9.3 Track B）— 默认输入/工作目录，CLI 显式参数覆盖
     # ============================================================

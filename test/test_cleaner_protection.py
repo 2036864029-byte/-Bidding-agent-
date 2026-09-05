@@ -31,11 +31,74 @@ def test_legal_chapter_heading_is_kept():
 
 
 def test_noise_short_line_is_still_removed():
-    # 非法律标题的 8 字符短噪声行仍应被删除（原行为不变）
-    raw = f"xx噪声行\n{_BODY}\n"
+    # 无汉字的纯符号短行仍应被删除（A2-1 噪声黑名单：仅符号装饰行）
+    raw = f"........\n{_BODY}\n"
     cleaned = TextCleaner.clean(raw)
-    assert "xx噪声行" not in cleaned
+    assert "........" not in cleaned
     assert _BODY in cleaned
+
+
+def test_cjk_fragment_short_line_is_kept():
+    # A2-1 核心：含汉字的短行是正文碎片（双栏行尾，如"理机构。"），必须保留
+    raw = f"理机构。\n{_BODY}\n"
+    cleaned = TextCleaner.clean(raw)
+    assert "理机构。" in cleaned
+    assert _BODY in cleaned
+
+
+def test_page_marker_line_is_stripped():
+    # A2-3：`<!-- page: N -->` 是装配层过程产物，不得进入干净文本
+    raw = f"<!-- page: 16 -->\n{_BODY}\n"
+    cleaned = TextCleaner.clean(raw)
+    assert "<!-- page" not in cleaned
+    assert _BODY in cleaned
+
+
+def test_image_link_line_is_stripped():
+    # A2-3：MinerU 图片引用 `![](images/...)` 从干净文本剥离
+    raw = f"![](images/001.jpg)\n{_BODY}\n"
+    cleaned = TextCleaner.clean(raw)
+    assert "images/001.jpg" not in cleaned
+    assert _BODY in cleaned
+
+
+# ── A2-2 LaTeX/乱码清洗 ───────────────────────────────────
+
+def test_latex_circled_number_normalized():
+    raw = f"条款见 \\textcircled{{1}} 标注的内容足够长。\n{_BODY}\n"
+    cleaned = TextCleaner.clean(raw)
+    assert "(1)" in cleaned
+    assert "\\textcircled" not in cleaned
+
+
+def test_latex_command_wrapper_stripped():
+    raw = f"\\boldsymbol{{ABC}} 内容足够长确保保留。\n{_BODY}\n"
+    cleaned = TextCleaner.clean(raw)
+    assert "ABC" in cleaned
+    assert "\\boldsymbol" not in cleaned
+
+
+def test_latex_nested_wrapper_with_spaces_stripped():
+    # OCR 输出带空格与嵌套：\boldsymbol { { \mathit { 1 1 } } }
+    raw = "\\boldsymbol { { \\mathit { 1 1 } } } 内容足够长确保保留。\n" + _BODY + "\n"
+    cleaned = TextCleaner.clean(raw)
+    assert "\\boldsymbol" not in cleaned
+    assert "\\mathit" not in cleaned
+    assert "1 1" in cleaned
+
+
+def test_dollar_math_shell_kept_inner():
+    raw = f"邮箱为 $@$ 163 的地址内容足够长。\n{_BODY}\n"
+    cleaned = TextCleaner.clean(raw)
+    assert "@" in cleaned
+    assert "$" not in cleaned
+
+
+def test_percent_lost_question_marks_recovered():
+    raw = f"保证金不得超过 2?? 的比例内容足够长。\n{_BODY}\n"
+    cleaned = TextCleaner.clean(raw)
+    assert "2%" in cleaned
+    assert "2??" not in cleaned
 
 
 def test_plain_number_line_is_still_removed():

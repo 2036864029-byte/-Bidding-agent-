@@ -46,6 +46,38 @@ def test_chunk_markdown_deterministic():
         assert da.metadata == db.metadata
 
 
+def test_clean_markdown_splits_inline_and_removes_toc():
+    """Phase A clean_markdown：目录点线过滤 + 标题行内联正文拆分（不切分）。"""
+    from public_kb.ingestion.handoff import clean_markdown
+
+    s = _settings()
+    md = (
+        "招标投标法实施条例⋯⋯⋯⋯⋯⋯(82)\n"
+        "## 第一条 为了规范招标投标活动，制定本法。\n"
+        "正文内容足够长。\n"
+    )
+    cleaned = clean_markdown(md, s)
+    assert "实施条例⋯" not in cleaned
+    # 标题行内联正文被拆为独立行，正文不再随标题被丢弃
+    assert "## 第一条\n为了规范招标投标活动，制定本法。" in cleaned
+
+
+def test_chunk_markdown_equals_split_chain():
+    """兼容壳 chunk_markdown == clean_markdown → chunk_cleaned_markdown（确定性）。"""
+    from public_kb.ingestion.handoff import (
+        clean_markdown,
+        chunk_cleaned_markdown,
+    )
+
+    s = _settings()
+    docs_a = chunk_markdown(_MD, "demo", s)
+    docs_b = chunk_cleaned_markdown(clean_markdown(_MD, s), "demo", s)
+    assert len(docs_a) == len(docs_b)
+    for da, db in zip(docs_a, docs_b):
+        assert da.page_content == db.page_content
+        assert da.metadata == db.metadata
+
+
 def test_chunk_uid_differs_by_doc_name():
     """chunk_uid 依赖 doc_name：同一内容不同文件名 → 不同 uid（确定性前提）。"""
     from public_kb.ingestion.handoff import _freeze_chunk_uid
@@ -171,6 +203,28 @@ def test_process_single_book_parse_writes_artifacts(tmp_path, monkeypatch):
     assert entry["chunks"] > 0
     assert (out / "book.assembled.md").read_text(encoding="utf-8") == _MD
     assert (out / "book.documents.jsonl").exists()
+
+
+def test_process_single_book_writes_cleaned_markdown(tmp_path, monkeypatch):
+    """Phase A 装配：assembled.md 写清洗后文本（结构归一生效），原始产物留 .raw.md。"""
+    from public_kb.ingestion.handoff import _process_single_book
+
+    pdf_dir = tmp_path / "pdfs"
+    pdf_dir.mkdir()
+    _make_pdf(pdf_dir / "book.pdf")
+    monkeypatch.setattr(
+        "public_kb.ingestion.parser_factory.build_pdf_parser",
+        lambda settings: _FakeParser(),
+    )
+    s = _settings()  # enable_pdf_structure 默认 True
+    out = tmp_path / "out"
+    out.mkdir()
+    _process_single_book(pdf_dir / "book.pdf", out, False, s)
+    assembled = (out / "book.assembled.md").read_text(encoding="utf-8")
+    raw = (out / "book.raw.md").read_text(encoding="utf-8")
+    assert raw == _MD  # 原始解析产物留档调试
+    assert "## 第一章 总则" in assembled  # 清洗后：# 第一章 → ## 第一章
+    assert "第一条 为了规范招标投标活动" in assembled
 
 
 def test_book_process_timeout_terminates(tmp_path):

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from public_kb.ingestion.normalizers.pdf.pdf_fast_text import (
     TextLine,
+    detect_header_candidates,
     generate_markdown,
-    remove_header_footer,
+    normalize_header_text,
+    remove_header_lines,
     remove_page_numbers,
     sort_single_column,
 )
@@ -44,21 +46,87 @@ def test_non_number_kept():
     assert len(remove_page_numbers(lines)) == 2
 
 
-# ── 页眉页脚剔除（法律标题保留） ─────────────────────────
+# ── 页眉剔除（文档级候选，A1-1/A1-3） ─────────────────────
 
-def test_header_footer_removed_by_position():
-    h = _line("出版社名称", y0=5)
-    body = _line("正文内容", y0=400)
-    f = _line("页脚", y0=780)
-    kept = remove_header_footer([h, body, f], page_height=792)
-    assert [ln.text for ln in kept] == ["正文内容"]
+def test_normalize_header_text_strips_page_number():
+    assert normalize_header_text("78 一、招标投标") == "一、招标投标"
+    assert normalize_header_text("一、招标投标") == "一、招标投标"
+    assert normalize_header_text("488") == ""
 
 
-def test_legal_heading_in_header_zone_kept():
-    h = _line("第一章 总则", y0=5)
-    body = _line("正文", y0=400)
-    kept = remove_header_footer([h, body], page_height=792)
-    assert "第一章 总则" in [ln.text for ln in kept]
+def test_header_line_removed_when_in_candidates():
+    h = _line("一、招标投标", y0=5)
+    body = _line("本条正文内容足够长确保保留", y0=400)
+    kept = remove_header_lines([h, body], header_candidates=["一、招标投标"])
+    assert [ln.text for ln in kept] == ["本条正文内容足够长确保保留"]
+
+
+def test_no_candidates_removes_nothing():
+    # 旧行为按位置硬切（top_ratio=0.12，阈值 95pt）会误删 y=76pt 的正文首行；
+    # 无文档级候选时不再删任何行。
+    first = _line("第一条 本法所称招标投标活动是指", y0=76)
+    body = _line("本条正文内容足够长确保保留", y0=400)
+    kept = remove_header_lines([first, body], header_candidates=None)
+    assert [ln.text for ln in kept] == [first.text, body.text]
+
+
+def test_legal_heading_not_detected_as_header():
+    pages = [[_line("第一章 总则", y0=5)]] * 3
+    candidates = detect_header_candidates(pages, min_pages=2)
+    assert "第一章 总则" not in candidates
+
+
+def test_header_with_page_number_detected_across_pages():
+    # "78 一、招标投标" / "288 一、招标投标" 归一化后同一条、页码变化 → Signal A 候选
+    pages = [
+        [_line("78 一、招标投标", y0=5), _line("正文内容足够长保留一", y0=400)],
+        [_line("288 一、招标投标", y0=5), _line("正文内容足够长保留二", y0=400)],
+    ]
+    candidates = detect_header_candidates(pages, min_pages=2)
+    assert "一、招标投标" in candidates
+
+
+def test_body_phrase_repeat_two_pages_not_header():
+    # 跨页重复的正文短语无页码前缀、页数 < min_repeat → 不得误判为页眉（A6 反过拟合）
+    pages = [
+        [_line("(1)代理机构", y0=100), _line("正文内容足够长保留一", y0=400)],
+        [_line("(1)代理机构", y0=100), _line("正文内容足够长保留二", y0=400)],
+    ]
+    candidates = detect_header_candidates(pages, min_pages=2)
+    assert "(1)代理机构" not in candidates
+
+
+def test_plain_repeating_header_detected_by_signal_b():
+    # 无页码、但稳定跨 >= min_repeat 页出现的短行 → Signal B 候选
+    pages = [[_line("二、政府采购", y0=5)] for _ in range(6)]
+    candidates = detect_header_candidates(pages, min_pages=2, min_repeat=5)
+    assert "二、政府采购" in candidates
+
+
+def test_mid_page_repeated_phrase_not_header_with_heights():
+    # 正文短语跨页重复但在版心（y=400，页高 800，非顶/底区）→ 不得误判
+    # 即使重复页数达标；位置佐证排除（全书实测：`(一)技术复杂…` 跨 7 页）
+    pages = [[_line("(一)技术复杂、有特殊要求或者受自然环境限", y0=400)] for _ in range(7)]
+    heights = [800.0] * 7
+    candidates = detect_header_candidates(
+        pages, page_heights=heights, min_pages=2, min_repeat=5
+    )
+    assert candidates == set()
+
+
+def test_top_zone_repeated_line_detected_with_heights():
+    pages = [[_line("二、政府采购", y0=5)] for _ in range(6)]
+    heights = [800.0] * 6
+    candidates = detect_header_candidates(
+        pages, page_heights=heights, min_pages=2, min_repeat=5
+    )
+    assert "二、政府采购" in candidates
+
+
+def test_single_page_short_line_not_header():
+    pages = [[_line("正文内容仅出现一次", y0=5)]]
+    candidates = detect_header_candidates(pages, min_pages=2)
+    assert candidates == set()
 
 
 # ── Markdown 标题生成 ────────────────────────────────────

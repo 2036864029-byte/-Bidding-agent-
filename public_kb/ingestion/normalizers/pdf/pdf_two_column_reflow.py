@@ -16,7 +16,7 @@ Two-column reading-order reflow for legal text pages (T2A).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
 from .pdf_fast_text import TextLine
 
@@ -84,10 +84,21 @@ def reflow_page_markdown(
     split_x: float,
     page_width: float,
     full_width_ratio: float = 0.7,
+    header_candidates: Optional[Sequence[str]] = None,
 ) -> str:
-    """双栏重建后转 Markdown（复用 fast_text 的标题生成）。"""
-    from .pdf_fast_text import generate_markdown
+    """双栏重建后转 Markdown（复用 fast_text 的标题生成）。
 
+    重建前先做文本层去页码 + 去页眉（文档级候选）——旧行为双栏路径完全不
+    移除页眉/页码，导致双栏页页眉泄漏与页码残留（全书 142 页眉 + 182 页码）。
+    """
+    from .pdf_fast_text import (
+        generate_markdown,
+        remove_header_lines,
+        remove_page_numbers,
+    )
+
+    lines = remove_page_numbers(lines)
+    lines = remove_header_lines(lines, header_candidates)
     result = reflow_two_columns(
         lines, split_x=split_x, page_width=page_width, full_width_ratio=full_width_ratio
     )

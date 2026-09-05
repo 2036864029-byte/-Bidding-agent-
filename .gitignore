@@ -85,3 +85,6 @@ milvus/volumes-v26/
 
 # ===== Claude Code 会话本地脚本（含 SSH 凭证，禁止入库） =====
 .claude/
+
+# ===== 数据分析/试点产物（基线脚本、PaddleOCR 模型缓存 2GB+，不入仓） =====
+analysis_out/

@@ -15,11 +15,20 @@ from __future__ import annotations
 
 import re
 import statistics
+from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 # 独立页码：如 "12"
 _PAGE_NUMBER_RE = re.compile(r"^\s*\d{1,4}\s*$")
+
+# 行首页码前缀（页眉中页码逐页变化，剥离后才能识别同一条页眉）：
+#   "78 一、招标投标" → "一、招标投标"
+_HEADER_PAGENUM_PREFIX_RE = re.compile(r"^\d{1,4}\s*")
+# 句末标点（含引号/括号闭合）：以这些结尾的行视为完整句
+_SENTENCE_END_RE = re.compile(r"[。；！？…）」』\"']$")
+# 含汉字（CJK 统一表意文字块）
+_HAS_CJK_RE = re.compile("[一-鿿]")
 
 # 法规标题模式（含级别映射）
 _LEGAL_HEADING_PATTERNS = (
@@ -86,24 +95,106 @@ def remove_page_numbers(lines: Sequence[TextLine]) -> List[TextLine]:
     return [ln for ln in lines if not _PAGE_NUMBER_RE.match(ln.text)]
 
 
-def remove_header_footer(
-    lines: Sequence[TextLine],
-    page_height: float,
+def normalize_header_text(text: str) -> str:
+    """页眉候选归一化：去行首页码前缀与空白（``78 一、招标投标`` → ``一、招标投标``）。"""
+    return _HEADER_PAGENUM_PREFIX_RE.sub("", text.strip()).strip()
+
+
+def detect_header_candidates(
+    pages: Sequence[Sequence[TextLine]],
     *,
-    top_ratio: float = 0.12,
-    bottom_ratio: float = 0.08,
+    page_heights: Optional[Sequence[float]] = None,
+    min_pages: int = 2,
+    min_repeat: int = 5,
+    max_len: int = 25,
+    top_ratio: float = 0.15,
+    bottom_ratio: float = 0.10,
+) -> Set[str]:
+    """全文档预扫：跨页重复且位于页顶/页底的短行 → 页眉候选集（通用规则）。
+
+    页眉的两个本质特征 = **跨页重复出现** + **位于页面顶部/底部固定区**
+    （running head）。二者都要，缺一不可：
+      - 只查重复不查位置 → 误伤跨页重复的正文短语（实测：`(一)技术复杂…`
+        这类评标标准常用语在全书跨 7 页重复）；
+      - 只查位置不查重复 → 旧 top_ratio 硬切，99% 单栏页正文首行被误删。
+    正文首行即使落在顶部区，也不跨页重复 → 双重确认下必然存活。
+
+    信号：
+      - Signal A（页码变化，强）：行首带页码，剥页码后文本在 ``>= min_pages``
+        个页的页顶/页底区出现、且出现过 ``>= 2`` 个不同页码 → 候选。
+        页眉页码逐页变化（``78 一、招标投标`` / ``288 一、招标投标``）。
+      - Signal B（无页码稳定重复，弱）：文本在 ``>= min_repeat`` 个页的页顶/
+        页底区出现 → 候选。口径与 cleaner/assembler 一致（默认 5）。
+
+    豁免：法律标题（第X编/章/节/条/款/项）、纯数字、以句末标点结尾。
+
+    Args:
+        pages: 每页的行列表（page_idx 顺序）。
+        page_heights: 每页页高（可选）。提供时启用位置佐证；为 None 时退回
+            纯重复判断（单文件/无高度场景，过滤较弱）。
+        min_pages: Signal A 的最少页顶/页底出现页数。
+        min_repeat: Signal B 的最少页顶/页底出现页数。
+        max_len: 归一化后的最大长度（字符）。
+
+    Returns:
+        归一化后的页眉候选文本集合。
+    """
+    def _in_zone(y0: float, height: float) -> bool:
+        if not height:
+            return True
+        return y0 < height * top_ratio or y0 > height * (1 - bottom_ratio)
+
+    text_to_pages: Dict[str, Set[int]] = defaultdict(set)
+    text_to_zone_pages: Dict[str, Set[int]] = defaultdict(set)
+    text_to_pagenums: Dict[str, Set[str]] = defaultdict(set)
+    for page_idx, lines in enumerate(pages):
+        height = page_heights[page_idx] if page_heights else 0.0
+        for ln in lines:
+            raw = ln.text.strip()
+            m = _HEADER_PAGENUM_PREFIX_RE.match(raw)
+            pagenum = m.group(0).strip() if m else ""
+            t = _HEADER_PAGENUM_PREFIX_RE.sub("", raw).strip()
+            if not t or len(t) > max_len:
+                continue
+            if not _HAS_CJK_RE.search(t):
+                continue
+            if _is_legal_heading(t):
+                continue
+            if _SENTENCE_END_RE.search(t):
+                continue
+            text_to_pages[t].add(page_idx)
+            if _in_zone(ln.y0, height):
+                text_to_zone_pages[t].add(page_idx)
+            if pagenum:
+                text_to_pagenums[t].add(pagenum)
+
+    candidates: Set[str] = set()
+    for t in text_to_pages:
+        n_zone = len(text_to_zone_pages.get(t, ()))
+        n_pagenums = len(text_to_pagenums.get(t, ()))
+        if n_zone >= min_pages and n_pagenums >= 2:
+            candidates.add(t)  # Signal A：页码变化页眉（须在页顶/页底区）
+        elif n_zone >= min_repeat and n_pagenums == 0:
+            candidates.add(t)  # Signal B：无页码稳定重复页眉（须在页顶/页底区）
+    return candidates
+
+
+def remove_header_lines(
+    lines: Sequence[TextLine],
+    header_candidates: Optional[Sequence[str]] = None,
 ) -> List[TextLine]:
-    """按页面位置剔除页眉/页脚；法律标题即使位于页眉区也保留。"""
-    if not page_height:
+    """按文档级页眉候选集剔除页眉行；不做按位置的硬切。
+
+    header_candidates 为空/None 时不移除任何行（无上下文时宁可不删，避免
+    误删正文首行）——抽取层不再依赖固定的顶部/底部比例区。
+    """
+    cand = set(header_candidates or ())
+    if not cand:
         return list(lines)
-    kept: List[TextLine] = []
-    for ln in lines:
-        in_top = ln.y0 < page_height * top_ratio
-        in_bottom = ln.y0 > page_height * (1 - bottom_ratio)
-        if (in_top or in_bottom) and not _is_legal_heading(ln.text):
-            continue
-        kept.append(ln)
-    return kept
+    return [
+        ln for ln in lines
+        if normalize_header_text(ln.text) not in cand
+    ]
 
 
 def sort_single_column(lines: Sequence[TextLine]) -> List[TextLine]:
@@ -153,12 +244,20 @@ def generate_markdown(lines: Sequence[TextLine]) -> str:
     return "\n".join(out)
 
 
-def extract_page_markdown(page: Any, page_idx: int) -> str:
-    """快路径单页抽取：提取 → 去页码 → 去页眉页脚 → 排序 → 生成 Markdown。"""
+def extract_page_markdown(
+    page: Any,
+    page_idx: int,
+    *,
+    header_candidates: Optional[Sequence[str]] = None,
+) -> str:
+    """快路径单页抽取：提取 → 去页码 → 去页眉（文档级候选）→ 排序 → 生成 Markdown。
+
+    页眉识别交给文档级 ``detect_header_candidates``（跨页重复，A1-1）；不再按
+    页面位置硬切（旧 top_ratio 会误删单栏正文首行）。
+    """
     d = page.get_text("dict") or {}
-    page_height = float(d.get("height") or 0)
     lines = iter_lines(page)
     lines = remove_page_numbers(lines)
-    lines = remove_header_footer(lines, page_height)
+    lines = remove_header_lines(lines, header_candidates)
     lines = sort_single_column(lines)
     return generate_markdown(lines)
