@@ -191,6 +191,13 @@ class Settings:
             os.getenv("PDF_TIERED_IMAGE_AREA_RATIO", "0.35")
         )
     )
+    pdf_tiered_img_min_text_chars: int = field(
+        # 修复①（2026-09-05）：图片占比高须叠加"文本层稀疏"才送 MinerU——
+        # OCR 扫描件整页是背景图 + 完整文本层，img 高但 text≥该值走本地 fast_text。
+        default_factory=lambda: int(
+            os.getenv("PDF_TIERED_IMG_MIN_TEXT_CHARS", "200")
+        )
+    )
     pdf_tiered_background_img_ratio: float = field(
         # 覆盖页面积 ≥ 该比例的单张图片视为背景/OCR 扫描底图剔除。
         # 0.85 → 0.70：实测 OCR 书扫描底图覆盖 0.75~0.86，0.85 拦不住；

@@ -2,31 +2,31 @@
   "schema_version": 1,
   "books": {
     "全书": {
-      "tier_a_pages": 487,
-      "two_col_pages": 484,
+      "tier_a_pages": 562,
+      "two_col_pages": 543,
       "header_leak": 0,
       "page_number_res": 0,
       "first_line_loss": 0,
-      "first_line_checked": 283,
-      "chars": 726244
+      "first_line_checked": 284,
+      "chars": 831327
     },
     "白如银": {
-      "tier_a_pages": 727,
-      "two_col_pages": 5,
+      "tier_a_pages": 771,
+      "two_col_pages": 0,
       "header_leak": 0,
       "page_number_res": 0,
       "first_line_loss": 0,
-      "first_line_checked": 727,
-      "chars": 471973
+      "first_line_checked": 771,
+      "chars": 498715
     },
     "1200问": {
-      "tier_a_pages": 438,
-      "two_col_pages": 4,
+      "tier_a_pages": 520,
+      "two_col_pages": 1,
       "header_leak": 0,
       "page_number_res": 0,
       "first_line_loss": 1,
-      "first_line_checked": 438,
-      "chars": 237772
+      "first_line_checked": 520,
+      "chars": 276022
     }
   }
 }

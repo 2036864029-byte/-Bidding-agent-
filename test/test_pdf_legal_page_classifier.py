@@ -136,10 +136,18 @@ def test_low_text_goes_tier_c():
     assert d.page_label == "visual_or_scan"
 
 
-def test_image_dense_goes_tier_c():
-    p = _profile(img_ratio=0.5)
+def test_image_dense_with_sparse_text_goes_tier_c():
+    # 修复①：图占比高 + 文本层稀疏(<img_min_text_chars) → MinerU（图内文字未被 OCR）
+    p = _profile(img_ratio=0.5, text_chars=60)
     d = _classifier().classify(p)
     assert d.tier == "C"
+    assert d.page_label == "visual_or_scan"
+
+
+def test_image_dense_with_full_text_goes_local():
+    # 修复①：图占比高但文本层充足（OCR 扫描件正文）→ 本地 fast_text，不送 MinerU
+    p = _profile(img_ratio=0.5, text_chars=1200)
+    assert _classifier().classify(p).tier == "A"
 
 
 def test_formula_hint_goes_tier_c():
@@ -158,8 +166,12 @@ def test_min_text_chars_boundary():
 
 def test_image_ratio_boundary():
     c = _classifier(image_area_ratio=0.35)
-    assert c.classify(_profile(img_ratio=0.35)).tier == "A"
-    assert c.classify(_profile(img_ratio=0.36)).tier == "C"
+    # 图占比 ≤ 阈值 → 走文本路径（A）
+    assert c.classify(_profile(img_ratio=0.35, text_chars=60)).tier == "A"
+    # 图占比超阈值 + 文本稀疏(<200) → C（修复① 仍送 MinerU）
+    assert c.classify(_profile(img_ratio=0.36, text_chars=60)).tier == "C"
+    # 图占比超阈值 + 文本充足 → A（修复① 不送，本地处理）
+    assert c.classify(_profile(img_ratio=0.36, text_chars=1200)).tier == "A"
 
 
 def test_route_decision_is_immutable_dataclass():

@@ -51,6 +51,7 @@ def build_page_profile(
     *,
     background_img_ratio: float = 0.85,
     two_col_gap_ratio: float = 0.15,
+    two_col_min_side_blocks: int = 3,
     table_min_lines: int = 5,
 ) -> PageProfile:
     """从页面对象抽取特征，返回 PageProfile。
@@ -73,8 +74,9 @@ def build_page_profile(
     blocks = _text_blocks(page)
     x_starts = tuple(sorted({round(float(b[0]), 1) for b in blocks if len(b) >= 4}))
 
-    two_col_gap, two_col_split_x = _max_gap(x_starts, width * two_col_gap_ratio)
-    has_two_col = two_col_gap > 0
+    two_col_gap, two_col_split_x, has_two_col = _detect_two_col(
+        blocks, width * two_col_gap_ratio, two_col_min_side_blocks
+    )
 
     table_hlines, table_vlines = _count_table_lines(page)
     table_candidate = table_hlines >= table_min_lines or table_vlines >= table_min_lines
@@ -128,6 +130,29 @@ def _max_gap(x_starts: Sequence[float], threshold: float) -> tuple[float, float]
             best_gap = gap
             split_x = (x_starts[i + 1] + x_starts[i]) / 2.0
     return best_gap, split_x
+
+
+def _detect_two_col(
+    blocks: Sequence[Any],
+    threshold: float,
+    min_side_blocks: int,
+) -> tuple[float, float, bool]:
+    """判定双栏：x0 存在大间隙 且 间隙两侧各有成簇文本块。
+
+    单栏正文页的居中标题/页边章节号/页码等孤立块会在 x0 分布制造 ≥threshold
+    的大间隙，但每侧仅 1~2 块、不成"栏"——须两侧各 ≥ min_side_blocks 个文本
+    块才算真双栏（修复 2026-09-05：白如银/1200问 大量单栏页因孤立标题误判
+    双栏 → 置信度不足 → 误送 MinerU）。
+    """
+    x_starts = sorted({float(b[0]) for b in blocks if len(b) >= 4})
+    gap, split_x = _max_gap(x_starts, threshold)
+    if gap <= 0:
+        return 0.0, 0.0, False
+    left = sum(1 for b in blocks if b[0] < split_x)
+    right = sum(1 for b in blocks if b[0] > split_x)
+    if left >= min_side_blocks and right >= min_side_blocks:
+        return gap, split_x, True
+    return 0.0, 0.0, False
 
 
 def _count_table_lines(page: Any) -> tuple[int, int]:

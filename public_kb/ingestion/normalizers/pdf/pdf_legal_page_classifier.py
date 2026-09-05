@@ -59,11 +59,17 @@ class LegalPageClassifier:
         image_area_ratio: float = 0.35,
         two_col_confidence: float = 0.80,
         table_min_lines: int = 5,
+        img_min_text_chars: int = 200,
     ) -> None:
         self._min_text_chars = min_text_chars
         self._image_area_ratio = image_area_ratio
         self._two_col_confidence = two_col_confidence
         self._table_min_lines = table_min_lines
+        # 修复①（2026-09-05）：图片占比高 ≠ 必须送 MinerU——扫描件整页是背景
+        # 扫描图 + 完整 OCR 文本层，img_ratio 高但文本充足应本地 fast_text；
+        # 仅当文本层稀疏（< img_min_text_chars，图内文字未被 OCR 覆盖）才送
+        # MinerU 保图内容。全书 574 页实测：83 误送 → ~10 真复杂页。
+        self._img_min_text_chars = img_min_text_chars
 
     def classify(self, profile: PageProfile) -> PageRouteDecision:
         """对单页画像分类。"""
@@ -76,16 +82,20 @@ class LegalPageClassifier:
             "formula_hint": profile.formula_hint,
         }
 
-        # 1) 低文本 / 图片密集 / 公式 → Tier C
+        # 1) 文本层缺失 → Tier C；图片占比高 **且文本层稀疏** → Tier C
+        #    （修复①：图片大但文本层充足 = OCR 扫描件正文，走本地 fast_text）
         if profile.text_chars < self._min_text_chars:
             return self._decide(
                 profile, "visual_or_scan", _TIER_C, _PARSER_MINERU,
                 "文本量不足，疑似扫描/空白页", 0.95, features,
             )
-        if profile.img_ratio > self._image_area_ratio:
+        if (
+            profile.img_ratio > self._image_area_ratio
+            and profile.text_chars < self._img_min_text_chars
+        ):
             return self._decide(
                 profile, "visual_or_scan", _TIER_C, _PARSER_MINERU,
-                "内容图片占比过高", 0.90, features,
+                "图片占比高且文本层稀疏", 0.90, features,
             )
         if profile.formula_hint:
             return self._decide(

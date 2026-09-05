@@ -127,6 +127,7 @@ class PdfRouter:
                 min_text_chars=settings.pdf_tiered_min_text_chars,
                 image_area_ratio=settings.pdf_tiered_image_area_ratio,
                 two_col_confidence=settings.pdf_tiered_two_col_confidence,
+                img_min_text_chars=settings.pdf_tiered_img_min_text_chars,
                 # table_min_lines 暂沿用分类器默认值；T2B 表格骨架启用时再传入
             )
             miner_u_api = miner_u_parser or MinerUApiParser(settings)
