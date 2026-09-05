@@ -168,16 +168,17 @@ def test_prepare_handoff_cache_hit_skips_parse(tmp_path):
     _make_pdf(pdf_dir / "book.pdf")
 
     out = tmp_path / "out"
-    out.mkdir()
-    (out / "book.assembled.md").write_text(_MD, encoding="utf-8")
+    clean_dir = out / "clean"
+    clean_dir.mkdir(parents=True)
+    (clean_dir / "book.assembled.md").write_text(_MD, encoding="utf-8")
 
     s = _settings()
     s.enable_pdf_structure = False
     summary = prepare_handoff(pdf_dir, s, out_dir=out)
     entry = {e["pdf"]: e for e in summary}["book.pdf"]
     assert entry.get("cached") is True
-    assert (out / "book.documents.jsonl").exists()
-    jsonl = load_documents_jsonl(out / "book.documents.jsonl")
+    assert (out / "chunks" / "book.documents.jsonl").exists()
+    jsonl = load_documents_jsonl(out / "chunks" / "book.documents.jsonl")
     assert jsonl and all(d.metadata["chunk_uid"].startswith("ck-") for d in jsonl)
     # _process_single_book 缓存路径同语义：不触碰解析器
     entry2 = _process_single_book(pdf_dir / "book.pdf", out, False, s)
@@ -201,8 +202,9 @@ def test_process_single_book_parse_writes_artifacts(tmp_path, monkeypatch):
     out.mkdir()
     entry = _process_single_book(pdf_dir / "book.pdf", out, False, s)
     assert entry["chunks"] > 0
-    assert (out / "book.assembled.md").read_text(encoding="utf-8") == _MD
-    assert (out / "book.documents.jsonl").exists()
+    assert (out / "clean" / "book.assembled.md").read_text(encoding="utf-8") == _MD
+    assert (out / "chunks" / "book.documents.jsonl").exists()
+    assert (out / "raw" / "book.raw.md").exists()
 
 
 def test_process_single_book_writes_cleaned_markdown(tmp_path, monkeypatch):
@@ -220,8 +222,8 @@ def test_process_single_book_writes_cleaned_markdown(tmp_path, monkeypatch):
     out = tmp_path / "out"
     out.mkdir()
     _process_single_book(pdf_dir / "book.pdf", out, False, s)
-    assembled = (out / "book.assembled.md").read_text(encoding="utf-8")
-    raw = (out / "book.raw.md").read_text(encoding="utf-8")
+    assembled = (out / "clean" / "book.assembled.md").read_text(encoding="utf-8")
+    raw = (out / "raw" / "book.raw.md").read_text(encoding="utf-8")
     assert raw == _MD  # 原始解析产物留档调试
     assert "## 第一章 总则" in assembled  # 清洗后：# 第一章 → ## 第一章
     assert "第一条 为了规范招标投标活动" in assembled
@@ -259,12 +261,13 @@ def test_prepare_handoff_skips_dev_pdfs(tmp_path):
     _make_pdf(pdf_dir / "_smoke.pdf")
 
     out = tmp_path / "out"
-    out.mkdir()
-    (out / "book.assembled.md").write_text(_MD, encoding="utf-8")
+    clean_dir = out / "clean"
+    clean_dir.mkdir(parents=True)
+    (clean_dir / "book.assembled.md").write_text(_MD, encoding="utf-8")
 
     s = _settings()
     s.enable_pdf_structure = False
     summary = prepare_handoff(pdf_dir, s, out_dir=out)
     assert [e["pdf"] for e in summary] == ["book.pdf"]
-    assert not (out / "_smoke.assembled.md").exists()
-    assert (out / "book.documents.jsonl").exists()
+    assert not (out / "clean" / "_smoke.assembled.md").exists()
+    assert (out / "chunks" / "book.documents.jsonl").exists()

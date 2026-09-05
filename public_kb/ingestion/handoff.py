@@ -38,6 +38,26 @@ from .normalizers.pdf.pdf_structure import adapt_pdf_markdown
 logger = logging.getLogger(__name__)
 
 _MARKDOWN_SUFFIX = ".assembled.md"
+_RAW_SUFFIX = ".raw.md"
+_RAW_SUBDIR = "raw"       # 解析层原始拼接中间态（留档核验，可重生成/删除）
+_CLEAN_SUBDIR = "clean"   # 清洗后 assembled.md（Phase A 资产，人工可读 + Phase B/C 输入）
+_CHUNKS_SUBDIR = "chunks" # 分块 documents.jsonl（Phase B 重设计后重建）
+
+
+def _output_paths(out_dir: str | Path, stem: str) -> tuple[Path, Path, Path]:
+    """三段产物按类型分目录：raw / clean / chunks（doc_name 取 stem 不变，
+    chunk_uid 不受目录影响）。返回 (raw.md, clean assembled.md, documents.jsonl)。"""
+    out = Path(out_dir)
+    raw_dir = out / _RAW_SUBDIR
+    clean_dir = out / _CLEAN_SUBDIR
+    chunks_dir = out / _CHUNKS_SUBDIR
+    for d in (raw_dir, clean_dir, chunks_dir):
+        d.mkdir(parents=True, exist_ok=True)
+    return (
+        raw_dir / f"{stem}{_RAW_SUFFIX}",
+        clean_dir / f"{stem}{_MARKDOWN_SUFFIX}",
+        chunks_dir / f"{stem}.documents.jsonl",
+    )
 
 
 def clean_markdown(
@@ -163,10 +183,11 @@ def prepare_handoff(
     只做解析 + 分块，不创建 embeddings / 不写 Milvus。
     每本 PDF 独立 try，单本失败不阻断其余。
 
-    文件级缓存：``out_dir/{stem}.assembled.md`` 已存在且未传 ``force`` 时，
+    文件级缓存：``out_dir/clean/{stem}.assembled.md`` 已存在且未传 ``force`` 时，
     跳过解析（Tier C 本就有内容缓存），直接读取 markdown 重新分块——幂等
     /增量重跑。路由规则或解析参数变更后，用 ``force=True`` 或删除该 md 触发
-    重新解析。
+    重新解析。产物分目录：raw/{stem}.raw.md · clean/{stem}.assembled.md ·
+    chunks/{stem}.documents.jsonl。
     """
     from .parser_factory import build_pdf_parser
 
@@ -189,14 +210,13 @@ def prepare_handoff(
             logger.info("跳过开发产物: %s", pdf_file.name)
             continue
         entry: Dict[str, Any] = {"pdf": pdf_file.name}
-        md_path = out_dir / f"{pdf_file.stem}{_MARKDOWN_SUFFIX}"
-        jsonl_path = out_dir / f"{pdf_file.stem}.documents.jsonl"
+        _, md_path, jsonl_path = _output_paths(out_dir, pdf_file.stem)
         try:
             if md_path.exists() and not force:
-                # 缓存命中：主进程直接分块（快，无需子进程）
-                raw_markdown = md_path.read_text(encoding="utf-8")
+                # 缓存命中：主进程直接分块（快，无需子进程）——读 clean/assembled.md
+                cached_md = md_path.read_text(encoding="utf-8")
                 documents = _freeze_chunk_uid(
-                    chunk_markdown(raw_markdown, pdf_file.stem, settings)
+                    chunk_markdown(cached_md, pdf_file.stem, settings)
                 )
                 dump_documents_jsonl(documents, jsonl_path)
                 entry.update({
@@ -249,15 +269,13 @@ def _process_single_book(
     from .parser_factory import build_pdf_parser
 
     pdf_file = Path(pdf_path)
-    out = Path(out_dir)
-    md_path = out / f"{pdf_file.stem}{_MARKDOWN_SUFFIX}"
-    jsonl_path = out / f"{pdf_file.stem}.documents.jsonl"
+    raw_path, md_path, jsonl_path = _output_paths(out_dir, pdf_file.stem)
 
     if md_path.exists() and not force:
         # 缓存命中：已清洗的 assembled.md → 直接分块（清洗幂等，无需再清）
-        raw_markdown = md_path.read_text(encoding="utf-8")
+        cached_md = md_path.read_text(encoding="utf-8")
         documents = _freeze_chunk_uid(
-            chunk_markdown(raw_markdown, pdf_file.stem, settings)
+            chunk_markdown(cached_md, pdf_file.stem, settings)
         )
         dump_documents_jsonl(documents, jsonl_path)
         return {
@@ -274,7 +292,7 @@ def _process_single_book(
         chunk_cleaned_markdown(clean_md, pdf_file.stem, settings)
     )
     md_path.write_text(clean_md, encoding="utf-8")
-    (out / f"{pdf_file.stem}.raw.md").write_text(raw_markdown, encoding="utf-8")
+    raw_path.write_text(raw_markdown, encoding="utf-8")
     dump_documents_jsonl(documents, jsonl_path)
     return {
         "chunks": len(documents),
