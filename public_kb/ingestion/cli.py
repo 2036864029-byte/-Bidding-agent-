@@ -11,25 +11,22 @@ from typing import Any, Dict, List, Tuple
 
 from core.config.settings import Settings
 from .csv_loader import CsvLoader
-from core.embeddings.bge_m3 import create_embeddings
+from core.embeddings import get_embeddings
 from core.vectorstore.milvus_client import MilvusStoreManager
-from .models import IngestionResult
-from ._legacy.sources.document_source import DocumentSource
-from ._legacy.pipeline_legacy import IngestionPipeline
 from .pipeline import FileIngestionPipeline, FileIngestionResult
 from .checkpoint import StageCheckpoint
 from .ledger import IngestLedger
 from .quality import QualityGate
 from .router import FormatRouter
-from .sinks.markdown_sink import MarkdownSink
 from .sinks.milvus_sink import MilvusSink, MilvusSinkMode
-from ._legacy.sources.csv_source import CsvSource
 
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MARKDOWN_OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "DATA" / "raw_data"
-DEFAULT_OUTPUT_DIR = DEFAULT_MARKDOWN_OUTPUT_DIR
+
+def _default_markdown_output_dir(settings: Settings) -> Path:
+    """CSV 预览输出默认目录（9.3 Track B：派生自 settings.mineru_output_dir = DATA/raw_data）。"""
+    return Path(settings.mineru_output_dir)
 
 
 def run_file_ingestion(
@@ -70,7 +67,7 @@ def run_file_ingestion(
 
     resolved_manager = manager
     if resolved_manager is None:
-        resolved_embeddings = embeddings or create_embeddings(settings)
+        resolved_embeddings = embeddings or get_embeddings(settings)
         resolved_manager = MilvusStoreManager(settings, resolved_embeddings)
     sink = MilvusSink(resolved_manager, mode="append")
 
@@ -134,30 +131,23 @@ def run_csv_ingestion(
     csv_path: str,
     settings: Settings,
     *,
-    markdown_output_dir: str | None = None,
     manager: MilvusStoreManager | None = None,
     embeddings: Any = None,
     mode: MilvusSinkMode = "append",
-) -> IngestionResult:
-    """Load one CSV directly and write it to Milvus without Markdown round-trip."""
-    resolved_embeddings = embeddings
+) -> FileIngestionResult:
+    """单 CSV 三段式入库（9.3 C-2：原 legacy CsvSource 流切 FileIngestionPipeline）。"""
     resolved_manager = manager
     if resolved_manager is None:
-        resolved_embeddings = resolved_embeddings or create_embeddings(settings)
+        resolved_embeddings = embeddings or get_embeddings(settings)
         resolved_manager = MilvusStoreManager(
             settings,
             resolved_embeddings,
         )
-    loader = CsvLoader(
-        max_chars=settings.chunk_max_chars,
-        overlap_chars=settings.chunk_overlap_chars,
-    )
-    sinks = []
-    if markdown_output_dir:
-        sinks.append(MarkdownSink(markdown_output_dir))
-    sinks.append(MilvusSink(resolved_manager, mode=mode))
-
-    return IngestionPipeline(sinks).run(CsvSource(csv_path, loader=loader))
+    results = FileIngestionPipeline(
+        settings,
+        sink=MilvusSink(resolved_manager, mode=mode),
+    ).run([csv_path])
+    return results[0]
 
 
 def scan_csv_files(
@@ -205,14 +195,17 @@ def _new_group_stats(group_label: str, file_count: int) -> Dict[str, object]:
 def process_csv_group(
     files: List[str],
     group_label: str,
-    loader: CsvLoader,
+    settings: Settings,
     manager: Any,
-    output_dir: str,
     *,
     skip_import: bool = False,
     mode: MilvusSinkMode = "append",
 ) -> Dict[str, object]:
-    """Preview and ingest one classified group of CSV files."""
+    """三段式处理一组 CSV 文件（9.3 C-2：原 CsvSource/IngestionPipeline 流切换）。
+
+    预览语义由 skip_import（sink=None 干跑）承担；原 MarkdownSink ``*_chunks.md``
+    预览不再产出（--no-import 即预览）。
+    """
     stats = _new_group_stats(group_label, len(files))
     failed_files = stats["failed_files"]
     assert isinstance(failed_files, list)
@@ -222,54 +215,22 @@ def process_csv_group(
     if not skip_import and manager is None:
         raise ValueError("manager is required unless skip_import is true")
 
-    all_documents = []
-    for file_path in files:
-        file_name = Path(file_path).name
-        try:
-            source_result = CsvSource(file_path, loader=loader).load()
-            documents = source_result.documents
-            records = source_result.records
-            if not documents:
-                stats["processed"] = int(stats["processed"]) + 1
-                continue
-
-            all_documents.extend(documents)
-            stats["processed"] = int(stats["processed"]) + 1
-            stats["total_rows"] = int(stats["total_rows"]) + len(records)
-            stats["total_chunks"] = int(stats["total_chunks"]) + len(documents)
-            MarkdownSink(output_dir, source_file=file_name).write(
-                documents,
-                records=records,
-            )
-        except Exception as error:
+    sink = None if skip_import else MilvusSink(manager, mode=mode)
+    results = FileIngestionPipeline(settings, sink=sink).run(files)
+    for res in results:
+        if res.status in ("skipped", "failed"):
             stats["failed"] = int(stats["failed"]) + 1
-            failed_files.append(file_name)
-            logger.error("处理 %s 失败: %s", file_name, error)
-
-    if skip_import:
-        logger.info("已跳过入库（--no-import）")
-        return stats
-    if not all_documents:
-        return stats
-
-    try:
-        ingestion_result = IngestionPipeline(
-            [MilvusSink(manager, mode=mode)]
-        ).run(
-            DocumentSource(
-                all_documents,
-                source_name=f"csv_group_{group_label}",
+            failed_files.append(res.path)
+            logger.info("  [%s] %s (%s)", res.status, res.path, res.reason)
+        else:
+            stats["processed"] = int(stats["processed"]) + 1
+            stats["total_chunks"] = int(stats["total_chunks"]) + res.chunk_count
+            stats["total_rows"] = int(stats["total_rows"]) + int(
+                (res.detail or {}).get("table_row_count", 0)
             )
-        )
-        stats["imported"] = True
-        logger.info(
-            "组 %s 入库完成: chunks=%d, inserted=%d",
-            group_label,
-            ingestion_result.chunk_count,
-            ingestion_result.inserted_count,
-        )
-    except Exception as error:
-        logger.error("组 %s 入库失败: %s", group_label, error)
+    stats["imported"] = bool(
+        not skip_import and results and any(r.inserted_count > 0 for r in results)
+    )
     return stats
 
 
@@ -293,12 +254,11 @@ def run_batch_csv_ingestion(
     *,
     group: str | None = None,
     no_import: bool = False,
-    markdown_output_dir: str | None = None,
     manager: Any = None,
     embeddings: Any = None,
     mode: MilvusSinkMode = "append",
 ) -> BatchCSVIngestionResult:
-    """Scan, preview, and ingest classified CSV files from one directory."""
+    """扫描并三段式入库 CSV 分组（9.3 C-2：原 CsvSource 流切 FileIngestionPipeline）。"""
     if group not in {None, "A", "C"}:
         raise ValueError("group 必须是 A、C 或 None")
 
@@ -309,18 +269,12 @@ def run_batch_csv_ingestion(
     if group is None or group == "C":
         selected_groups.append(("C", qa_files))
 
-    resolved_output_dir = str(
-        Path(markdown_output_dir or DEFAULT_MARKDOWN_OUTPUT_DIR)
-    )
-    Path(resolved_output_dir).mkdir(parents=True, exist_ok=True)
-
     if no_import:
         resolved_manager = None
     else:
-        resolved_embeddings = embeddings
         resolved_manager = manager
         if resolved_manager is None:
-            resolved_embeddings = resolved_embeddings or create_embeddings(settings)
+            resolved_embeddings = embeddings or get_embeddings(settings)
             resolved_manager = MilvusStoreManager(
                 settings,
                 resolved_embeddings,
@@ -332,12 +286,8 @@ def run_batch_csv_ingestion(
         stats = process_csv_group(
             files,
             group_label,
-            CsvLoader(
-                max_chars=settings.chunk_max_chars,
-                overlap_chars=settings.chunk_overlap_chars,
-            ),
+            settings,
             resolved_manager,
-            resolved_output_dir,
             skip_import=no_import,
             mode=pending_mode,
         )
@@ -350,7 +300,7 @@ def run_batch_csv_ingestion(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Ingest files (three-stage) or legacy CSV into Milvus")
     path_group = parser.add_mutually_exclusive_group(required=False)
-    path_group.add_argument("--files", help="三段式：源文件目录（递归 text/csv/pdf）")
+    path_group.add_argument("--files", help="三段式：源文件目录（递归 text/csv/pdf）；缺省读 INGESTION_INPUT_DIR")
     path_group.add_argument("--csv-path", help="（legacy）单个 CSV 文件路径")
     path_group.add_argument("--csv-dir", help="（legacy）包含 *_data.csv 的目录")
     parser.add_argument(
@@ -372,12 +322,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="只校验已有 Markdown 预览，不处理 CSV",
     )
     # ── 三段式（--files）专用开关（P5 E-12） ──
-    parser.add_argument(
-        "--legacy", action="store_true",
-        help="回滚：对 CSV 文件走旧 Source 流水线（pipeline_legacy），非 CSV 跳过",
-    )
     parser.add_argument("--ledger", help="文档级去重登记文件（ingest_ledger.jsonl）")
-    parser.add_argument("--work-dir", help="checkpoint 工作目录（断点续跑）")
+    parser.add_argument("--work-dir", help="checkpoint 工作目录（断点续跑）；缺省 INGESTION_WORK_DIR 并默认落盘中间产物")
     parser.add_argument("--resume", action="store_true", help="跳过 checkpoint 中已完成的文件")
     parser.add_argument(
         "--rerun-from", choices=("B",), help="复用 Stage A 中间产物，重做 B+C",
@@ -393,12 +339,17 @@ def main(argv: List[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     markdown_output_dir = args.markdown_output_dir
+    settings = Settings()
 
+    # 9.3 Track B：--files 未传 → 默认读配置的输入目录（显式参数覆盖默认）
     if not args.validate_only and not args.files and not args.csv_path and not args.csv_dir:
-        parser.error("必须提供 --files、--csv-path 或 --csv-dir")
+        if not settings.ingestion_input_dir:
+            parser.error("必须提供 --files、--csv-path 或 --csv-dir（或配置 INGESTION_INPUT_DIR）")
+        logger.info("--files 缺省，读取默认输入目录: %s", settings.ingestion_input_dir)
+        args.files = settings.ingestion_input_dir
 
     if args.validate_only:
-        output_dir = markdown_output_dir or DEFAULT_MARKDOWN_OUTPUT_DIR
+        output_dir = markdown_output_dir or _default_markdown_output_dir(settings)
         validation = validate_markdown_output(output_dir)
         logger.info("校验完成: %d 个文件, 共 %d chunks", len(validation), sum(validation.values()))
         return 0
@@ -407,38 +358,22 @@ def main(argv: List[str] | None = None) -> int:
 
     # ── 三段式文件入库（P5 E-12） ──
     if args.files:
-        if args.legacy:
-            # 回滚：仅 CSV 走旧流水线
-            policy_files, qa_files, unknown = scan_csv_files(args.files)
-            result = run_batch_csv_ingestion(
-                args.files,
-                settings,
-                no_import=args.no_import,
-                markdown_output_dir=markdown_output_dir,
-                mode=args.mode,
-            )
-            logger.info(
-                "legacy 回滚: 政策=%d QA=%d 未知=%d；结果见上",
-                len(policy_files), len(qa_files), len(unknown),
-            )
-            return 0
         run_file_ingestion(
             args.files,
             settings,
             ledger_path=args.ledger,
-            work_dir=args.work_dir,
+            work_dir=args.work_dir or settings.ingestion_work_dir,
             resume=args.resume,
             rerun_from=args.rerun_from,
             quality_threshold=args.quality_threshold,
         )
         return 0
 
-    # ── legacy CSV 路径（原行为不变） ──
+    # ── CSV 入库（9.3 C-2：统一走三段式 FileIngestionPipeline） ──
     if args.csv_path:
         result = run_csv_ingestion(
             args.csv_path,
             settings,
-            markdown_output_dir=markdown_output_dir,
             mode=args.mode,
         )
         logger.info(
@@ -453,7 +388,6 @@ def main(argv: List[str] | None = None) -> int:
             settings,
             group=args.group,
             no_import=args.no_import,
-            markdown_output_dir=markdown_output_dir,
             mode=args.mode,
         )
         logger.info("未知文件: %d 个", len(result.unknown_files))

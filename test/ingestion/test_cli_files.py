@@ -51,7 +51,6 @@ def test_parser_accepts_three_stage_flags():
         "--resume",
         "--rerun-from", "B",
         "--quality-threshold", "0.8",
-        "--legacy",
     ])
     assert args.files == "data/"
     assert args.ledger == "led.jsonl"
@@ -59,7 +58,7 @@ def test_parser_accepts_three_stage_flags():
     assert args.resume is True
     assert args.rerun_from == "B"
     assert args.quality_threshold == 0.8
-    assert args.legacy is True
+    assert not hasattr(args, "legacy")  # 9.3 C-2：--legacy 标志已移除
 
 
 def test_run_file_ingestion_text_and_csv(tmp_path):

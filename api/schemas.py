@@ -16,6 +16,10 @@ class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000, description="用户问题(1~2000字)")
     session_id: Optional[str] = Field(None, description="会话 id（映射 AgentGraph thread_id）")
     stream: bool = Field(False, description="true 时走 SSE 流式")
+    file_ids: List[str] = Field(
+        default_factory=list,
+        description="POST /files/upload 返回的文件 id 列表（可选，doc_qa 消费）",
+    )
 
 
 class ChatResponse(BaseModel):

@@ -321,10 +321,10 @@ def ingest_documents(
     直连 MilvusSink（不再走旧 Source 流水线），chunk_uid 已在导入侧固化。
     """
     if manager is None:
-        from core.embeddings.bge_m3 import create_embeddings
+        from core.embeddings import get_embeddings
         from core.vectorstore.milvus_client import MilvusStoreManager
 
-        manager = MilvusStoreManager(settings, create_embeddings(settings))
+        manager = MilvusStoreManager(settings, get_embeddings(settings))
     docs = list(documents)
     inserted = MilvusSink(manager, mode=mode).write(docs, records=[])
     return HandoffIngestResult(

@@ -245,6 +245,23 @@ class Settings:
     pdf_min_table_rows: int = 2  # 连续 | 表格行达到该行数才视为表格原子段
     enable_pdf_toc_filter: bool = True  # 剔除点线目录行（"……(82)"）
     enable_pdf_reflow_flag: bool = True  # 疑似双栏乱序块打标（供人工抽检）
+    # ============================================================
+    # ingestion CLI 路径（9.3 Track B）— 默认输入/工作目录，CLI 显式参数覆盖
+    # ============================================================
+    # 源文档目录（批量解析 --files 缺省读取）；中间产物/checkpoint 工作目录
+    # （--work-dir 缺省启用），与 DATA/raw_data（MinerU 中间产物）分离。
+    ingestion_input_dir: str = field(
+        default_factory=lambda: os.getenv(
+            "INGESTION_INPUT_DIR",
+            os.path.join(_PROJECT_ROOT, "DATA", "input"),
+        )
+    )
+    ingestion_work_dir: str = field(
+        default_factory=lambda: os.getenv(
+            "INGESTION_WORK_DIR",
+            os.path.join(_PROJECT_ROOT, "DATA", "work"),
+        )
+    )
 
     # ============================================================
     # 切片参数

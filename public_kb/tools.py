@@ -78,12 +78,12 @@ def _build_retriever():
     from core.vectorstore.milvus_client import MilvusStoreManager
 
     from core.config.settings import Settings
-    from core.embeddings.bge_m3 import create_embeddings
+    from core.embeddings import get_embeddings
     from .retrieval.retriever import HybridRetriever
     from .retrieval.reranker import SiliconFlowReranker
 
     settings = Settings()
-    embeddings = create_embeddings(settings)
+    embeddings = get_embeddings(settings)
     manager = MilvusStoreManager(settings, embeddings)
     manager.load_existing()  # 集合不存在时 collection 置空 → 走稠密降级
     reranker = SiliconFlowReranker(

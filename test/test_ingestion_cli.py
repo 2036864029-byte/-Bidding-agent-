@@ -1,4 +1,8 @@
-"""Offline regression tests for consolidated CSV CLI entrypoints."""
+"""Offline regression tests for consolidated CSV CLI entrypoints.
+
+9.3 C-2：CSV 路径统一走三段式 FileIngestionPipeline（原 CsvSource/IngestionPipeline
+mock 移除）；A/C 分组编排、no-import 预览、initialize→append 模式切换语义保留。
+"""
 
 from __future__ import annotations
 
@@ -7,51 +11,14 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
-from langchain_core.documents import Document
 
 import public_kb.ingestion.cli as cli
-from public_kb.ingestion.models import IngestionResult, SourceResult, StageResult
 
 
 @dataclass
 class FakeSettings:
     chunk_max_chars: int = 100
     chunk_overlap_chars: int = 10
-
-
-@dataclass
-class FakeIngestionResult:
-    status: str = "completed"
-    chunk_count: int = 2
-    inserted_count: int = 2
-
-
-class FakeCsvSource:
-    instances: List[Any] = []
-    responses: Dict[str, Any] = {}
-
-    def __init__(self, csv_path: str, loader: Any = None) -> None:
-        self.csv_path = csv_path
-        self.loader = loader
-        FakeCsvSource.instances.append(self)
-
-    def load(self) -> SourceResult:
-        response = self.responses[self.csv_path]
-        if isinstance(response, Exception):
-            raise response
-        return response
-
-
-class FakeMarkdownSink:
-    instances: List[Any] = []
-
-    def __init__(self, output_dir: str, *, source_file: str | None = None) -> None:
-        self.output_dir = output_dir
-        self.source_file = source_file
-        FakeMarkdownSink.instances.append(self)
-
-    def write(self, documents: List[Document], *, records: List[Dict[str, Any]]) -> int:
-        return len(documents)
 
 
 class FakeMilvusSink:
@@ -63,27 +30,30 @@ class FakeMilvusSink:
         FakeMilvusSink.instances.append(self)
 
 
-class FakeIngestionPipeline:
+class FakeFilePipeline:
     instances: List[Any] = []
 
-    def __init__(self, sinks: List[Any]) -> None:
-        self.sinks = sinks
-        FakeIngestionPipeline.instances.append(self)
+    def __init__(self, settings: Any, *, sink: Any = None) -> None:
+        self.settings = settings
+        self.sink = sink
+        FakeFilePipeline.instances.append(self)
 
-    def run(self, source: Any) -> IngestionResult:
-        self.source = source
-        return IngestionResult("fake", 2, 2, (StageResult("fake", 2, 2)), "completed")
+    def run(self, paths: List[str]) -> list[cli.FileIngestionResult]:
+        return [
+            cli.FileIngestionResult(
+                path=str(p), source_format="csv", status="completed",
+                chunk_count=2, inserted_count=2,
+                detail={"table_row_count": 2},
+            )
+            for p in paths
+        ]
 
 
-def _document(index: int = 0) -> Document:
-    return Document(
-        page_content=f"第{index}条 测试内容",
-        metadata={"doc_name": "测试文档", "chapter": "第一章", "chunk_index": index},
+def _file_ingestion_result() -> cli.FileIngestionResult:
+    return cli.FileIngestionResult(
+        path="fake.csv", source_format="csv", status="completed",
+        chunk_count=2, inserted_count=2,
     )
-
-
-def _ingestion_result() -> IngestionResult:
-    return IngestionResult("fake.csv", 2, 2, (StageResult("fake", 2, 2)), "completed")
 
 
 def test_cli_dispatches_single_csv_ingestion(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -93,27 +63,22 @@ def test_cli_dispatches_single_csv_ingestion(monkeypatch: pytest.MonkeyPatch) ->
         csv_path: str,
         settings: Any,
         *,
-        markdown_output_dir: str | None,
         mode: str,
-    ) -> IngestionResult:
+    ) -> cli.FileIngestionResult:
         calls.append(
             {
                 "csv_path": csv_path,
                 "settings": settings,
-                "markdown_output_dir": markdown_output_dir,
                 "mode": mode,
             }
         )
-        return _ingestion_result()
+        return _file_ingestion_result()
 
     monkeypatch.setattr(cli, "run_csv_ingestion", fake_run)
-    exit_code = cli.main(
-        ["--csv-path", "sample.csv", "--markdown-output-dir", "preview", "--mode", "append"]
-    )
+    exit_code = cli.main(["--csv-path", "sample.csv", "--mode", "append"])
 
     assert exit_code == 0
     assert calls[0]["csv_path"] == "sample.csv"
-    assert calls[0]["markdown_output_dir"] == "preview"
     assert calls[0]["mode"] == "append"
 
 
@@ -127,7 +92,6 @@ def test_cli_dispatches_batch_csv_ingestion(monkeypatch: pytest.MonkeyPatch) -> 
         *,
         group: str | None,
         no_import: bool,
-        markdown_output_dir: str | None,
         mode: str,
     ) -> cli.BatchCSVIngestionResult:
         calls.append(
@@ -136,7 +100,6 @@ def test_cli_dispatches_batch_csv_ingestion(monkeypatch: pytest.MonkeyPatch) -> 
                 "settings": settings,
                 "group": group,
                 "no_import": no_import,
-                "markdown_output_dir": markdown_output_dir,
                 "mode": mode,
             }
         )
@@ -186,63 +149,61 @@ def test_scan_csv_files_classifies_policy_qa_and_unknown(tmp_path: Path) -> None
     assert [Path(path).name for path in unknown_files] == ["unknown_data.csv"]
 
 
-def test_process_csv_group_previews_and_ingests_with_manager(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_process_csv_group_ingests_with_manager(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    FakeCsvSource.instances = []
-    FakeMarkdownSink.instances = []
+    FakeFilePipeline.instances = []
     FakeMilvusSink.instances = []
-    FakeIngestionPipeline.instances = []
-    FakeCsvSource.responses = {
-        "a.csv": SourceResult([_document(0), _document(1)], [{"title": "A"}, {"title": "B"}])
-    }
-    monkeypatch.setattr(cli, "CsvSource", FakeCsvSource)
-    monkeypatch.setattr(cli, "MarkdownSink", FakeMarkdownSink)
+    monkeypatch.setattr(cli, "FileIngestionPipeline", FakeFilePipeline)
     monkeypatch.setattr(cli, "MilvusSink", FakeMilvusSink)
-    monkeypatch.setattr(cli, "IngestionPipeline", FakeIngestionPipeline)
 
     stats = cli.process_csv_group(
-        ["a.csv"],
-        "A",
-        loader=FakeSettings(),
-        manager={"manager": True},
-        output_dir=str(tmp_path),
+        ["a.csv", "b.csv"], "A", settings=FakeSettings(), manager={"manager": True}
     )
 
-    assert stats["processed"] == 1
-    assert stats["total_rows"] == 2
-    assert stats["total_chunks"] == 2
+    assert stats["processed"] == 2
+    assert stats["total_chunks"] == 4
+    assert stats["total_rows"] == 4
     assert stats["imported"] is True
-    assert FakeMarkdownSink.instances[0].source_file == "a.csv"
     assert FakeMilvusSink.instances[0].manager == {"manager": True}
-    assert FakeIngestionPipeline.instances[0].source.name == "csv_group_A"
+    assert FakeFilePipeline.instances[0].sink is FakeMilvusSink.instances[0]
 
 
 def test_process_csv_group_counts_failed_files_and_continues(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    FakeCsvSource.instances = []
-    FakeMarkdownSink.instances = []
-    FakeCsvSource.responses = {
-        "good.csv": SourceResult([_document()], [{"title": "A"}]),
-        "bad.csv": RuntimeError("broken csv"),
-    }
-    monkeypatch.setattr(cli, "CsvSource", FakeCsvSource)
-    monkeypatch.setattr(cli, "MarkdownSink", FakeMarkdownSink)
+    class FailingPipeline:
+        instances: List[Any] = []
+
+        def __init__(self, settings: Any, *, sink: Any = None) -> None:
+            self.settings = settings
+            self.sink = sink
+            FailingPipeline.instances.append(self)
+
+        def run(self, paths: List[str]):
+            return [
+                cli.FileIngestionResult(
+                    path="bad.csv", source_format="csv",
+                    status="failed", reason="broken csv",
+                ),
+                cli.FileIngestionResult(
+                    path="good.csv", source_format="csv",
+                    status="completed", chunk_count=2, inserted_count=2,
+                ),
+            ]
+
+    monkeypatch.setattr(cli, "FileIngestionPipeline", FailingPipeline)
 
     stats = cli.process_csv_group(
-        ["bad.csv", "good.csv"],
-        "A",
-        loader=FakeSettings(),
-        manager={"manager": True},
-        output_dir=str(tmp_path),
-        skip_import=True,
+        ["bad.csv", "good.csv"], "A",
+        settings=FakeSettings(), manager=None, skip_import=True,
     )
 
     assert stats["processed"] == 1
     assert stats["failed"] == 1
     assert stats["failed_files"] == ["bad.csv"]
     assert stats["imported"] is False
+    assert FailingPipeline.instances[0].sink is None  # skip_import → 预览干跑
 
 
 def test_batch_csv_ingestion_does_not_create_manager_for_no_import(
@@ -256,9 +217,8 @@ def test_batch_csv_ingestion_does_not_create_manager_for_no_import(
     def fake_process(
         files: List[str],
         group_label: str,
-        loader: Any,
+        settings: Any,
         manager: Any,
-        output_dir: str,
         *,
         skip_import: bool,
         mode: str,
@@ -269,12 +229,7 @@ def test_batch_csv_ingestion_does_not_create_manager_for_no_import(
     monkeypatch.setattr(cli, "scan_csv_files", fake_scan)
     monkeypatch.setattr(cli, "process_csv_group", fake_process)
 
-    result = cli.run_batch_csv_ingestion(
-        tmp_path,
-        FakeSettings(),
-        no_import=True,
-        markdown_output_dir=str(tmp_path / "preview"),
-    )
+    result = cli.run_batch_csv_ingestion(tmp_path, FakeSettings(), no_import=True)
 
     assert [call[0] for call in calls] == ["A", "C"]
     assert all(call[1] is None and call[2] is True for call in calls)
@@ -293,9 +248,8 @@ def test_batch_csv_ingestion_uses_initialize_only_for_first_import(
     def fake_process(
         files: List[str],
         group_label: str,
-        loader: Any,
+        settings: Any,
         manager: Any,
-        output_dir: str,
         *,
         skip_import: bool,
         mode: str,
@@ -307,11 +261,7 @@ def test_batch_csv_ingestion_uses_initialize_only_for_first_import(
     monkeypatch.setattr(cli, "process_csv_group", fake_process)
 
     result = cli.run_batch_csv_ingestion(
-        tmp_path,
-        FakeSettings(),
-        manager={"manager": True},
-        markdown_output_dir=str(tmp_path / "preview"),
-        mode="initialize",
+        tmp_path, FakeSettings(), manager={"manager": True}, mode="initialize"
     )
 
     assert calls == ["initialize", "append"]

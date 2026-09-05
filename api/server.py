@@ -16,14 +16,16 @@ import os
 import time
 from typing import Any, Callable, Dict, Generator, Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File as FileParam, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from agent import AgentGraph
 from core.protocol.reply import to_reply
 from core.protocol.renderers.api import reply_to_response
+from public_kb.ingestion.parse_tool import parse_file
 
+from . import file_store
 from .deps import get_agent
 from .schemas import ChatRequest, ChatResponse
 
@@ -34,11 +36,26 @@ def _default_thread_id(session_id: Optional[str]) -> str:
     return session_id or "default"
 
 
+def _resolve_context_docs(file_ids: list[str]) -> list[tuple[str, str]]:
+    """file_ids → (文件名, 清洗后 markdown) 列表；缺失/过期抛 404。
+
+    doc_qa 无检索模式（D-0-3）：文件上下文经 AgentGraph context_docs 注入。
+    """
+    docs: list[tuple[str, str]] = []
+    for fid in file_ids or []:
+        rec = file_store.get(fid)
+        if rec is None:
+            raise HTTPException(status_code=404, detail=f"file_id 不存在或已过期: {fid}")
+        docs.append((rec.source_name, rec.markdown))
+    return docs
+
+
 def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
     t0 = time.perf_counter()
     result = agent.invoke(
         req.question,
         thread_id=_default_thread_id(req.session_id),
+        context_docs=_resolve_context_docs(req.file_ids),
     )
     latency_ms = int((time.perf_counter() - t0) * 1000)
     business_result = result.get("business_result") or {"branch": "fallback", "answer": "", "data": None}
@@ -54,7 +71,11 @@ def _sse_events(agent: AgentGraph, req: ChatRequest) -> Generator[str, None, Non
     """把 AgentGraph.stream() 的图事件逐块转发为 SSE data。"""
     thread_id = _default_thread_id(req.session_id)
     try:
-        for event in agent.stream(req.question, thread_id=thread_id):
+        for event in agent.stream(
+            req.question,
+            thread_id=thread_id,
+            context_docs=_resolve_context_docs(req.file_ids),
+        ):
             yield "data: " + json.dumps(event, ensure_ascii=False, default=str) + "\n\n"
     except Exception as exc:  # 流中异常以 error 事件收尾，不中断连接
         logger.error("SSE 异常: %s", exc)
@@ -87,6 +108,43 @@ def create_app(
     @app.get("/health")
     def health(agent: AgentGraph = Depends(get_agent_fn)) -> dict:
         return {"status": "ok", "agent_ready": agent is not None}
+
+    @app.post("/files/upload")
+    async def upload_file(
+        file: UploadFile = FileParam(...),
+        session_id: Optional[str] = None,
+    ) -> dict:
+        """上传临时文件：FileParseTool 解析为清洗后 Markdown，返回 file_id + 预览。
+
+        只存临时会话缓存（api.file_store），**不写入任何向量库**（防污染，D-4）。
+        """
+        data = await file.read()
+        try:
+            result = parse_file(data, source_name=file.filename or "upload")
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        record = file_store.FileRecord(
+            file_id=file_store.new_file_id(),
+            source_name=result.source_name,
+            source_format=result.source_format,
+            markdown=result.markdown,
+            preview=result.preview,
+            chunk_count=result.chunk_count,
+            session_id=session_id or "default",
+            created_at=time.time(),
+        )
+        file_store.put(record)
+        logger.info(
+            "upload: file_id=%s name=%s format=%s chunks=%d",
+            record.file_id, record.source_name, record.source_format, record.chunk_count,
+        )
+        return {
+            "file_id": record.file_id,
+            "source_name": record.source_name,
+            "source_format": record.source_format,
+            "preview": record.preview,
+            "chunk_count": record.chunk_count,
+        }
 
     @app.post("/chat", response_model=ChatResponse)
     def chat(req: ChatRequest, agent: AgentGraph = Depends(get_agent_fn)) -> ChatResponse:

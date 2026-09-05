@@ -71,11 +71,12 @@ def _cosine(a: List[float], b: List[float]) -> float:
 
 
 def _get_default_embedder():
-    """惰性构建默认 embedder（BGE-M3 / SiliconFlow API）。仅 L2 开启时调用。"""
+    """惰性构建默认 embedder（BGE-M3 / SiliconFlow API）。仅 L2 开启时调用。
+    9.3 Track A：委托 core.embeddings 全局单例。"""
     from core.config.settings import Settings
-    from core.embeddings.bge_m3 import create_embeddings
+    from core.embeddings import get_embeddings
 
-    return create_embeddings(Settings())
+    return get_embeddings(Settings())
 
 
 def classify_semantic(

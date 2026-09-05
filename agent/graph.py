@@ -16,12 +16,12 @@ import inspect
 import logging
 import os
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from core.config.settings import Settings as PublicKBSettings
 from core.llm.registry import create_llm_for_slot
@@ -270,13 +270,14 @@ class AgentGraph:
             checkpointer_backend: 记忆后端，可选 "memory" | "sqlite" | "postgres" | "redis"
             registry: 能力注册表（默认进程级默认注册表）。
             mode: 主图模式 "single" | "supervisor"。None 时读环境变量 AGENT_MODE
-                （默认 single）；supervisor = 多 Agent 主图（orchestration/）。
+                （9.3 Track C 起默认 supervisor = 多 Agent 主图 orchestration/；
+                single 为回滚路径）。
         """
         if mode is None:
-            mode = os.getenv("AGENT_MODE", "single").lower()
+            mode = os.getenv("AGENT_MODE", "supervisor").lower()
         if mode not in ("single", "supervisor"):
-            logger.warning("未知 AGENT_MODE=%r，回退 single", mode)
-            mode = "single"
+            logger.warning("未知 AGENT_MODE=%r，回退 supervisor", mode)
+            mode = "supervisor"
         self._mode = mode
         self._llm = llm
         self._registry = registry
@@ -287,20 +288,29 @@ class AgentGraph:
         )
         logger.info("AgentGraph 就绪（mode=%s）", mode)
 
-    def invoke(self, question: str, thread_id: str = "default") -> Dict[str, Any]:
+    def invoke(
+        self,
+        question: str,
+        thread_id: str = "default",
+        *,
+        context_docs: Optional[Sequence[Tuple[str, str]]] = None,
+    ) -> Dict[str, Any]:
         """单次问答。
 
         Args:
             question: 用户问题
             thread_id: 会话线程 ID（用于多轮对话记忆隔离）
+            context_docs: 可选 (文件名, 清洗后 markdown) 列表，作为文档上下文
+                经 SystemMessage 注入（D-0-2，doc_qa 消费；AgentState 不加字段）。
 
         Returns:
             {"answer": str, "intent": str, "business_result": dict}
         """
         logger.info("用户提问: %s", question[:100])
 
+        messages = self._build_input_messages(question, context_docs)
         result = self._graph.invoke(
-            {"messages": [HumanMessage(content=question)]},
+            {"messages": messages},
             config={"configurable": {"thread_id": thread_id}},
         )
 
@@ -316,15 +326,39 @@ class AgentGraph:
             "business_result": business_result,
         }
 
-    def stream(self, question: str, thread_id: str = "default"):
-        """流式问答（生成器）。"""
+    def stream(
+        self,
+        question: str,
+        thread_id: str = "default",
+        *,
+        context_docs: Optional[Sequence[Tuple[str, str]]] = None,
+    ):
+        """流式问答（生成器；context_docs 同 invoke）。"""
         logger.info("流式提问: %s", question[:100])
 
+        messages = self._build_input_messages(question, context_docs)
         for event in self._graph.stream(
-            {"messages": [HumanMessage(content=question)]},
+            {"messages": messages},
             config={"configurable": {"thread_id": thread_id}},
         ):
             yield event
+
+    @staticmethod
+    def _build_input_messages(
+        question: str,
+        context_docs: Optional[Sequence[Tuple[str, str]]] = None,
+    ) -> List[Any]:
+        """构造图输入消息：文档上下文以 SystemMessage 前缀注入（D-0-2）。"""
+        messages: List[Any] = []
+        if context_docs:
+            from agent.nodes.doc_qa import DOC_CONTEXT_MARKER
+
+            parts = [f"[文件：{name}]\n{content}" for name, content in context_docs]
+            messages.append(
+                SystemMessage(content=f"{DOC_CONTEXT_MARKER}\n" + "\n\n".join(parts))
+            )
+        messages.append(HumanMessage(content=question))
+        return messages
 
     def get_state(self, thread_id: str = "default") -> Optional[AgentState]:
         """获取指定会话的当前状态。"""

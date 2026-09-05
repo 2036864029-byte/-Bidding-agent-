@@ -29,6 +29,7 @@ sentence-transformers>=3.0
 
 # ── 文档处理 ──
 markdown>=3.6,<4.0
+lxml>=5.0,<7.0                     # 数据修复 A3-4d：pandas.read_html 解析业务网页表格所需（table_extract.py html_engine）
 
 # ── 环境与工具 ──
 python-dotenv>=1.0.0,<2.0.0
@@ -38,3 +39,4 @@ setuptools>=65,<70                       # pymilvus 2.4.x 依赖 pkg_resources�
 fastapi>=0.110,<1.0
 uvicorn[standard]>=0.29,<1.0
 httpx>=0.27,<1.0
+python-multipart>=0.0.9,<1.0    # 9.3 D-3：POST /files/upload 文件上传必需

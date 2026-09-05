@@ -14,3 +14,7 @@ KB_PUBLIC_COLLECTION = "public_kb"
 
 # MySQL 结构化数据语义集合（企业/处罚/标讯 → 向量召回）
 PRICE_SEMANTIC_COLLECTION = "mysql_price_semantic"
+
+# 用户临时文档会话隔离集合前缀（9.3 Track D / D-4 扩展点）：
+# doc_qa 如需临时检索，按 ``DOC_KV_PREFIX + session_id`` 建集合，永不写入公共集合。
+DOC_KV_PREFIX = "doc_kv_"

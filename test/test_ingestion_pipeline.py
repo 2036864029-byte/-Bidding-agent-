@@ -1,25 +1,26 @@
-"""Offline tests for the ingestion pipeline and CSV source contracts."""
+"""Offline tests for the ingestion pipeline and CSV source contracts.
+
+9.3 C-2：原 legacy IngestionPipeline/CsvSource 主题随 `_legacy` 清退移除，
+替换为三段式 FileIngestionPipeline 对政策/QA CSV 的等价覆盖；sink 契约测试保留。
+"""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
 from langchain_core.documents import Document
 
-from public_kb.ingestion.models import SourceResult
-from public_kb.ingestion._legacy.pipeline_legacy import IngestionPipeline
-from public_kb.ingestion.csv_loader import CsvLoader
+from core.config.settings import Settings
+from public_kb.ingestion.pipeline import FileIngestionPipeline
 from public_kb.ingestion.sinks.markdown_sink import MarkdownSink
 from public_kb.ingestion.sinks.milvus_sink import MilvusSink
-from public_kb.ingestion._legacy.sources.csv_source import CsvSource
 
 
-class FakeSource:
-    def __init__(self, documents: Sequence[Document]) -> None:
-        self._documents = list(documents)
-
-    def load(self) -> SourceResult:
-        return SourceResult(documents=list(self._documents))
+def _settings(**overrides: Any) -> Settings:
+    values = {"milvus_uri": "http://offline.invalid:19530"}
+    values.update(overrides)
+    return Settings(**values)
 
 
 class CountingSink:
@@ -36,65 +37,42 @@ class CountingSink:
         return len(documents)
 
 
-def _document() -> Document:
-    return Document(
-        page_content="测试内容",
-        metadata={
-            "doc_name": "测试文档",
-            "chapter": "第一章",
-            "chunk_index": 0,
-        },
-    )
-
-
-def test_pipeline_validates_documents_and_invokes_sink():
-    sink = CountingSink()
-    result = IngestionPipeline([sink]).run(FakeSource([_document()]))
-
-    assert result.status == "completed"
-    assert result.chunk_count == 1
-    assert result.inserted_count == 1
-    assert sink.calls[0]["documents"][0].metadata["doc_name"] == "测试文档"
-    assert [stage.name for stage in result.stage_results] == [
-        "source",
-        "validate",
-        "sink:CountingSink",
-    ]
-
-
-def test_pipeline_skips_empty_source_without_sink_write():
-    sink = CountingSink()
-    result = IngestionPipeline([sink]).run(FakeSource([]))
-
-    assert result.status == "skipped"
-    assert result.chunk_count == 0
-    assert result.inserted_count == 0
-    assert sink.calls == []
-
-
-def test_csv_source_preserves_row_level_metadata(tmp_path):
-    csv_path = tmp_path / "policy_data.csv"
-    csv_path.write_text(
+def _policy_csv(path: Path) -> None:
+    path.write_text(
         "title,content,publish_date,source_url\n"
-        "政策名称,\"# 政策名称\n第一条 这是用于验证行级元数据的政策内容。\","
+        "政策名称,\"# 政策名称\n第一条 这是用于验证政策内容。\","
         "2024-01-01,https://example.com/policy\n",
         encoding="utf-8",
     )
-    source = CsvSource(
-        csv_path,
-        CsvLoader(max_chars=500, overlap_chars=20),
-    )
 
-    result = source.load()
 
-    assert result.records
-    assert result.documents
-    for document in result.documents:
-        assert document.metadata["title"] == "政策名称"
-        assert document.metadata["publish_date"] == "2024-01-01"
-        assert document.metadata["source_url"] == "https://example.com/policy"
-        assert document.metadata["source_file"] == "policy_data.csv"
-        assert "_line_num" in document.metadata
+def test_pipeline_processes_csv_into_markdown_chunks(tmp_path):
+    """三段式对政策/QA CSV 产出 markdown 行块（入向量路，C-2 迁移后等价覆盖）。"""
+    csv_path = tmp_path / "policy_data.csv"
+    _policy_csv(csv_path)
+    sink = CountingSink()
+    results = FileIngestionPipeline(_settings(), sink=sink).run([csv_path])
+    res = results[0]
+
+    assert res.status == "completed"
+    assert res.chunk_count >= 1
+    # 正文内容入块（TextCleaner 剥离 markdown 标题属预期清洗行为）
+    text = "".join(d.page_content for d in sink.calls[0]["documents"])
+    assert "第一条 这是用于验证政策内容。" in text
+    # table IR 记录行数（price 侧 SQL 消费）
+    assert res.detail["table_row_count"] == 1
+
+
+def test_pipeline_csv_preview_mode_no_sink_write(tmp_path):
+    """--no-import 预览：sink=None 干跑，产出 chunk 计数但不入库。"""
+    csv_path = tmp_path / "policy_data.csv"
+    _policy_csv(csv_path)
+    results = FileIngestionPipeline(_settings(), sink=None).run([csv_path])
+    res = results[0]
+
+    assert res.status == "completed"
+    assert res.chunk_count >= 1
+    assert res.inserted_count == 0
 
 
 class FakeMilvusManager:
@@ -136,3 +114,14 @@ def test_markdown_sink_writes_document_preview(tmp_path):
 
     assert count == 1
     assert (tmp_path / "sample_chunks.md").exists()
+
+
+def _document() -> Document:
+    return Document(
+        page_content="测试内容",
+        metadata={
+            "doc_name": "测试文档",
+            "chapter": "第一章",
+            "chunk_index": 0,
+        },
+    )

@@ -13,7 +13,7 @@ class FakeAgent:
     def __init__(self) -> None:
         self.last_thread: str | None = None
 
-    def invoke(self, question: str, thread_id: str = "default") -> dict:
+    def invoke(self, question: str, thread_id: str = "default", *, context_docs=None) -> dict:
         self.last_thread = thread_id
         return {
             "answer": "mock 答案【来源1】",
@@ -28,7 +28,7 @@ class FakeAgent:
             },
         }
 
-    def stream(self, question: str, thread_id: str = "default"):
+    def stream(self, question: str, thread_id: str = "default", *, context_docs=None):
         self.last_thread = thread_id
         yield {"type": "node", "node": "knowledge_qa"}
         yield {"type": "final", "answer": "ok"}

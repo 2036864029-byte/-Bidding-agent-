@@ -19,7 +19,7 @@ from core.config.settings import Settings
 from public_kb.guardrails import CitationValidator
 from public_kb.generation.chain import build_chain
 from public_kb.ingestion.models import IngestionResult, SourceResult, StageResult
-from public_kb.ingestion._legacy.pipeline_legacy import IngestionPipeline
+from public_kb.ingestion.pipeline import FileIngestionPipeline
 from public_kb.ingestion.csv_loader import CsvLoader, save_chunks_to_markdown
 from public_kb.ingestion.transforms.chunker import SemanticChunker
 from public_kb.ingestion.transforms.cleaner import TextCleaner
@@ -71,7 +71,7 @@ def test_stable_public_entries_import_without_initializing_services():
 
 
 def test_consolidated_pipeline_boundaries_import():
-    assert IngestionPipeline is not None
+    assert FileIngestionPipeline is not None
     assert SourceResult is not None
     assert StageResult is not None
     assert IngestionResult is not None
@@ -121,6 +121,11 @@ def test_legacy_compatibility_files_are_removed():
         assert not (PUBLIC_KB_ROOT / file_name).exists(), file_name
 
 
+def test_ingestion_legacy_archived_removed():
+    """9.3 C-2：public_kb/ingestion/_legacy 已整体清退。"""
+    assert not (PUBLIC_KB_ROOT / "ingestion" / "_legacy").exists()
+
+
 def _iter_python_paths():
     yield from PUBLIC_KB_ROOT.rglob("*.py")
     yield from (PUBLIC_KB_ROOT.parent / "agent").rglob("*.py")
@@ -141,6 +146,11 @@ def test_code_has_no_legacy_public_kb_import_paths():
             else:
                 continue
             assert not any(module in LEGACY_MODULES for module in module_names), path
+            # 9.3 C-2：ingestion._legacy 前缀同样禁止（防回潮）
+            assert not any(
+                module.startswith("public_kb.ingestion._legacy")
+                for module in module_names
+            ), path
 
 
 def test_agent_knowledge_entry_does_not_import_public_kb_internals():

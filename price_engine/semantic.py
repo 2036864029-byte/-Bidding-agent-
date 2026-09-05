@@ -14,7 +14,7 @@ from langchain_openai import OpenAIEmbeddings
 from pymilvus import DataType, MilvusClient
 
 from core.config.settings import Settings
-from core.embeddings.bge_m3 import create_embeddings
+from core.embeddings import get_embeddings
 from core.vectorstore.namespace import PRICE_SEMANTIC_COLLECTION
 
 from core.rdb.mysql_pool import _CLEAN_DB, _get_connection, _get_settings, _release_connection
@@ -54,10 +54,10 @@ _SEMANTIC_BOOTSTRAP_ATTEMPTED = False
 _SEMANTIC_BOOTSTRAP_IN_PROGRESS = False
 
 def _get_embeddings() -> OpenAIEmbeddings:
-    """懒加载 Embedding 客户端，供 P1-3 语义召回复用。"""
+    """懒加载 Embedding 客户端，供 P1-3 语义召回复用（9.3 Track A：委托全局单例）。"""
     global _EMBEDDINGS_CACHE
     if _EMBEDDINGS_CACHE is None:
-        _EMBEDDINGS_CACHE = create_embeddings(_get_settings())
+        _EMBEDDINGS_CACHE = get_embeddings(_get_settings())
     return _EMBEDDINGS_CACHE
 
 def _get_milvus_uri(settings: Settings) -> str:

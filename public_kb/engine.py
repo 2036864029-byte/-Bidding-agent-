@@ -15,12 +15,12 @@ from langchain_core.language_models import BaseChatModel
 from langchain_openai import OpenAIEmbeddings
 
 from core.config.settings import Settings
-from core.embeddings.bge_m3 import create_embeddings
+from core.embeddings import get_embeddings
+from core.llm.registry import create_llm_for_slot
 from .ingestion.pipeline import FileIngestionPipeline
 from .ingestion.sinks.milvus_sink import MilvusSink
 from .generation.chain import build_chain
 from .retrieval.reranker import SiliconFlowReranker
-from core.llm.deepseek import create_llm
 from core.vectorstore.milvus_client import MilvusStoreManager
 
 
@@ -40,9 +40,11 @@ class PublicKnowledgeRAG:
     ) -> None:
         self._settings = settings or Settings()
         self._embeddings: OpenAIEmbeddings = (
-            embeddings if embeddings is not None else create_embeddings(self._settings)
+            embeddings if embeddings is not None else get_embeddings(self._settings)
         )
-        self._llm: BaseChatModel = llm if llm is not None else create_llm(self._settings)
+        self._llm: BaseChatModel = llm if llm is not None else create_llm_for_slot(
+            "kb_generation", self._settings
+        )
         self._store_manager = store_manager if store_manager is not None else MilvusStoreManager(
             self._settings, self._embeddings
         )

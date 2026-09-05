@@ -1,15 +1,21 @@
-"""M2 块级去重 + 幂等导入的单元测试（mock MilvusClient，不连真实库）。"""
+"""M2 块级去重 + 幂等导入的单元测试（mock MilvusClient，不连真实库）。
+
+9.3 C-2：pipeline 级判重测试由 legacy IngestionPipeline 切到三段式
+FileIngestionPipeline（同 doc_name + 同内容 → 同 chunk_uid → 判重跳过）。
+"""
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from typing import Any
 
 from langchain_core.documents import Document
 
 from core.config.settings import Settings
-from public_kb.ingestion._legacy.pipeline_legacy import IngestionPipeline
+from public_kb.ingestion.pipeline import FileIngestionPipeline
 from public_kb.ingestion.sinks.milvus_sink import MilvusSink
 from core.vectorstore.milvus_client import MilvusStoreManager
 
@@ -216,38 +222,45 @@ class DedupIngestionTests(unittest.TestCase):
         self.assertEqual(added, 1)  # 旧行为：重复也写入
         self.assertEqual(client.insert_row_count, 2)
 
-    # ── pipeline / sink 计数 ──────────────────────────────
+    # ── pipeline / sink 计数（9.3 C-2：三段式 FileIngestionPipeline） ──
 
-    def test_pipeline_reports_skipped_duplicates(self) -> None:
+    def test_pipeline_dedup_second_file_skips_duplicate_chunks(self) -> None:
         client = FakeMilvusClient()
         manager = self._manager(client)
-        result = IngestionPipeline([MilvusSink(manager, mode="append")]).run(
-            _InMemorySource(_same_content_pair())
-        )
-        self.assertEqual(result.chunk_count, 2)
-        self.assertEqual(result.inserted_count, 1)
-        self.assertEqual(result.skipped_duplicates, 1)
-        self.assertEqual(result.status, "completed")
+        content = "第一条 为了规范招标投标活动，制定本法。"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            d1, d2 = root / "d1", root / "d2"
+            d1.mkdir()
+            d2.mkdir()
+            p1, p2 = d1 / "a.txt", d2 / "a.txt"
+            p1.write_text(content, encoding="utf-8")
+            p2.write_text(content, encoding="utf-8")
+            results = FileIngestionPipeline(
+                _settings(), sink=MilvusSink(manager, mode="append")
+            ).run([p1, p2])
+        # 同 doc_name + 同内容 → 同 chunk_uid → 第二份判重跳过
+        self.assertEqual(results[0].inserted_count, 1)
+        self.assertEqual(results[1].inserted_count, 0)
 
-    def test_pipeline_without_dedup_reports_zero_skipped(self) -> None:
+    def test_pipeline_without_dedup_writes_all(self) -> None:
         client = FakeMilvusClient()
         manager = self._manager(client, enable_dedup=False)
-        result = IngestionPipeline([MilvusSink(manager, mode="append")]).run(
-            _InMemorySource(_same_content_pair())
-        )
-        self.assertEqual(result.inserted_count, 2)
-        self.assertEqual(result.skipped_duplicates, 0)
-
-
-class _InMemorySource:
-    """最小 Source 实现，供 pipeline 测试使用。"""
-
-    def __init__(self, documents: list[Document]) -> None:
-        self.documents = documents
-
-    def load(self):
-        from public_kb.ingestion.models import SourceResult
-        return SourceResult(documents=self.documents)
+        content = "第一条 为了规范招标投标活动，制定本法。"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            d1, d2 = root / "d1", root / "d2"
+            d1.mkdir()
+            d2.mkdir()
+            p1, p2 = d1 / "a.txt", d2 / "a.txt"
+            p1.write_text(content, encoding="utf-8")
+            p2.write_text(content, encoding="utf-8")
+            results = FileIngestionPipeline(
+                _settings(), sink=MilvusSink(manager, mode="append")
+            ).run([p1, p2])
+        # 无判重 → 全量写
+        self.assertEqual(results[0].inserted_count, 1)
+        self.assertEqual(results[1].inserted_count, 1)
 
 
 if __name__ == "__main__":
