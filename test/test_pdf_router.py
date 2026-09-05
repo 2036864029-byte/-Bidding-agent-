@@ -211,3 +211,111 @@ def test_tier_a_excludes_range_covered_pages_and_fills_route(tmp_path):
     assert parsed[0].route.tier == "C"
     assert "tier_c_range" in parsed[0].route.page_label
     assert "0,1,2" in parsed[0].route.reason
+
+
+# ── 前置区跳过（pdf_skip_front_matter，用户决策 2026-09-05）──────
+
+
+def test_is_body_page_heuristics():
+    """正文页判定：章标题行 + 成句标点 + 非目录纲要/前言引用。"""
+    from public_kb.ingestion.normalizers.pdf.pdf_router import _is_body_page
+
+    # 正文页：第X章 标题 + 成句内容（≥3 句）
+    assert _is_body_page(
+        "第一章 总则\n第一条 为了规范招标投标活动，根据本法制定。\n"
+        "第二条 本法适用于境内招标投标活动。\n第三条 国家鼓励电子招标投标。\n"
+    )
+    # 条级正文页（第X条 + 成句）
+    assert _is_body_page(
+        "第八条【招标人】招标人是依照本法规定提出招标项目、进行招标的法人。\n"
+        "招标人应当有进行招标项目的相应资金。\n资金来源已经落实。\n"
+    )
+    # 前置区：无 第X 标题（封面/CIP/版权）
+    assert not _is_body_page("中华人民共和国招标投标法律法规全书\n法律出版社\n2023年\n")
+    # 前言正文引用章节（无空白 + 长句延续）
+    assert not _is_body_page("第一章对政府采购进行系统的阐述，重点是政府采购方式与程序。\n")
+    # 目录纲要页（大量短条目、无成句标点）
+    toc = "第一章 招标投标基础知识\n第一节 招标投标概述\n第二节 招标投标的基本原则\n" \
+          "第三节 招标投标的主体和客体\n一、招标投标的起源与发展\n二、对概念的理解\n" \
+          "三、招标投标的主要特点\n四、招标投标的作用\n"
+    assert not _is_body_page(toc)
+    # 带页码的目录页
+    assert not _is_body_page("第一章 综合 …… 3\n第二章 招标 …… 15\n第一章 总则 …… 28\n")
+
+
+@pytest.mark.skipif(
+    not pytest.importorskip("pymupdf", reason="pymupdf not installed"),
+    reason="pymupdf required",
+)
+def test_mark_front_matter_skip_marks_front_pages(tmp_path):
+    """真实 PDF：封面/序言/目录页 → tier=S；正文页保持原 tier。"""
+    import pymupdf
+
+    from public_kb.ingestion.normalizers.pdf.pdf_legal_page_classifier import (
+        PageRouteDecision,
+    )
+
+    src = tmp_path / "fm.pdf"
+    doc = pymupdf.open()
+    try:
+        pages_text = [
+            "中华人民共和国招标投标法律法规全书\n法律出版社\n2023年\n",      # 0 封面
+            "序言\n本书旨在解读招标投标法律实务。\n",                          # 1 序言
+            "第一章 招标投标基础知识\n第一节 概述\n第二节 原则\n第三节 主体\n",  # 2 目录纲要
+            "第一章 总则\n第一条 为了规范招标投标活动，根据本法制定。\n"       # 3 正文
+            "第二条 本法适用于境内招标投标活动。\n第三条 国家鼓励电子招标投标。\n",
+        ]
+        for text in pages_text:
+            page = doc.new_page(width=400, height=600)
+            page.insert_text((40, 60), text, fontname="china-s")
+        doc.save(str(src))
+    finally:
+        doc.close()
+
+    s = Settings()
+    s.pdf_tiered_routing_enabled = True
+    s.pdf_skip_front_matter = True
+    r = PdfRouter(s)
+
+    decisions = [
+        PageRouteDecision(i, "text", "A", "text", 1.0, "fast_text", {})
+        for i in range(4)
+    ]
+    out = r._mark_front_matter_skip(decisions, src)
+    assert [d.tier for d in out] == ["S", "S", "S", "A"]
+    assert all(d.parser == "skip" for d in out[:3])
+    assert out[3].page_idx == 3  # 正文页不动
+
+    # 开关关闭 → 不跳过
+    s.pdf_skip_front_matter = False
+    r2 = PdfRouter(s)
+    assert r2._mark_front_matter_skip(decisions, src) == decisions
+
+
+@pytest.mark.skipif(
+    not pytest.importorskip("pymupdf", reason="pymupdf not installed"),
+    reason="pymupdf required",
+)
+def test_mark_front_matter_skip_no_boundary_returns_unchanged(tmp_path):
+    """找不到正文起点（如纯扫描件无文本层）→ 原样返回（A3-5 兜底）。"""
+    import pymupdf
+
+    from public_kb.ingestion.normalizers.pdf.pdf_legal_page_classifier import (
+        PageRouteDecision,
+    )
+
+    src = tmp_path / "noscan.pdf"
+    doc = pymupdf.open()
+    try:
+        # 空文本层（模拟纯扫描件）
+        doc.new_page(width=400, height=600)
+        doc.save(str(src))
+    finally:
+        doc.close()
+
+    s = Settings()
+    s.pdf_tiered_routing_enabled = True
+    s.pdf_skip_front_matter = True
+    r = PdfRouter(s)
+    decisions = [PageRouteDecision(0, "visual_or_scan", "C", "scan", 0.9, "mineru", {})]
+    assert r._mark_front_matter_skip(decisions, src) == decisions

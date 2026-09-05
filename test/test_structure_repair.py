@@ -156,7 +156,8 @@ def test_split_inline_articles_idempotent():
 # ── clean_markdown 集成 ───────────────────────────────────
 
 def test_clean_markdown_book_marks_front_matter_and_toc():
-    s = Settings()
+    # A3-5 标记模式（pdf_skip_front_matter=false，Phase B 消费标记）
+    s = Settings(pdf_skip_front_matter=False)
     md = (
         "# 中华人民共和国招标投标法律法规全书\n"
         "# 前言\n"
@@ -173,6 +174,24 @@ def test_clean_markdown_book_marks_front_matter_and_toc():
     # 目录点线行被剔除
     assert "⋯⋯" not in out
     # 内联正文拆出（A3-2 后不随标题行吞并）
+    assert "为了规范招标投标活动。" in out
+
+
+def test_clean_markdown_book_default_strips_front_matter():
+    # 默认 pdf_skip_front_matter=true：书籍前置区（封面/序言/目录）直接剥离
+    s = Settings()
+    md = (
+        "# 中华人民共和国招标投标法律法规全书\n"
+        "# 前言\n"
+        "## 目 录\n"
+        "第一章 综合⋯⋯⋯⋯(1)\n"
+        "## 第一章 总则\n"
+        "#### 第一条 为了规范招标投标活动。\n"
+    )
+    out = clean_markdown(md, s)
+    assert "frontmatter:start" not in out
+    assert "招标投标法律法规全书" not in out.split("\n")[0]
+    assert out.startswith("## 第一章 总则")
     assert "为了规范招标投标活动。" in out
 
 

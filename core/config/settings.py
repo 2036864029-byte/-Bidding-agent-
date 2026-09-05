@@ -263,11 +263,12 @@ class Settings:
     pdf_min_table_rows: int = 2  # 连续 | 表格行达到该行数才视为表格原子段
     enable_pdf_toc_filter: bool = True  # 剔除点线目录行（"……(82)"）
     enable_pdf_reflow_flag: bool = True  # 疑似双栏乱序块打标（供人工抽检）
-    # A3-5：书籍前置页（封面/CIP/前言/目录）处理——false=标记（默认，Phase B
-    # 消费 frontmatter 标记决定不入 chunk）；true=直接剥离
+    # A3-5/前置区跳过（用户决策 2026-09-05）：封面/CIP/序言/目录等前置页在
+    # 解析层直接跳过（pdf_router 正文起点识别），不再产出——书名由 doc_name
+    # 承载。识别失败的书由 clean_markdown 的 A3-5 剥离兜底。
     pdf_skip_front_matter: bool = field(
         default_factory=lambda: os.getenv(
-            "PDF_SKIP_FRONT_MATTER", "false"
+            "PDF_SKIP_FRONT_MATTER", "true"
         ).lower() in {"1", "true", "yes"}
     )
 

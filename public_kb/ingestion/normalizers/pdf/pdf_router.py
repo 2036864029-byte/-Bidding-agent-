@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, replace
@@ -57,6 +58,36 @@ logger = logging.getLogger(__name__)
 _TIER_A = "A"
 _TIER_B = "B"
 _TIER_C = "C"
+_TIER_SKIP = "S"  # 前置区页跳过（封面/CIP/序言/目录，用户决策 2026-09-05）
+
+# 前置区识别（正文起点判定）：页文本含「第X编/章/节/条」标题行（行首 + 空白 +
+# 短标题或裸标题，排除前言正文的句子引用如"第一章对……"）+ 成句标点（排除目录
+# 纲要页）+ 非页码密集（排除带页码的目录）。三本书实测：全书 p14 / 白如银 p15 /
+# 1200问 p7 为正文起点。
+# 编/章/节/部分：标题即行尾（可选括号/短标题），排除前言正文的句子引用如
+# "第一章对……"；条/款/项：行首即可（正文常在同行，如"第八条【招标人】正文"）。
+_FRONT_HEADING_RE = re.compile(
+    r"^第[一二三四五六七八九十百千\d]+[编部分章节]"
+    r"(?:[（【][^）】]{0,20}[）】]|\s+\S.{0,20})?$"
+    r"|^第[一二三四五六七八九十百千\d]+[条款项]"
+)
+_FRONT_PAGENO_RE = re.compile(r"\s\d{1,4}$")
+_FRONT_SENT_MIN = 3     # 正文页成句标点（。！？）下限——目录纲要页几乎无成句
+_FRONT_PAGENO_MAX = 8   # 页尾裸页码行上限——目录条目页超出
+
+
+def _is_body_page(text: str) -> bool:
+    """页文本是否为正文页（前置区跳过用）。False = 仍是前置区/目录/纲要。"""
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    if not any(
+        _FRONT_HEADING_RE.match(ln) and len(ln) <= 40 for ln in lines
+    ):
+        return False
+    sentences = sum(
+        ln.count("。") + ln.count("！") + ln.count("？") for ln in lines
+    )
+    pageno_lines = sum(1 for ln in lines if _FRONT_PAGENO_RE.search(ln))
+    return sentences >= _FRONT_SENT_MIN and pageno_lines < _FRONT_PAGENO_MAX
 
 
 # ── 顶层入口 ───────────────────────────────────────────────
@@ -140,6 +171,11 @@ class PdfRouter:
             else d
             for d in decisions
         ]
+        # 1.6) 前置区页跳过（封面/CIP/序言/目录；pdf_skip_front_matter=true）
+        decisions = self._mark_front_matter_skip(decisions, pdf_path)
+        skipped_pages = [
+            d.page_idx + 1 for d in decisions if d.tier == _TIER_SKIP
+        ]
         # 2) Tier C 聚合 + 边界扩展
         ranges = aggregate_complex_ranges(
             decisions,
@@ -161,14 +197,17 @@ class PdfRouter:
         manifest["routing"] = {
             "enabled": True,
             "ranges": [asdict(r) for r in ranges],
+            "skipped_front_matter_pages": skipped_pages,
         }
         self._write_manifest(pdf_path, manifest)
         logger.info(
-            "PDF 三档路由完成: %s tier_a=%d tier_b=%d tier_c_ranges=%d elapsed=%.2fs",
+            "PDF 三档路由完成: %s tier_a=%d tier_b=%d tier_c_ranges=%d "
+            "front_matter_skipped=%d elapsed=%.2fs",
             pdf_path.name,
             sum(1 for d in decisions if d.tier == _TIER_A),
             sum(1 for d in decisions if d.tier == _TIER_B),
             len(ranges),
+            len(skipped_pages),
             elapsed,
         )
         return cleaned
@@ -233,6 +272,45 @@ class PdfRouter:
             return doc.page_count
         finally:
             doc.close()
+
+    def _mark_front_matter_skip(
+        self,
+        decisions: Sequence[PageRouteDecision],
+        pdf_path: Path,
+    ) -> Sequence[PageRouteDecision]:
+        """前置区页跳过（pdf_skip_front_matter=true 时）。
+
+        正文起点 = 首个"正文页"（含 第X编/章/节/条 标题行 + 成句标点 + 非页码
+        密集）。起点之前的页（封面/CIP/序言/目录）标 tier=SKIP，不参与 Tier A/C
+        解析、不产出 markdown——书名由 doc_name 承载。识别不到正文起点 → 原样
+        返回（由 clean_markdown 的 A3-5 剥离兜底）。
+        """
+        if not self._settings.pdf_skip_front_matter:
+            return decisions
+        import pymupdf
+
+        doc = pymupdf.open(str(pdf_path))
+        try:
+            boundary = None
+            for d in decisions:
+                if _is_body_page(doc.load_page(d.page_idx).get_text("text") or ""):
+                    boundary = d.page_idx
+                    break
+        finally:
+            doc.close()
+        if boundary in (None, 0):
+            return decisions
+        return [
+            replace(
+                d,
+                tier=_TIER_SKIP,
+                parser="skip",
+                reason="front_matter_skip",
+            )
+            if d.page_idx < boundary
+            else d
+            for d in decisions
+        ]
 
     def _dispatch_all(
         self,
