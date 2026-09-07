@@ -278,6 +278,20 @@ class Settings:
             "PDF_SKIP_FRONT_MATTER", "true"
         ).lower() in {"1", "true", "yes"}
     )
+    # Phase A 后置排版重构（2026-09-07 灰度开关删除后收口）：目录残标题剔除 + 引用误标题
+    # 降级（relayout_pipeline，R1/R2）。R4/R5（标题续行补全/44 字句末折行）已由解析层
+    # 段落化（pdf_paragraph）取代、随 pdf_layout_v2 开关一并删除。书路径 clean 最后兜底；
+    # external 不经过。
+    enable_pdf_relayout: bool = field(
+        default_factory=lambda: os.getenv(
+            "ENABLE_PDF_RELAYOUT", "true"
+        ).lower() in {"1", "true", "yes"}
+    )
+    # 页数上限（试点/分批重处理）：>0 时只解析前 N 页（0 = 全量）。
+    # 用于 P6 验收的前 N 页试点（先行确认版面质量再跑整书）。
+    pdf_parse_page_limit: int = field(
+        default_factory=lambda: int(os.getenv("PDF_PARSE_PAGE_LIMIT", "0") or 0)
+    )
 
     # ============================================================
     # ingestion CLI 路径（9.3 Track B）— 默认输入/工作目录，CLI 显式参数覆盖

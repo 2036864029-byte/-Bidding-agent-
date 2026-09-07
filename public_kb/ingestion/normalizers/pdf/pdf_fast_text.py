@@ -23,8 +23,13 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 _PAGE_NUMBER_RE = re.compile(r"^\s*\d{1,4}\s*$")
 
 # 行首页码前缀（页眉中页码逐页变化，剥离后才能识别同一条页眉）：
-#   "78 一、招标投标" → "一、招标投标"
-_HEADER_PAGENUM_PREFIX_RE = re.compile(r"^\d{1,4}\s*")
+#   "78 一、招标投标" → "一、招标投标"。数字后跟列表符号（.．、）时是
+#   列表编号不是页码（"1.一般规定17"），不剥离。
+_HEADER_PAGENUM_PREFIX_RE = re.compile(r"^\d{1,4}(?![.．、])\s*")
+# 行尾页码（侧标/书签：当前章节名 + 印刷页码逐页变化）：
+#   "1.一般规定17" → "1.一般规定"。仅当页码紧跟 CJK/闭合括号时才剥离
+#   （"GB 50430-2019" 数字前是 ASCII 字母/连字符 → 不动）。
+_HEADER_PAGENUM_SUFFIX_RE = re.compile(r"(?<=[一-鿿）】」』》])\d{1,4}\s*$")
 # 句末标点（含引号/括号闭合）：以这些结尾的行视为完整句
 _SENTENCE_END_RE = re.compile(r"[。；！？…）」』\"']$")
 # 含汉字（CJK 统一表意文字块）
@@ -96,8 +101,11 @@ def remove_page_numbers(lines: Sequence[TextLine]) -> List[TextLine]:
 
 
 def normalize_header_text(text: str) -> str:
-    """页眉候选归一化：去行首页码前缀与空白（``78 一、招标投标`` → ``一、招标投标``）。"""
-    return _HEADER_PAGENUM_PREFIX_RE.sub("", text.strip()).strip()
+    """页眉候选归一化：去行首/行尾页码与空白（``78 一、招标投标`` →
+    ``一、招标投标``；``1.一般规定17`` → ``1.一般规定``）。"""
+    t = _HEADER_PAGENUM_PREFIX_RE.sub("", text.strip())
+    t = _HEADER_PAGENUM_SUFFIX_RE.sub("", t)
+    return t.strip()
 
 
 def detect_header_candidates(
@@ -154,6 +162,11 @@ def detect_header_candidates(
             m = _HEADER_PAGENUM_PREFIX_RE.match(raw)
             pagenum = m.group(0).strip() if m else ""
             t = _HEADER_PAGENUM_PREFIX_RE.sub("", raw).strip()
+            ms = _HEADER_PAGENUM_SUFFIX_RE.search(t)
+            if ms:
+                if not pagenum:
+                    pagenum = ms.group(0).strip()
+                t = _HEADER_PAGENUM_SUFFIX_RE.sub("", t).strip()
             if not t or len(t) > max_len:
                 continue
             if not _HAS_CJK_RE.search(t):
@@ -182,18 +195,35 @@ def detect_header_candidates(
 def remove_header_lines(
     lines: Sequence[TextLine],
     header_candidates: Optional[Sequence[str]] = None,
+    *,
+    page_height: float = 0.0,
+    top_ratio: float = 0.15,
+    bottom_ratio: float = 0.10,
 ) -> List[TextLine]:
     """按文档级页眉候选集剔除页眉行；不做按位置的硬切。
 
     header_candidates 为空/None 时不移除任何行（无上下文时宁可不删，避免
     误删正文首行）——抽取层不再依赖固定的顶部/底部比例区。
+
+    page_height > 0 时启用位置佐证：候选文本只有落在页顶/页底区才删除，
+    版心内同文本行是真实标题/正文（如侧标"1.一般规定17"与节标题
+    "1.一般规定"同文）——双重确认与 detect_header_candidates 口径一致。
     """
     cand = set(header_candidates or ())
     if not cand:
         return list(lines)
+
+    def _in_zone(ln: TextLine) -> bool:
+        if not page_height:
+            return True  # 无页高（legacy 口径）：仅按文本匹配
+        return (
+            ln.y0 < page_height * top_ratio
+            or ln.y0 > page_height * (1 - bottom_ratio)
+        )
+
     return [
         ln for ln in lines
-        if normalize_header_text(ln.text) not in cand
+        if normalize_header_text(ln.text) not in cand or not _in_zone(ln)
     ]
 
 

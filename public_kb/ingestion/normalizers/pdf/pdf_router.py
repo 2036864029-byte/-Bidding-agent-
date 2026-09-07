@@ -39,7 +39,6 @@ from .pdf_complex_range import (
     ComplexRange,
     aggregate_complex_ranges,
 )
-from .pdf_fast_text import extract_page_markdown
 from .pdf_legal_page_classifier import (
     LegalPageClassifier,
     PageRouteDecision,
@@ -174,20 +173,29 @@ class PdfRouter:
         ]
         # 1.6) 前置区页跳过（封面/CIP/序言/目录；pdf_skip_front_matter=true）
         decisions = self._mark_front_matter_skip(decisions, pdf_path)
+        # 1.7) 页数上限（试点/分批重处理）：只解析前 N 页（0 = 全量）
+        page_limit = int(
+            getattr(self._settings, "pdf_parse_page_limit", 0) or 0
+        )
+        if page_limit > 0:
+            decisions = [d for d in decisions if d.page_idx < page_limit]
         skipped_pages = [
             d.page_idx + 1 for d in decisions if d.tier == _TIER_SKIP
         ]
-        # 2) Tier C 聚合 + 边界扩展
+        # 2) Tier C 聚合 + 边界扩展（上限生效时边界扩展钳制在前 N 页内）
+        total_pages = self._total_pages(pdf_path)
+        if page_limit > 0:
+            total_pages = min(total_pages, page_limit)
         ranges = aggregate_complex_ranges(
             decisions,
-            total_pages=self._total_pages(pdf_path),
+            total_pages=total_pages,
             expand_pages=self._settings.pdf_tiered_expand_boundary_pages,
             range_id_seed=pdf_path.stem,
         )
         # 3) 各档并行解析
         parsed_pages = self._dispatch_all(pdf_path, decisions, ranges)
-        # 4) T4 装配
-        assembled = assemble_pages(parsed_pages)
+        # 4) T4 装配（跨页续段合并——解析层段落化后唯一路径）
+        assembled = assemble_pages(parsed_pages, join_cross_page=True)
         cleaned = clean_assembled_document(dedup_repeated_lines(assembled))
         elapsed = time.time() - t0
         # 5) manifest
@@ -199,6 +207,7 @@ class PdfRouter:
             "enabled": True,
             "ranges": [asdict(r) for r in ranges],
             "skipped_front_matter_pages": skipped_pages,
+            "page_limit": page_limit if page_limit > 0 else None,
         }
         self._write_manifest(pdf_path, manifest)
         logger.info(
@@ -341,6 +350,19 @@ class PdfRouter:
             else:
                 raise
 
+        # MinerU 外来 md 标题归一：并入前把扁平 # 拉回本地语义级
+        # （编号问项→6、章/节→2/3、图/表/案例题注→正文、内容章→默认 2）。
+        # 只在 MinerU 段生效，不覆盖本地版面锚定级（clean v2 已跳过 A3-1 全量重写）。
+        from dataclasses import replace
+
+        from .pdf_markdown_assembler import normalize_mineru_md_heading_levels
+
+        tier_c_results = [
+            replace(_p, markdown=normalize_mineru_md_heading_levels(_p.markdown))
+            if _p.parser == "mineru" else _p
+            for _p in tier_c_results
+        ]
+
         # Tier A：并行快路径。被 Tier C 范围覆盖的页（含边界扩展页）统一使用
         # MinerU 产物，避免同一页同时出现快路径和 MinerU 内容（计划 §6 T3）。
         tier_c_page_set = {idx for r in ranges for idx in r.page_idxs}
@@ -433,8 +455,17 @@ class PdfRouter:
 
         def worker(items: Sequence[PageRouteDecision]):
             import pymupdf
+            from .pdf_fast_text import (
+                remove_header_lines,
+                remove_page_numbers,
+                sort_single_column,
+            )
             from .pdf_page_profile import build_page_profile
-            from .pdf_two_column_reflow import reflow_page_markdown
+            from .pdf_paragraph import paragraph_markdown
+            from .pdf_two_column_reflow import (
+                needs_two_column_defense,
+                reflow_two_columns_v2,
+            )
 
             doc = pymupdf.open(str(pdf_path))  # 每线程独立 Document
             try:
@@ -443,7 +474,21 @@ class PdfRouter:
                     warnings: List[str] = []
                     try:
                         page = doc.load_page(d.page_idx)
-                        if d.page_label == "two_col_text":
+                        # 段落化 + 版面锚定标题 + 串栏防御（灰度开关 pdf_layout_v2
+                        # 删除后唯一路径）。单栏页 paragraph_markdown 直出；two_col
+                        # 标记页或防御信号页走 reflow_two_columns_v2（通栏行 y 归位）
+                        # 后段落化。
+                        lines = remove_page_numbers(iter_lines(page))
+                        lines = remove_header_lines(
+                            lines, header_candidates,
+                            page_height=float(page.rect.height or 0),
+                        )
+                        page_width = float(page.rect.width or 0)
+                        if d.page_label == "two_col_text" or (
+                            needs_two_column_defense(
+                                lines, page_width=page_width
+                            )
+                        ):
                             profile = build_page_profile(
                                 page,
                                 d.page_idx,
@@ -451,19 +496,17 @@ class PdfRouter:
                                     self._settings.pdf_tiered_background_img_ratio
                                 ),
                             )
-                            lines = iter_lines(page)
-                            md = reflow_page_markdown(
+                            split_x = (
+                                profile.two_col_split_x or page_width / 2.0
+                            )
+                            ordered = reflow_two_columns_v2(
                                 lines,
-                                split_x=profile.two_col_split_x,
-                                page_width=profile.width,
-                                header_candidates=header_candidates,
+                                split_x=split_x,
+                                page_width=page_width,
                             )
                         else:
-                            md = extract_page_markdown(
-                                page,
-                                page_idx=d.page_idx,
-                                header_candidates=header_candidates,
-                            )
+                            ordered = sort_single_column(lines)
+                        md = paragraph_markdown(ordered)
                     except Exception as exc:  # noqa: BLE001
                         warnings.append(f"fast_text_failed: {exc}")
                         md = ""

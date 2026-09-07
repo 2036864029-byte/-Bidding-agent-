@@ -194,6 +194,13 @@ def normalize_external_md(markdown: str) -> str:
 _ANCHOR_HEADING_RE = re.compile(
     r"^#{1,6}\s+第[一二三四五六七八九十百千\d]+[编部分章节条款项]"
 )
+# 正文形态信号（前置剥离误伤守卫）：编号问项/列表行/答 行。手册体（1200问）
+# 常以内容章开篇（"政府采购概述"+ 连续问项），首个 `第X编/章/节` 锚远在后面；
+# 前置页（封面/CIP/序言/目录）绝无这些形态——锚前块含它们 = 剥离会吞真实正文。
+_FRONT_BODY_SIGNAL_RE = re.compile(
+    r"^(（\s*[0-9一二三四五六七八九十百]+\s*）|\([0-9一二三四五六七八九十百]+\)|"
+    r"[0-9一二三四五六七八九十百]+[、.)．]|[-•·]|答\s*[:：])"
+)
 _TOC_HEADING_RE = re.compile(r"^#{1,6}\s+目\s*(录|次)\s*$")
 _FRONT_START = "<!-- frontmatter:start -->"
 _FRONT_END = "<!-- frontmatter:end -->"
@@ -226,9 +233,32 @@ def mark_front_matter(markdown: str, *, skip: bool = False) -> str:
         front.pop(0)
     if not front:
         return markdown
+    if skip and _front_is_manual_body(front):
+        # 误伤守卫：锚前块是手册体正文（编号问项 + 答 行），非前置页——首个
+        # `第X` 锚远在真实开篇章之后，锚定模型在此不适用。剥离或标记都会吞/标
+        # 真实正文，故原样返回（真实封面/CIP 已由路由层 tier S 跳过）。
+        return markdown
     if skip:
         return "\n".join(lines[boundary:]).lstrip("\n")
     return "\n".join([_FRONT_START, *front, _FRONT_END, *lines[boundary:]])
+
+
+def _front_is_manual_body(front: List[str]) -> bool:
+    """前置块是手册体正文（而非封面/CIP/目录）？
+
+    判据 = 出现 Q&A 形态：`答：` 解答行，或编号行/问句以 ？/吗/呢 收尾。
+    法名标题下的沿革行（"1. 1999年8月30日通过"）不是问句、也无答行 → 不算。
+    封面/前言/目录不含问句与答行 → 不算。
+    """
+    for l in front:
+        s = l.strip().lstrip("#").strip()
+        if not s:
+            continue
+        if re.match(r"^答\s*[:：]", s):
+            return True
+        if _FRONT_BODY_SIGNAL_RE.match(s) and s.rstrip().endswith(("？", "?", "吗", "呢")):
+            return True
+    return False
 
 
 def _mark_toc_page(markdown: str) -> Tuple[str, int]:
@@ -252,6 +282,105 @@ def mark_toc_page(markdown: str) -> str:
     """A3-5：目录页标题标注为目录（公开入口）。"""
     text, _ = _mark_toc_page(markdown)
     return text
+
+
+# ── P3-2 mini 目录块识别（版面还原计划 2026-09-06）────────
+
+_INLINE_TOC_HEAD_RE = re.compile(
+    r"^(#{1,6})\s+(第[一二三四五六七八九十百千\d]+[编章节部分].{0,17})$"
+)
+
+
+# 合法级联判定：编/部分→章→节 层级严格递降且各出现一次（正文开篇正常形态）
+_CASCADE_LEVELS = (("编", 1), ("部分", 1), ("章", 2), ("节", 3))
+
+
+def _is_legal_heading_cascade(run: List[str]) -> bool:
+    """连续标题行是「编→章→节」合法结构级联（如法条正文开篇）而非 mini 目录。
+
+    目录条目必然同级重复（章、章…）或层级回跳；严格递降且不重复的
+    ≤3 行级联只可能是正文结构。"""
+    levels: List[int] = []
+    for line in run:
+        m = _INLINE_TOC_HEAD_RE.match(line.strip())
+        if not m:
+            return False
+        text = m.group(2)
+        for kw, lv in _CASCADE_LEVELS:
+            if kw in text:
+                levels.append(lv)
+                break
+        else:
+            return False
+    return levels == sorted(levels) and len(set(levels)) == len(levels)
+
+
+def _is_content_line(line: str) -> bool:
+    """内容行？非空、非结构标记（页标记/表格标签/inline-toc 标记）。
+
+    P3 保留规则的"run 后跟内容"判定：标题行（如真实第一章后的
+    `#### 第一条【立法目的】`）也算内容——书1 真实第一章后接的是条标题
+    而非正文，只跟正文才保留会把它整段误剥（2026-09-07 实测定稿）。
+    """
+    s = line.strip()
+    if not s:
+        return False
+    return not s.startswith("<!--")
+
+
+_INLINE_TOC_MARK_RE = re.compile(r"^<!--\s*inline-toc:(start|end)\s*-->$")
+
+
+def strip_inline_toc(markdown: str) -> str:
+    """P3 mini 目录剥离（2026-09-07，用户决策：直接剥离，不保留标记）。
+
+    连续 ≥2 个 ≤20 字章/节标题行（行间无正文）是 mini 目录块：
+      - 块后跟内容（正文或条标题等非结构标记行）→ 末行是真实标题
+        （书1 每法 mini 目录后紧跟真实"第一章 总 则"，P1 去重修复后存活，
+        其后接 `#### 第一条【立法目的】` 或正文）→ 保留末行为标题，
+        仅剥离 run 内其余行；
+      - 否则（纯目录页：后跟页标记/表格标签/文档尾）→ 整段剥离。
+    沿用 `_is_legal_heading_cascade` 守卫（编→章→节递降级联是正文结构）。
+    剥离后不再产出 inline-toc 标记；旧标记行也被清除。幂等。
+    """
+    lines = markdown.split("\n")
+    out: List[str] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        stripped = lines[i].strip()
+        m = _INLINE_TOC_HEAD_RE.match(stripped)
+        if m and len(m.group(2).strip()) <= 20:
+            run: List[str] = []
+            j = i
+            while j < n:
+                s = lines[j].strip()
+                if not s:
+                    j += 1
+                    continue
+                mm = _INLINE_TOC_HEAD_RE.match(s)
+                if mm and len(mm.group(2).strip()) <= 20:
+                    run.append(lines[j])
+                    j += 1
+                else:
+                    break
+            if len(run) >= 2 and not _is_legal_heading_cascade(run):
+                k = j
+                while k < n and not lines[k].strip():
+                    k += 1
+                if k < n and _is_content_line(lines[k]):
+                    # run 后跟内容 → 末行是真实标题，保留；其余行剥离
+                    out.append(run[-1])
+                    out.append("")
+                # 否则（纯目录页）整段剥离
+                i = j
+                continue
+        if _INLINE_TOC_MARK_RE.match(stripped):
+            i += 1  # 清除旧 inline-toc 标记
+            continue
+        out.append(lines[i])
+        i += 1
+    return "\n".join(out)
 
 
 # ── A4 结构校验闭环 ──────────────────────────────────────
@@ -308,13 +437,16 @@ _REPAIR_RULES: Dict[str, Callable[[str], Tuple[str, int]]] = {
 
 
 def repair_structure(
-    markdown: str, *, max_rounds: int = 3
+    markdown: str, *, max_rounds: int = 3, rewrite_levels: bool = True
 ) -> Tuple[str, Dict[str, int]]:
     """A4 结构校验闭环：单遍扫描 + 定点修复 + 有界迭代（≤ ``max_rounds`` 轮）。
 
     对 A3 归一后文本做残留违规修复（不重跑 cleaner，防误伤正文）。报告
     ``{规则名: 累计修复数, "rounds": 实跑轮数}`` 供 A5 保真验收脚本对照——
     任一规则仍有计数 = 有残留未收敛，需人工核验。
+
+    rewrite_levels=False（版面还原 v2）：跳过①层级重写——解析层版面锚定级
+    为准，模式固定级不得覆盖。
     """
     text = markdown
     report: Dict[str, int] = {name: 0 for name in _REPAIR_RULES}
@@ -323,6 +455,8 @@ def repair_structure(
         rounds += 1
         total = 0
         for name, fn in _REPAIR_RULES.items():
+            if name == "heading_level" and not rewrite_levels:
+                continue
             text, n = fn(text)
             report[name] += n
             total += n

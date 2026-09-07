@@ -195,7 +195,9 @@ def write_subpdf(
     try:
         doc.select(list(page_idxs))
         out.parent.mkdir(parents=True, exist_ok=True)
-        doc.save(str(out))
+        # garbage=4 剔除未引用对象（字体/图片等文档级共享资源）：否则子 PDF
+        # 大小 ≈ 源文件（实测 22.5MB/3页），每个 Tier C 范围都在重传整本书。
+        doc.save(str(out), garbage=4, deflate=True, clean=True)
     finally:
         doc.close()
     logger.info("切分子 PDF: %s → %s (%d 页)", src.name, out.name, len(page_idxs))

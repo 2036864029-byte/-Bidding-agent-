@@ -78,6 +78,71 @@ def reflow_two_columns(
     )
 
 
+def reflow_two_columns_v2(
+    lines: Sequence[TextLine],
+    *,
+    split_x: float,
+    page_width: float,
+    full_width_ratio: float = 0.7,
+) -> List[TextLine]:
+    """v2：通栏行按 y 归位插入阅读流（修 Q4 通栏整体前置）。
+
+    通栏行把页面切成上下两半，正确阅读序 = 左(上)→右(上)→通栏行→
+    左(下)→右(下)。页顶通栏标题行为不变（先于两栏全部内容）。
+    """
+    ordered = sorted(lines, key=lambda ln: (ln.y0, ln.x0))
+    left: List[TextLine] = []
+    right: List[TextLine] = []
+    full: List[TextLine] = []
+
+    for ln in ordered:
+        if is_full_width_line(ln, page_width, full_width_ratio):
+            full.append(ln)
+        elif ln.x0 < split_x:
+            left.append(ln)
+        else:
+            right.append(ln)
+
+    full.sort(key=lambda ln: ln.y0)
+    out: List[TextLine] = []
+    li = ri = 0
+    for f in full:
+        while li < len(left) and left[li].y0 < f.y0:
+            out.append(left[li])
+            li += 1
+        while ri < len(right) and right[ri].y0 < f.y0:
+            out.append(right[ri])
+            ri += 1
+        out.append(f)
+    out.extend(left[li:])
+    out.extend(right[ri:])
+    return out
+
+
+def needs_two_column_defense(
+    lines: Sequence[TextLine],
+    *,
+    page_width: float,
+    width_ratio: float = 0.55,
+    min_lines: int = 6,
+) -> bool:
+    """单栏路径串栏防御信号（修 Q1）：行宽中位数 < width_ratio*页宽 且
+    x0 分布呈双峰（0.4*页宽两侧各占 20%~80%）→ 该页应转双栏处理。
+
+    真单栏页整行铺满右缘（行宽 ≈ 页宽），信号为 False。
+    """
+    body = [ln for ln in lines if ln.text.strip()]
+    if not page_width or len(body) < min_lines:
+        return False
+    widths = sorted(ln.x1 - ln.x0 for ln in body)
+    median_w = widths[len(widths) // 2]
+    if median_w >= page_width * width_ratio:
+        return False
+    n_right = sum(1 for ln in body if ln.x0 > page_width * 0.4)
+    ratio = n_right / len(body)
+    return 0.2 <= ratio <= 0.8
+
+
 def reflow_page_markdown(
     lines: Sequence[TextLine],
     *,

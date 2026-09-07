@@ -35,8 +35,9 @@ _LEGAL_HEADING_LEVELS: Tuple[Tuple[re.Pattern, int], ...] = (
     (re.compile(r"^第[一二三四五六七八九十百千\d]+项"), 6),
 )
 
-# 页眉页脚去重豁免：法律标题行即使高频也不删
-_LEGAL_HEADING_START_RE = re.compile(r"^第[一二三四五六七八九十百千\d]+[编章节条款项]")
+# 页眉页脚去重豁免：法律标题行（markdown 形式 `## 第一章` 或裸形式）即使高频也不删。
+# RC2 修复：旧式只认裸 `第X章` 开头，把 `## 第一章 总 则` 当页眉计数 ≥5 全删（书1 数据丢失）。
+_LEGAL_HEADING_START_RE = re.compile(r"^(?:#{1,6}\s+)?第[一二三四五六七八九十百千\d]+[编章节条款项]")
 
 # Markdown 标题行
 _MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
@@ -45,6 +46,65 @@ _MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
 _TABLE_TAG_RE = re.compile(
     r"^<!--\s*table:\s*page=(\d+),\s*id=([A-Za-z0-9_\-]+),\s*bbox=\(([^)]*)\)\s*-->$"
 )
+
+# ── MinerU 外来 markdown 标题归一（版面还原 P6，2026-09-06）────────
+# MinerU 对标题一律打扁平 `#`（章/节/编号问项/题注同级，实测书3 1180+ 个 #、
+# 章节与问项零层级）。本地页标题是版面锚定级（准确），clean v2 又跳过 A3-1
+# 模式级重写（保护本地版面级）→ MinerU 外来 # 原样混入，同一语义两级并存。
+# 本函数在 MinerU md 并入前调用（只在 MinerU 段生效、不碰本地段），按文本
+# 模式把它的标题拉回与本地一致的口径。与 pdf_paragraph._LIST_SUBLEVEL_RE /
+# _CHAPTER_LEVEL_RE / _CONTENT_LEVELS(A3-1) 同族同语义。
+
+# 模式标题固定级（MinerU 扁平 # 的重新定级；含列表/问项细分）
+_MRU_LEVELS: Tuple[Tuple[re.Pattern, int], ...] = (
+    (re.compile(r"^第[一二三四五六七八九十百千\d]+编"), 1),
+    (re.compile(r"^第[一二三四五六七八九十百千\d]+部分"), 1),
+    (re.compile(r"^第[一二三四五六七八九十百千\d]+章"), 2),
+    (re.compile(r"^第[一二三四五六七八九十百千\d]+节"), 3),
+    (re.compile(r"^第[一二三四五六七八九十百千\d]+条"), 4),
+    (re.compile(r"^[0-9一二三四五六七八九十百]+、"), 4),    # 一、/1、 → 4
+    (re.compile(r"^（[0-9一二三四五六七八九十百]+）"), 5),   # （一） → 5
+    (re.compile(r"^[0-9]{1,4}[.．]"), 6),                    # N. → 6（编号问项）
+)
+# 题注/版面件形态：非章节标题，剥 # 降回正文
+_MRU_CAPTION_RE = re.compile(
+    r"^(图|表|附表|附图|案例|例题|习题|模板)\s*[0-9０-９]"
+    r"|^(图|表|附表|附图)(\s|$)"
+    r"|^(参考文献|版权信息|案例索引|前\d+版)"
+)
+# 默认级（无模式内容章，如书3 手册体的"政府采购概述"——本地靠版面居中大字
+# 定 H2；MinerU 无版面几何，按文档语义默认章级以保章节骨架）
+_MRU_DEFAULT_LEVEL = 2
+
+
+def normalize_mineru_md_heading_levels(markdown: str) -> str:
+    """把 MinerU 外来 markdown 的标题级重映射到本地语义（只在 MinerU 段生效）。
+
+    只改写标题行（``#{1,6} text``）；非标题内容与内部表格/引用原样保留。
+    MinerU 标题的层级无版面依据，全部按文本模式重定：
+      结构词 编/章/节/条 → 1/2/3/4；列表/编号 一、/（一）/N. → 4/5/6；
+      图/表/案例/例题/封面题注 → 剥标题降正文；其余（无模式内容章）→ 默认 2。
+    幂等：已是目标级的标题行不再动。
+    """
+    out: List[str] = []
+    for line in markdown.split("\n"):
+        m = _MD_HEADING_RE.match(line.strip())
+        if not m:
+            out.append(line)
+            continue
+        text = m.group(2).strip()
+        if _MRU_CAPTION_RE.match(text):
+            out.append(text)          # 题注剥 # → 正文（图/表/案例/封面）
+            continue
+        level = None
+        for pat, lv in _MRU_LEVELS:
+            if pat.match(text):
+                level = lv
+                break
+        if level is None:
+            level = _MRU_DEFAULT_LEVEL
+        out.append("#" * level + " " + text)
+    return "\n".join(out)
 
 
 @dataclass(frozen=True)
@@ -124,16 +184,83 @@ def assemble_pages(
     pages: Iterable[ParsedPage],
     *,
     page_marker: bool = True,
+    join_cross_page: bool = False,
 ) -> str:
-    """按 page_idx 升序缝合全文档；穿插页（文本/MinerU 交替）按原页序还原。"""
+    """按 page_idx 升序缝合全文档；穿插页（文本/MinerU 交替）按原页序还原。
+
+    join_cross_page=True（P3 跨页续段，修 Q3 跨页断段）：前页最后一个正文行
+    无句末收尾、且次页首个正文块非标题/非结构起始 → 两行合并（默认关闭，
+    灰度契约）。
+    """
     ordered = sorted(pages, key=lambda p: p.page_idx)
+    mds: List[str] = [
+        assemble_page_blocks(p.page_idx, p.blocks) if p.blocks else p.markdown
+        for p in ordered
+    ]
+    if join_cross_page:
+        for i in range(1, len(mds)):
+            mds[i - 1], mds[i] = _join_page_boundary(mds[i - 1], mds[i])
     parts: List[str] = []
-    for page in ordered:
-        md = assemble_page_blocks(page.page_idx, page.blocks) if page.blocks else page.markdown
+    for page, md in zip(ordered, mds):
         if page_marker:
             parts.append(f"<!-- page: {page.page_idx + 1} -->")
         parts.append(md)
     return "\n\n".join(parts)
+
+
+# 跨页续段：行级判定（P3）
+_TERMINAL_TAIL = "。！？…；”』」」）)】]"
+_NON_BODY_LINE_RE = re.compile(r"^(#{1,6}\s|<!--|\||!\[|>|[-*]\s)")
+_STRUCT_LINE_RE = re.compile(
+    r"^(（\s*[0-9一二三四五六七八九十百]+\s*）|\([0-9一二三四五六七八九十百]+\)"
+    r"|[0-9一二三四五六七八九十百]+[、.)．]|[-•·]|答\s*[:：]"
+    r"|第[一二三四五六七八九十百千\d]+[编章节部分条款项])"
+)
+
+
+_PAGE_MARK_RE = re.compile(r"^<!--\s*page:\s*\d+\s*-->$")
+
+# 页脚注行（①~⑳ 编号编者注，如"① 条文主旨为编者所加，下同。"）：位于正文
+# 之后且以句末收尾，若当末正文行会阻断真实末行与次页首行的续段合并
+# （书1 实测每页页底重复注释导致跨页条文大量断裂）。
+_FOOTNOTE_LINE_RE = re.compile(r"^[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]|^注\s*[:：]")
+
+
+def _join_page_boundary(a: str, b: str) -> Tuple[str, str]:
+    """相邻页边界续段合并；不可合并时原样返回。
+
+    页标记注释行（<!-- page: N -->）与页脚注行（①… 编号注释）是页缘
+    产物，扫描末正文行时跳过。
+    """
+    a_lines = a.rstrip("\n").split("\n")
+    ai = len(a_lines) - 1
+    while ai >= 0 and (
+        not a_lines[ai].strip()
+        or _PAGE_MARK_RE.match(a_lines[ai].strip())
+        or _FOOTNOTE_LINE_RE.match(a_lines[ai].strip())
+    ):
+        ai -= 1
+    if ai < 0:
+        return a, b
+    b_lines = b.split("\n")
+    bi = 0
+    while bi < len(b_lines) and (
+        not b_lines[bi].strip() or _PAGE_MARK_RE.match(b_lines[bi].strip())
+    ):
+        bi += 1
+    if bi >= len(b_lines):
+        return a, b
+    left = a_lines[ai].strip()
+    right = b_lines[bi].strip()
+    if _NON_BODY_LINE_RE.match(left) or _NON_BODY_LINE_RE.match(right):
+        return a, b
+    if len(left) < 8 or left[-1] in _TERMINAL_TAIL:
+        return a, b
+    if len(right) < 2 or _STRUCT_LINE_RE.match(right):
+        return a, b
+    a_lines[ai] = a_lines[ai].rstrip() + right
+    del b_lines[bi]  # 只移除被并入的行；页标记等前导行保留
+    return "\n".join(a_lines), "\n".join(b_lines)
 
 
 # ── 标题级别规范化 ───────────────────────────────────────

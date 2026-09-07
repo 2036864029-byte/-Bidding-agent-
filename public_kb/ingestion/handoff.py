@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
@@ -60,6 +61,53 @@ def _output_paths(out_dir: str | Path, stem: str) -> tuple[Path, Path, Path]:
     )
 
 
+# 卷首书名/法名标题（A3-5 误吞恢复）：结构锚前以 法/条例/… 收尾或含书名号 的标题
+_DOC_TITLE_SUFFIX_RE = re.compile(
+    r"(法|条例|规定|办法|细则|全书|手册|问答|实务|指南|教程|解读|汇编)$"
+)
+_LEAD_ANCHOR_RE = re.compile(r"^第[一二三四五六七八九十百千\d]+[编部分章节条款项]")
+# 编号问项/列表行不是书名（1200问 手册体开篇章的 `N.xxx？` 问项不得当书名置顶）
+_LEAD_NO_ITEM_RE = re.compile(
+    r"^[0-9一二三四五六七八九十百]+[、.)．]|^（[0-9一二三四五六七八九十百]+）"
+)
+# 沿革行（D1=B，2026-09-07）：年份 + 通过/公布/施行/修正 语义——首法前置剥离后
+# 与法规名一并恢复，保证首法/中段法形态一致（中段法沿革行自然留存，不受剥离）。
+_YANGE_TEXT_RE = re.compile(r"\d{4}\s*年.*(通过|公布|施行|修正)")
+
+
+def _leading_doc_title_heading(markdown: str) -> Tuple[Optional[str], List[str]]:
+    """A3-5 前置剥离前，取首个结构锚前形似 书名/法名 的标题文本与其后沿革行块。
+
+    仅用于 mark_front_matter(skip=True) 误把正文开头书名标题当封面吞掉时置顶恢复
+    （如《招标投标法律法规全书》开篇 `### 中华人民共和国招标投标法`）。
+    匹配条件：`#` 标题文本 ≤30 字、以 法/条例/… 收尾或含书名号，且非 第X编/章/节/条
+    锚、非编号问项/列表行（N.xxx？）。遇首个结构锚停止扫描。
+    返回 (标题文本, 沿革行列表)；无标题 → (None, [])。沿革行 = 标题之后、首个锚之前、
+    含年份+通过/公布/施行/修正 的正文行（过滤"目 录"等干扰行）。
+    """
+    title: Optional[str] = None
+    yange: List[str] = []
+    for line in markdown.split("\n"):
+        s = line.strip()
+        if not s or s.startswith("<!--"):
+            continue
+        m = re.match(r"^(#{1,6})\s+(.+)$", s)
+        if not m:
+            if title and _YANGE_TEXT_RE.search(s):
+                yange.append(s)
+            continue  # 前置块内的非标题正文（如 CIP 文字）——继续向上找标题
+        text = m.group(2).strip()
+        if _LEAD_ANCHOR_RE.match(text):
+            break  # 进入正文（首结构锚）——其前无书名标题，返回 None
+        if _LEAD_NO_ITEM_RE.match(text):
+            continue  # 编号问项/列表行（1200问 开篇 N.xxx？）不是书名
+        if title:
+            break  # 标题后再遇非锚标题（如章节标题）→ 沿革行块结束
+        if len(text) <= 30 and (_DOC_TITLE_SUFFIX_RE.search(text) or "《" in text):
+            title = text
+    return title, yange
+
+
 def clean_markdown(
     markdown: str,
     settings: Settings,
@@ -72,9 +120,13 @@ def clean_markdown(
 
     清洗 = TextCleaner（短行/LaTeX/页标记/元信息，A2）
          + 结构归一（A3）：目录点线过滤 → 外部 md 治理（external，A3-3，
-           须先于 A3-2 以防交叉引用被拆成虚假条标题）→ 标题级归一（A3-1）→
-           标题行内联拆分（A3-2）→ 前置页/目录标记（A3-5，书籍路径）
-         + 结构校验闭环（A4，有界定点修复）。
+           须先于 A3-2 以防交叉引用被拆成虚假条标题）→ 标题级归一（A3-1，
+           **仅 external**：外部 md 无版面几何，模式级重写是唯一归一手段；
+           书路径解析层已版面锚定，跳过以保留其 # 级）→
+           标题行内联拆分（A3-2）→ 前置页/目录标记（A3-5，书籍路径，
+           含卷首书名标题误吞恢复）→ 结构校验闭环（A4，有界修复）
+         + 排版重构（A3-6，书路径 relayout_pipeline，enable_pdf_relayout）：
+           目录残标题剔除 / 引用误作标题降级（R1/R2；R4/R5 已随灰度开关删除）。
     产出是独立可验收的干净文本资产（新版 assembled.md），与切分链路解耦。
 
     与旧链路等价的说明：`adapt_pdf_markdown` 目前仍自带 strip_toc_noise 与
@@ -89,6 +141,7 @@ def clean_markdown(
         normalize_heading_levels_full,
         repair_structure,
         split_inline_articles,
+        strip_inline_toc,
     )
 
     cleaner = cleaner or TextCleaner()
@@ -98,14 +151,53 @@ def clean_markdown(
             cleaned = strip_toc_noise(cleaned)
         if external and settings.enable_external_md_normalize:
             cleaned = normalize_external_md(cleaned)  # A3-3（须先于 A3-2）
-        cleaned = normalize_heading_levels_full(cleaned)  # A3-1
+        if external:
+            # 书路径解析层已产出版面锚定级（pdf_paragraph），A3-1 模式级重写会覆盖它们
+            # （Q6）；仅 external 保留 A3-1——外部 md 无版面几何，模式级是唯一归一手段。
+            cleaned = normalize_heading_levels_full(cleaned)  # A3-1
         cleaned = split_inline_articles(cleaned)          # A3-2
         if not external:
             # A3-5（书籍路径）：目录页标记 → 前置页标记/剥离（Phase B 消费标记）
             cleaned = mark_toc_page(cleaned)
-            cleaned = mark_front_matter(cleaned, skip=settings.pdf_skip_front_matter)
-        # A4 结构校验闭环（有界 3 轮；报告供 A5 验收脚本）
-        cleaned, repair_report = repair_structure(cleaned)
+            leading_title, leading_yange = (
+                _leading_doc_title_heading(cleaned)
+                if settings.pdf_skip_front_matter else (None, [])
+            )
+            cleaned = mark_front_matter(
+                cleaned, skip=settings.pdf_skip_front_matter
+            )
+            if (
+                leading_title is not None
+                and settings.pdf_skip_front_matter
+            ):
+                # 仅在"文首不再以该标题作标题行"时恢复（用标题行判定，避免被正文
+                # 《…法》引用里的同名子串干扰）。
+                _headlines = [
+                    re.sub(r"^#+\s+", "", l).strip()
+                    for l in cleaned.split("\n")[:24]
+                    if l.strip().startswith("#")
+                ][:8]
+                if leading_title not in _headlines:
+                    # 前置剥离误把书名/法名标题当封面吞掉 → 置顶恢复为 H1（书根），
+                    # 沿革行一并恢复（D1=B，首法/中段法一致——中段法沿革行不受剥离）。
+                    head = f"# {leading_title}\n\n"
+                    if leading_yange:
+                        head += "\n".join(leading_yange) + "\n\n"
+                    cleaned = head + cleaned.lstrip("\n")
+        # A4 结构校验闭环（有界 3 轮；报告供 A5 验收脚本）。
+        # rewrite_levels：书路径 False（解析层版面锚定级为准）；external True（模式级唯一归一）。
+        cleaned, repair_report = repair_structure(
+            cleaned, rewrite_levels=external
+        )
+        if settings.enable_pdf_relayout and not external:
+            # A3-6 排版重构：R1/R2 兜底（R4/R5 已随灰度开关删除，解析层段落化取代）。
+            from .transforms.relayout import relayout_pipeline
+
+            cleaned = relayout_pipeline(cleaned)
+        if not external:
+            # P3 mini 目录剥离（连续短章节标题块，2026-09-07 用户决策：直接剥离，
+            # 不保留 inline-toc 标记）——放在所有内容变换之后，作用于最终内容。
+            cleaned = strip_inline_toc(cleaned)
         if any(
             n for rule, n in repair_report.items() if rule != "rounds"
         ):
@@ -216,7 +308,7 @@ def prepare_handoff(
                 # 缓存命中：主进程直接分块（快，无需子进程）——读 clean/assembled.md
                 cached_md = md_path.read_text(encoding="utf-8")
                 documents = _freeze_chunk_uid(
-                    chunk_markdown(cached_md, pdf_file.stem, settings)
+                    chunk_cleaned_markdown(cached_md, pdf_file.stem, settings)
                 )
                 dump_documents_jsonl(documents, jsonl_path)
                 entry.update({
@@ -272,10 +364,11 @@ def _process_single_book(
     raw_path, md_path, jsonl_path = _output_paths(out_dir, pdf_file.stem)
 
     if md_path.exists() and not force:
-        # 缓存命中：已清洗的 assembled.md → 直接分块（清洗幂等，无需再清）
+        # 缓存命中：已清洗的 assembled.md 即 Phase A 资产 → 直接分块（不再二次清洗，
+        # 避免 relayout 折行资产二次处理产生的行分组漂移）
         cached_md = md_path.read_text(encoding="utf-8")
         documents = _freeze_chunk_uid(
-            chunk_markdown(cached_md, pdf_file.stem, settings)
+            chunk_cleaned_markdown(cached_md, pdf_file.stem, settings)
         )
         dump_documents_jsonl(documents, jsonl_path)
         return {
@@ -345,13 +438,16 @@ def _run_book_process(
     try:
         result = result_queue.get(timeout=timeout_sec)
         proc.join(5)
-        return result, None
     except _queue.Empty:
         proc.terminate()
         proc.join(10)
         return None, TimeoutError(
             f"超过 {timeout_sec}s 未完成，已跳过该本"
         )
+    if isinstance(result, dict) and "error" in result:
+        # worker 内异常：真实错误必须浮出（曾以 KeyError 'chunks' 掩蔽根因）
+        return None, RuntimeError(result["error"])
+    return result, None
 
 
 def dump_documents_jsonl(
@@ -452,10 +548,59 @@ def ingest_markdown_dir(
     all_docs: List[Document] = []
     for md_file in files:
         doc_name = md_file.name[: -len(_MARKDOWN_SUFFIX)]  # 去掉 .assembled.md
-        raw = md_file.read_text(encoding="utf-8")
+        # *.assembled.md 已是 clean 资产（Phase A 输出），直接分块（不再二次清洗——
+        # 二次清洗对 relayout 折行资产可能轻微重排导致 chunk 与资产漂移）。
+        clean_md = md_file.read_text(encoding="utf-8")
         all_docs.extend(
-            _freeze_chunk_uid(chunk_markdown(raw, doc_name, settings))
+            _freeze_chunk_uid(
+                chunk_cleaned_markdown(clean_md, doc_name, settings)
+            )
         )
         logger.info("✓ %s → %s 块", md_file.name, len(all_docs))
     logger.info("markdown 目录共 %d 个 Document", len(all_docs))
     return ingest_documents(all_docs, settings, mode=mode, manager=manager)
+
+
+def reclean_handoff_markdown(
+    out_dir: str | Path,
+    settings: Settings,
+    *,
+    backup: bool = True,
+) -> List[Dict[str, Any]]:
+    """用当前 clean_markdown（含 A3-6 relayout）从 ``raw/*.raw.md`` 重处理 clean
+    资产并重算 chunks jsonl，保持 handoff 确定性契约（raw 不动）。
+
+    用户决策（2026-09-05）：覆盖 handoff_v2/clean + 时间戳备份 + 重算 chunks。
+    返回每本 summary（含 chunk 数），供验收报告对照。
+    """
+    import datetime as _dt
+    import shutil
+
+    out = Path(out_dir)
+    raw_dir = out / _RAW_SUBDIR
+    if not raw_dir.exists():
+        raise FileNotFoundError(f"缺少 raw 目录: {raw_dir}")
+    if backup:
+        stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        bdir = out / f"backup_{stamp}"
+        for sub in (_CLEAN_SUBDIR, _CHUNKS_SUBDIR):
+            src = out / sub
+            if src.exists():
+                shutil.copytree(src, bdir / sub, dirs_exist_ok=True)
+        logger.info("已备份旧 clean/chunks → %s", bdir)
+    summary: List[Dict[str, Any]] = []
+    for rp in sorted(raw_dir.glob(f"*{_RAW_SUFFIX}")):
+        stem = rp.name[: -len(_RAW_SUFFIX)]
+        _, md_path, jsonl_path = _output_paths(out, stem)
+        raw_md = rp.read_text(encoding="utf-8")
+        clean = clean_markdown(raw_md, settings)  # 含 A3-6 relayout
+        md_path.write_text(clean, encoding="utf-8")
+        docs = _freeze_chunk_uid(chunk_cleaned_markdown(clean, stem, settings))
+        dump_documents_jsonl(docs, jsonl_path)
+        logger.info("✓ %s → clean md + %d chunks", stem, len(docs))
+        summary.append({
+            "stem": stem,
+            "markdown": str(md_path),
+            "chunks": len(docs),
+        })
+    return summary

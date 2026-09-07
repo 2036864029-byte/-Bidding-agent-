@@ -74,8 +74,11 @@ def build_page_profile(
     blocks = _text_blocks(page)
     x_starts = tuple(sorted({round(float(b[0]), 1) for b in blocks if len(b) >= 4}))
 
-    two_col_gap, two_col_split_x, has_two_col = _detect_two_col(
-        blocks, width * two_col_gap_ratio, two_col_min_side_blocks
+    two_col_gap, two_col_split_x, has_two_col = detect_two_columns(
+        blocks,
+        page_width=width,
+        min_side_blocks=two_col_min_side_blocks,
+        gap_ratio=two_col_gap_ratio,
     )
 
     table_hlines, table_vlines = _count_table_lines(page)
@@ -153,6 +156,26 @@ def _detect_two_col(
     if left >= min_side_blocks and right >= min_side_blocks:
         return gap, split_x, True
     return 0.0, 0.0, False
+
+
+def detect_two_columns(
+    blocks: Sequence[Any],
+    *,
+    page_width: float,
+    min_side_blocks: int = 3,
+    gap_ratio: float = 0.15,
+) -> tuple[float, float, bool]:
+    """双栏判定：x0 大间隙直判。
+
+    历史（2026-09-06 回退）：曾在此加 x1（右边缘）双峰兜底，试图抢救 x0
+    间隙被表单缩进填平的串栏页；三书实测证明其无判别力——两端对齐排版的
+    单栏页"齐右大簇 vs 段末短行"天然形成 x1 假双峰，书2 近 50% 单栏页被误
+    判双栏 → 置信度不足 → 洪水送 MinerU（52 个范围/册）。x0 无间隙的表单
+    页由解析时防御 `needs_two_column_defense`（行宽中位 + x0 双峰）兜住，
+    分档层不再承担双栏识别。
+    """
+    threshold = page_width * gap_ratio if page_width else 0.0
+    return _detect_two_col(blocks, threshold, min_side_blocks)
 
 
 def _count_table_lines(page: Any) -> tuple[int, int]:

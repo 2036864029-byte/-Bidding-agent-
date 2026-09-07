@@ -54,6 +54,34 @@ def test_normalize_header_text_strips_page_number():
     assert normalize_header_text("488") == ""
 
 
+def test_normalize_header_text_strips_trailing_page_number():
+    """侧标/书签页码在行尾（"1.一般规定17"）；数字前是 CJK 才剥。"""
+    assert normalize_header_text("1.一般规定17") == "1.一般规定"
+    assert normalize_header_text("GB 50430-2019") == "GB 50430-2019"
+
+
+def test_trailing_pagenum_sidebar_detected_as_header():
+    """侧标逐页仅页码变化（"1.一般规定17"/"1.一般规定21"）→ Signal A 候选。"""
+    pages = [
+        [_line("1.一般规定17", y0=20), _line("正文内容" * 8, y0=300)],
+        [_line("1.一般规定21", y0=20), _line("正文内容" * 8, y0=300)],
+        [_line("1.一般规定27", y0=20), _line("正文内容" * 8, y0=300)],
+    ]
+    candidates = detect_header_candidates(pages, min_pages=2)
+    assert "1.一般规定" in candidates
+
+
+def test_zone_aware_removal_keeps_inpage_real_heading():
+    """候选文本位于版心（节标题原文）→ 保留；页顶同文本 → 删除。"""
+    cand = ["1.一般规定"]
+    top_tab = _line("1.一般规定17", y0=20)
+    mid_heading = _line("1.一般规定", y0=300)
+    kept = remove_header_lines(
+        [top_tab, mid_heading], cand, page_height=728.0
+    )
+    assert [ln.text for ln in kept] == ["1.一般规定"]
+
+
 def test_header_line_removed_when_in_candidates():
     h = _line("一、招标投标", y0=5)
     body = _line("本条正文内容足够长确保保留", y0=400)

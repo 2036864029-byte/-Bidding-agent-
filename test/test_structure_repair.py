@@ -38,6 +38,29 @@ def test_front_matter_skip_strips_block():
     assert out.startswith("## 第一章 总则")
 
 
+def test_front_matter_skip_guards_manual_opening_body():
+    """手册体（1200问）以内容章+问项开篇、首个 第X 锚在后：skip 不剥离不标记。
+
+    剥离会吞真实开篇章（政府采购概述 + Q1-86），标记会把它当待弃前置页；
+    守卫探测到编号问项/答：正文形态 → 原样返回。"""
+    md = (
+        "## 政府采购概述\n"
+        "###### 1.什么是采购人？\n"
+        "答：采购主体选择的规则。\n"
+        "###### 2.什么是政府采购？\n"
+        "答：政府采购的界定各国不同。\n"
+        "### 第一章 总则\n"
+        "正文内容足够长。\n"
+    )
+    out = mark_front_matter(md, skip=True)
+    assert "政府采购概述" in out
+    assert "1.什么是采购人？" in out
+    assert "答：" in out
+    assert "第一章 总则" in out
+    assert "frontmatter:start" not in out
+    assert out == md  # 原样返回，无任何标记/剥离
+
+
 def test_front_matter_no_anchor_noop():
     md = "只有正文，没有任何条标题。\n"
     assert mark_front_matter(md) == md
@@ -178,7 +201,8 @@ def test_clean_markdown_book_marks_front_matter_and_toc():
 
 
 def test_clean_markdown_book_default_strips_front_matter():
-    # 默认 pdf_skip_front_matter=true：书籍前置区（封面/序言/目录）直接剥离
+    # 默认 pdf_skip_front_matter=true：书籍前置区（封面/序言/目录）剥离，
+    # 但正文开头的书名/法名标题（A3-5 误吞回归修复）保留并置顶为 H1 书根。
     s = Settings()
     md = (
         "# 中华人民共和国招标投标法律法规全书\n"
@@ -190,8 +214,13 @@ def test_clean_markdown_book_default_strips_front_matter():
     )
     out = clean_markdown(md, s)
     assert "frontmatter:start" not in out
-    assert "招标投标法律法规全书" not in out.split("\n")[0]
-    assert out.startswith("## 第一章 总则")
+    # 书名标题不再被当前置页吞掉（设计性改善）→ H1 置顶
+    assert out.startswith("# 中华人民共和国招标投标法律法规全书")
+    # 真正的 前言/目录/纲要 仍被剥离
+    assert "前言" not in out
+    assert "目 录" not in out
+    assert "第一章 综合" not in out
+    assert "## 第一章 总则" in out
     assert "为了规范招标投标活动。" in out
 
 

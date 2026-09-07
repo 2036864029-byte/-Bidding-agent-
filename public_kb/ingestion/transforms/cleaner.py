@@ -25,6 +25,10 @@ class TextCleaner:
     # 匹配独立的纯数字行（页码）
     _PAGE_NUMBER_RE = re.compile(r"^\s*\d{1,4}\s*$")
 
+    # 页眉/页脚去重门槛：行太长或有 CJK 句末符 = 内容，不因重复而被当页眉删
+    _HEADER_MAX_LEN = 40
+    _SENTENCE_ENDERS = "。！？…；"
+
     # A2-3：页标记 / 图片链接行（装配层写入的注释标签与 MinerU 图片引用，
     # 属于过程产物，不得进入干净文本资产）
     _PAGE_MARKER_RE = re.compile(r"^\s*<!--\s*page:\s*\d+\s*-->\s*$")
@@ -171,6 +175,10 @@ class TextCleaner:
         任务 M4 豁免：合法法律文本标题（第X章/第X条等）即使反复出现
         （如章节标题页眉"第一章 总则"），也不被当作页眉删除，
         否则会破坏章节结构。
+        内容行豁免（2026-09-05）：行内含 CJK 句末符（。！？…；）或长于
+        40 字符的行即使整行重复 >=5 次也不删——问答书里不同题号常共用同一
+        长答案，重排粘行后可能逐字节相同，误删会把正文整段吃掉（页眉/页脚
+        均为短且不含句末符的裸行）。
         """
         stripped = [line.strip() for line in lines]
         counter = Counter(
@@ -178,7 +186,10 @@ class TextCleaner:
         )
         repeated = {
             s for s, count in counter.items()
-            if count >= 5 and not TextCleaner._LEGAL_HEADING_RE.match(s)
+            if count >= 5
+            and not TextCleaner._LEGAL_HEADING_RE.match(s)
+            and len(s) <= TextCleaner._HEADER_MAX_LEN
+            and not any(ch in s for ch in TextCleaner._SENTENCE_ENDERS)
         }
 
         if not repeated:

@@ -225,7 +225,8 @@ def test_process_single_book_writes_cleaned_markdown(tmp_path, monkeypatch):
     assembled = (out / "clean" / "book.assembled.md").read_text(encoding="utf-8")
     raw = (out / "raw" / "book.raw.md").read_text(encoding="utf-8")
     assert raw == _MD  # 原始解析产物留档调试
-    assert "## 第一章 总则" in assembled  # 清洗后：# 第一章 → ## 第一章
+    # 书路径保留解析层标题级（A3-1 书路径重写已随 pdf_layout_v2 灰度开关删除）
+    assert "# 第一章 总则" in assembled
     assert "第一条 为了规范招标投标活动" in assembled
 
 

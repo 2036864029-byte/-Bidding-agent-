@@ -10,6 +10,7 @@ from public_kb.ingestion.normalizers.pdf.pdf_markdown_assembler import (
     assemble_pages,
     build_manifest,
     clean_assembled_document,
+    dedup_repeated_lines,
     normalize_heading_levels,
     parse_table_placeholder,
     table_placeholder,
@@ -116,6 +117,34 @@ def test_clean_document_removes_toc_and_repeated_noise_keeps_legal():
     assert "机械工业出版社" not in out
     assert "第一章 总则" in out
     assert "正文内容" in out
+
+
+def test_dedup_preserves_markdown_legal_headings():
+    """RC2 修复：markdown 形式与裸形式的法律标题行即使高频也不进重复计数。
+
+    书1 每部法规首页都是 `## 第一章 总 则`，全书 75 页同款 → 旧逻辑计数 75 ≥ 5
+    整段删掉（数据丢失级）；修复后两种形式都存活。
+    """
+    md = "\n".join(["## 第一章 总 则"] * 6) + "\n条文正文\n"
+    out = dedup_repeated_lines(md)
+    assert out.count("## 第一章 总 则") == 6
+    assert "条文正文" in out
+
+
+def test_dedup_preserves_bare_legal_headings():
+    """裸 `第一章 总 则`（无 markdown 前缀）同样豁免。"""
+    md = "\n".join(["第一章 总 则"] * 6) + "\n条文正文\n"
+    out = dedup_repeated_lines(md)
+    assert out.count("第一章 总 则") == 6
+    assert "条文正文" in out
+
+
+def test_dedup_still_removes_non_legal_repeated_lines():
+    """非法律标题的高频行（侧边栏页签等）照常去重，不因豁免正则放宽而漏删。"""
+    md = "\n".join(["1.一般规定"] * 6) + "\n## 第一章 总 则\n"
+    out = dedup_repeated_lines(md)
+    assert "1.一般规定" not in out
+    assert "## 第一章 总 则" in out
 
 
 # ── manifest ─────────────────────────────────────────────

@@ -132,12 +132,15 @@ def cmd_clear() -> None:
         print("❌ 已取消。")
 
 
-def cmd_prepare_handoff(pdf_dir: str, out_dir: str, force: bool) -> None:
+def cmd_prepare_handoff(
+    pdf_dir: str, out_dir: str, force: bool, limit_pages: int = 0
+) -> None:
     """只解析 + 分块，产出 assembled.md 与 documents.jsonl（不向量化、不入库）。"""
     from core.config.settings import Settings
     from public_kb.ingestion.handoff import prepare_handoff
 
-    summary = prepare_handoff(pdf_dir, Settings(), out_dir=out_dir, force=force)
+    settings = Settings(pdf_parse_page_limit=max(0, int(limit_pages)))
+    summary = prepare_handoff(pdf_dir, settings, out_dir=out_dir, force=force)
     ok = [e for e in summary if "error" not in e]
     failed = [e for e in summary if "error" in e]
     cached = sum(1 for e in ok if e.get("cached"))
@@ -203,6 +206,10 @@ def main() -> None:
         help="交接产物输出目录（配合 --prepare-handoff / --ingest-markdown）",
     )
     parser.add_argument(
+        "--limit-pages", type=int, default=0, metavar="N",
+        help="配合 --prepare-handoff：只解析每本 PDF 的前 N 页（0 = 全量；试点用）",
+    )
+    parser.add_argument(
         "--ingest-jsonl", type=str, default=None, metavar="FILE",
         help="从交接产物 documents.jsonl 直接入库",
     )
@@ -223,7 +230,7 @@ def main() -> None:
         out_dir = args.out_dir or str(
             _PROJECT_ROOT / "DATA" / "raw_data" / "handoff"
         )
-        cmd_prepare_handoff(pdf_dir, out_dir, args.force)
+        cmd_prepare_handoff(pdf_dir, out_dir, args.force, args.limit_pages)
     elif args.ingest_jsonl:
         cmd_ingest_handoff("jsonl", args.ingest_jsonl, args.mode)
     elif args.ingest_markdown:
