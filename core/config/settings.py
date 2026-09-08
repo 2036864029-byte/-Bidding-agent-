@@ -76,13 +76,25 @@ class Settings:
         default_factory=lambda: os.getenv("MILVUS_COLLECTION", "public_kb")
     )
     collection_schema_version: str = "public_kb_v2"
+    # BM25 关键词检索（2026-09-08 重构后默认开）：sparse 字段 + 服务端 BM25 Function
+    # + SPARSE_INVERTED_INDEX 索引。检索端对无 sparse 字段的旧集合自动降级纯稠密。
     enable_bm25: bool = field(
-        default_factory=lambda: os.getenv("ENABLE_MILVUS_BM25", "false").lower()
+        default_factory=lambda: os.getenv("ENABLE_MILVUS_BM25", "true").lower()
         in {"1", "true", "yes"}
     )
-    milvus_experiment_prefix: str = "public_kb_hybrid_poc_"
-    milvus_dense_index_type: str = "IVF_FLAT"
+    # 实验集合命名空间：``public_kb_*``（不含生产集合 public_kb 本身）可重建/删除
+    milvus_experiment_prefix: str = "public_kb_"
+    # 受保护生产集合：禁止经重建/清空接口删除
+    milvus_protected_collection: str = "public_kb"
+    # dense 语义检索索引（2026-09-08 由 IVF_FLAT 迁移 HNSW）；HNSW 建索引参数见下，
+    # 检索参数走 core/vectorstore/index_params.build_dense_search_params（HNSW→ef）。
+    milvus_dense_index_type: str = "HNSW"
     milvus_sparse_index_type: str = "SPARSE_INVERTED_INDEX"
+    # HNSW 建索引参数（Milvus v2.6.x 合法范围：M∈[4,64]、efConstruction∈[8,512]）
+    milvus_hnsw_m: int = 16
+    milvus_hnsw_ef_construction: int = 128
+    # HNSW 检索参数（ef 需 ≥ 单路候选数 hybrid_dense_limit=30）
+    milvus_hnsw_search_ef: int = 64
     bm25_k1: float = 1.2
     bm25_b: float = 0.75
     bm25_analyzer_type: str = "chinese"
@@ -316,6 +328,17 @@ class Settings:
     # ============================================================
     chunk_max_chars: int = 2000  # 单块最大字符数（bge-m3 限 8192 token，中文约 1 token/字，留足余量）
     chunk_overlap_chars: int = 100  # 句子切分时的重叠字符数
+    # 类型化分块阈值（Phase B/C 优化）
+    chunk_max_chars_law: int = 700
+    chunk_max_chars_law_compilation: int = 700
+    chunk_max_chars_qa: int = 900
+    chunk_max_chars_book_practical: int = 1000
+    # parent 块硬上限：超过则放弃 parent+child，直接按句切成 atom，
+    # 防止整篇无条号文本（如政策正文）生成超 VARCHAR(65535) 的巨型 parent。
+    chunk_max_parent_chars: int = 60000
+    # 批量 embedding 并发
+    embedding_batch_size: int = 100
+    embedding_max_workers: int = 4
 
     # ============================================================
     # 检索参数（P1-3：扩大候选池并放宽阈值，降低长尾问题漏召）
@@ -329,6 +352,13 @@ class Settings:
     hybrid_fusion_limit: int = 30  # RRF 融合后取 Top-N
     nprobe: int = 32               # IVF 检索探测单元数（显式控制精度）
     rrf_k: int = 60                # RRF 融合参数 k
+
+    # ── 父子块检索（RAG 检索链路优化 P1/P2）──
+    retrieval_group_by_parent: bool = True   # 按 parent_chunk_id 分组召回，避免同父碎片占满 top-K
+    retrieval_group_size: int = 2            # 每组保留子块数（进 rerank 条数 ≈ hybrid_fusion_limit × 本值）
+    retrieval_parent_assembly: bool = True   # 命中子块拼回完整父块，写入 metadata["context_text"]
+    retrieval_parent_max_chars: int = 6000   # 父块拼接长度熔断上限
+    retrieval_context_warn_chars: int = 20000  # 单轮检索上下文总长告警阈值（只告警不截断）
     reranker_model: str = "BAAI/bge-reranker-v2-m3"  # Cross-Encoder 重排序模型
     rerank_high_confidence_score: float = field(
         default_factory=lambda: float(os.getenv("RERANK_HIGH_CONFIDENCE_SCORE", "0.75"))

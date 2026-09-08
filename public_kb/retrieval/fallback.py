@@ -11,8 +11,10 @@ from langchain_milvus import Milvus as MilvusVectorStore
 
 from core.config.settings import Settings
 from core.contracts import MilvusCollectionContract
+from core.vectorstore.index_params import build_dense_search_params
 from .entities import entity_to_doc
 from .milvus_search import search_with_full_fields
+from .parent_assembly import dedupe_by_parent
 
 
 logger = logging.getLogger(__name__)
@@ -50,10 +52,7 @@ def dense_only_retrieve(
                 collection, settings,
                 data=[query_vector],
                 anns_field=contract.dense_field,
-                search_params={
-                    "metric_type": contract.dense_metric,
-                    "params": {"nprobe": settings.nprobe},
-                },
+                search_params=build_dense_search_params(settings),
                 limit=settings.hybrid_dense_limit,
                 expr=expr,
             )
@@ -63,6 +62,8 @@ def dense_only_retrieve(
                     doc = entity_to_doc(hit.entity, hit.score)
                     doc.metadata["score"] = round(hit.score, 4)
                     results.append((doc, hit.score))
+            if settings.retrieval_group_by_parent:
+                results = dedupe_by_parent(results)
             logger.info(
                 "pymilvus稠密检索: %d条命中, 过滤后=%d条 (threshold=%.2f)",
                 len(raw_hits), len(results), settings.similarity_threshold,
@@ -83,6 +84,8 @@ def dense_only_retrieve(
         (doc, score) for doc, score in raw
         if score >= settings.similarity_threshold
     ]
+    if settings.retrieval_group_by_parent:
+        filtered = dedupe_by_parent(filtered)
     logger.info(
         "langchain_milvus降级检索: 原始=%d条, 过滤后=%d条 (threshold=%.2f)",
         len(raw), len(filtered), settings.similarity_threshold,

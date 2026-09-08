@@ -3,8 +3,20 @@
 
 from .chunker import SemanticChunker
 from .cleaner import TextCleaner
+from .typed_chunker import (
+    DocType,
+    TypedChunker,
+    chunk_markdown_typed,
+    detect_doc_type,
+    detect_doc_type_or_none,
+)
 
 __all__ = [
     "SemanticChunker",
     "TextCleaner",
+    "DocType",
+    "TypedChunker",
+    "chunk_markdown_typed",
+    "detect_doc_type",
+    "detect_doc_type_or_none",
 ]

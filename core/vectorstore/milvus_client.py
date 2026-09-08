@@ -10,7 +10,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, List, Optional, Sequence, Tuple
 
 from langchain_core.documents import Document
 from langchain_milvus import Milvus as MilvusVectorStore
@@ -26,9 +27,26 @@ from core.contracts import (
     validate_embedding_batch,
     validate_ingestion_documents,
 )
+from core.vectorstore.index_params import build_dense_index_params
 
 
 logger = logging.getLogger(__name__)
+
+# 显式声明标量的 Schema 上限：超出会被服务端整批拒绝，故入库前按此截断/校验
+_CHAPTER_MAX_LEN = 512
+_PARENT_CHUNK_ID_MAX_LEN = 64
+
+
+def _truncate_field(value: Any, max_length: int, field_name: str) -> str:
+    """按 Schema 上限截断显式声明字段，避免整条 insert 被服务端拒绝。"""
+    text = "" if value is None else str(value)
+    if len(text) > max_length:
+        logger.warning(
+            "字段 %s 超长 (%d > %d)，已截断: %s…",
+            field_name, len(text), max_length, text[:32],
+        )
+        return text[:max_length]
+    return text
 
 
 class MilvusStoreManager:
@@ -95,7 +113,15 @@ class MilvusStoreManager:
         return inserted
 
     def _build_schema(self) -> Any:
-        """构建 dense-only 或 dense+BM25 的集合 Schema。"""
+        """构建 dense-only 或 dense+BM25 的集合 Schema。
+
+        两层字段结构：
+          - 核心字段（id/text/vector[+sparse]）固定；
+          - 通用标量字段（doc_id/doc_type/doc_name/chapter/hierarchy_path/
+            chunk_uid/chunk_index）显式声明——可建标量索引、可过滤；
+          - 类型化扩展字段（article_number/question 及未来字段）走动态字段，
+            新增 doc_type 零迁移。
+        """
         schema = self._client.create_schema(auto_id=True, enable_dynamic_field=True)
         schema.add_field(
             field_name=self._contract.primary_field,
@@ -120,6 +146,23 @@ class MilvusStoreManager:
             dim=self._settings.embedding_dim,
         )
 
+        # 通用标量字段（显式声明以便建索引/过滤）
+        schema.add_field(field_name="chunk_uid", datatype=DataType.VARCHAR, max_length=64)
+        schema.add_field(field_name="doc_id", datatype=DataType.VARCHAR, max_length=64)
+        schema.add_field(field_name="doc_type", datatype=DataType.VARCHAR, max_length=32)
+        schema.add_field(field_name="doc_name", datatype=DataType.VARCHAR, max_length=255)
+        schema.add_field(field_name="chapter", datatype=DataType.VARCHAR, max_length=512)
+        schema.add_field(field_name="hierarchy_path", datatype=DataType.VARCHAR, max_length=512)
+        schema.add_field(field_name="chunk_index", datatype=DataType.INT64)
+        # 父子块字段：显式声明——parent_chunk_id 是分组检索的分组键，落动态字段会被静默忽略
+        schema.add_field(
+            field_name="parent_chunk_id",
+            datatype=DataType.VARCHAR,
+            max_length=_PARENT_CHUNK_ID_MAX_LEN,
+        )
+        schema.add_field(field_name="chunk_type", datatype=DataType.VARCHAR, max_length=16)
+        schema.add_field(field_name="sequence_in_parent", datatype=DataType.INT64)
+
         if self._settings.enable_bm25:
             schema.add_field(
                 field_name=self._contract.sparse_field,
@@ -134,9 +177,9 @@ class MilvusStoreManager:
         return schema
 
     def _build_index_params(self) -> Any:
-        """构建 dense 索引，并在启用时追加 BM25 sparse 索引。"""
+        """构建 dense 索引，并在启用时追加 BM25 sparse 索引 + 标量过滤索引。"""
         index_params = self._client.prepare_index_params()
-        dense_params = {"nlist": 256} if self._settings.milvus_dense_index_type == "IVF_FLAT" else {}
+        dense_params = build_dense_index_params(self._settings)
         index_params.add_index(
             field_name=self._contract.dense_field,
             index_type=self._settings.milvus_dense_index_type,
@@ -154,6 +197,24 @@ class MilvusStoreManager:
                     "bm25_b": self._settings.bm25_b,
                 },
             )
+        # 标量索引：chunk_uid（幂等判重查询）+ doc_type（按类型过滤检索）
+        index_params.add_index(
+            field_name="chunk_uid",
+            index_type="INVERTED",
+        )
+        index_params.add_index(
+            field_name="doc_type",
+            index_type="INVERTED",
+        )
+        # 分组检索键 + 父子块过滤键
+        index_params.add_index(
+            field_name="parent_chunk_id",
+            index_type="INVERTED",
+        )
+        index_params.add_index(
+            field_name="chunk_type",
+            index_type="INVERTED",
+        )
         return index_params
 
     def _validate_collection_contract(self) -> None:
@@ -164,6 +225,10 @@ class MilvusStoreManager:
             self._contract.primary_field,
             self._contract.text_field,
             self._contract.dense_field,
+            # 通用标量 + 父子块字段：缺失会退化为动态字段，过滤/分组静默失效
+            "chunk_uid", "doc_id", "doc_type", "doc_name", "chapter",
+            "hierarchy_path", "chunk_index",
+            "parent_chunk_id", "chunk_type", "sequence_in_parent",
         }
         if self._settings.enable_bm25:
             required.add(self._contract.sparse_field)
@@ -182,10 +247,13 @@ class MilvusStoreManager:
                 )
 
         indexes = set(self._client.list_indexes(self._settings.collection_name))
-        missing_indexes = {self._contract.dense_field} - indexes
+        required_indexes = {
+            self._contract.dense_field,
+            "chunk_uid", "doc_type", "parent_chunk_id", "chunk_type",
+        }
         if self._settings.enable_bm25:
-            missing_indexes.add(self._contract.sparse_field)
-            missing_indexes -= indexes
+            required_indexes.add(self._contract.sparse_field)
+        missing_indexes = required_indexes - indexes
         if missing_indexes:
             raise ConfigurationContractError(
                 f"集合缺少索引: {', '.join(sorted(missing_indexes))}"
@@ -199,8 +267,11 @@ class MilvusStoreManager:
           2. 再查询集合中已存在的 uid（增量/幂等场景），命中跳过；
           3. 返回实际写入行数（`_batch_insert` 语义从"无返回"改为"返回写入数"）。
         关闭去重时行为与旧版完全一致（全量写）。
+
+        稠密向量生成使用 ThreadPoolExecutor 并发，Milvus insert 仍单线程串行，
+        避免客户端并发问题（settings.embedding_max_workers 控制并发度）。
         """
-        batch_size = 100
+        batch_size = self._settings.embedding_batch_size
         total = len(documents)
         inserted = 0
         skipped = 0
@@ -222,10 +293,33 @@ class MilvusStoreManager:
                 unique.append(doc)
             to_write = unique
 
-        for start in range(0, len(to_write), batch_size):
-            batch = to_write[start:start + batch_size]
+        if not to_write:
+            logger.info("无待写入文档")
+            return 0
+
+        batches: List[List[Document]] = [
+            to_write[i:i + batch_size] for i in range(0, len(to_write), batch_size)
+        ]
+        batch_vectors: dict[int, List[List[float]]] = {}
+
+        def _embed_one(index_batch: Tuple[int, List[Document]]) -> Tuple[int, List[List[float]]]:
+            idx, batch = index_batch
             texts = [doc.page_content for doc in batch]
             vectors = self._embeddings.embed_documents(texts)
+            return idx, vectors
+
+        max_workers = max(1, self._settings.embedding_max_workers)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(_embed_one, (idx, batch))
+                for idx, batch in enumerate(batches)
+            ]
+            for future in as_completed(futures):
+                idx, vectors = future.result()
+                batch_vectors[idx] = vectors
+
+        for idx, batch in enumerate(batches):
+            vectors = batch_vectors[idx]
             validate_embedding_batch(batch, vectors, self._settings.embedding_dim)
             data = self._build_records(batch, vectors)
 
@@ -296,22 +390,46 @@ class MilvusStoreManager:
         validate_embedding_batch(documents, vectors, self._settings.embedding_dim)
         data: List[dict] = []
         for doc, vector in zip(documents, vectors):
+            parent_chunk_id = str(doc.metadata.get("parent_chunk_id") or "")
+            if len(parent_chunk_id) > _PARENT_CHUNK_ID_MAX_LEN:
+                raise IngestionContractError(
+                    f"parent_chunk_id 超长 ({len(parent_chunk_id)} > "
+                    f"{_PARENT_CHUNK_ID_MAX_LEN}): {parent_chunk_id[:32]}…"
+                )
             record = {
                 self._contract.text_field: doc.page_content,
                 self._contract.dense_field: list(vector),
                 "doc_name": doc.metadata.get("doc_name", ""),
-                "chapter": doc.metadata.get("chapter", ""),
+                "doc_id": doc.metadata.get("doc_id", ""),
+                "doc_type": doc.metadata.get("doc_type", ""),
+                "chapter": _truncate_field(
+                    doc.metadata.get("chapter"), _CHAPTER_MAX_LEN, "chapter"
+                ),
+                "hierarchy_path": _truncate_field(
+                    doc.metadata.get("hierarchy_path"),
+                    _CHAPTER_MAX_LEN,
+                    "hierarchy_path",
+                ),
                 "chunk_index": doc.metadata.get("chunk_index", 0),
                 "chunk_uid": doc.metadata.get("chunk_uid")
                 or compute_chunk_uid(doc.page_content, doc.metadata),
                 "schema_version": self._settings.collection_schema_version,
                 "embedding_model": self._settings.embedding_model,
+                # 父子块字段（向后兼容：旧数据无该字段时默认 atom）
+                "chunk_type": doc.metadata.get("chunk_type") or "atom",
+                "parent_chunk_id": parent_chunk_id,
+                "sequence_in_parent": doc.metadata.get("sequence_in_parent", 0),
                 # 法条时效性（任务 M3）：施行日期 / 效力状态（可空，向后兼容）
                 "effective_date": doc.metadata.get("effective_date") or "",
                 "status": doc.metadata.get("status") or "",
             }
             for key, value in doc.metadata.items():
-                if key in ("doc_name", "chapter", "chunk_index", "chunk_uid"):
+                if key in (
+                    "doc_name", "doc_id", "doc_type", "chapter",
+                    "hierarchy_path", "chunk_index", "chunk_uid",
+                    "chunk_type", "parent_chunk_id", "sequence_in_parent",
+                    "effective_date", "status",
+                ):
                     continue
                 if key.startswith("_") or value is None:
                     continue
@@ -321,11 +439,15 @@ class MilvusStoreManager:
             data.append(record)
         return data
 
-    def add_documents(self, documents: Sequence[Document]) -> int:
+    def add_documents(self, documents: Sequence[Document], *, flush: bool = True) -> int:
         """增量导入文档。
 
         启用去重时幂等：重复导入同一批文本块会因 chunk_uid 已存在而全部
         跳过（返回 0）；返回实际写入行数。
+
+        flush=False 用于大批量导入：跳过逐批落盘（Milvus flush 每次可达数秒），
+        由调用方在整批完成后统一 flush 一次。崩溃恢复依赖进度文件 + chunk_uid
+        判重兜底，不丢失正确性。
         """
         validated = validate_ingestion_documents(documents)
         if not self._has_collection():
@@ -337,7 +459,8 @@ class MilvusStoreManager:
 
         logger.info("增量导入 %d 个文档块", len(validated))
         inserted = self._batch_insert(validated)
-        self._client.flush(self._settings.collection_name)
+        if flush:
+            self._client.flush(self._settings.collection_name)
         logger.info(
             "增量导入完成 %d 条（跳过 %d 条），当前集合总数约 %d",
             inserted,
@@ -406,6 +529,10 @@ class MilvusStoreManager:
 
     def _assert_recreate_is_safe(self) -> None:
         name = self._settings.collection_name
+        if name == self._settings.milvus_protected_collection:
+            raise ConfigurationContractError(
+                f"拒绝删除生产集合 {name!r}"
+            )
         if not name.startswith(self._settings.milvus_experiment_prefix):
             raise ConfigurationContractError(
                 f"拒绝删除非实验集合 {name!r}；允许前缀为 "

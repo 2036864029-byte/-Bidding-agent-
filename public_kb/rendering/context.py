@@ -19,15 +19,17 @@ def format_docs(docs_with_scores: List[Tuple[Document, float]]) -> str:
         docs_with_scores: (Document, similarity_score) 列表。
 
     Returns:
-        带来源标注的拼接文本。
+        带来源标注的拼接文本。优先使用父块拼接文本（metadata["context_text"]），
+        无则回退子块原文（page_content）。
     """
     parts: List[str] = []
     for i, (doc, score) in enumerate(docs_with_scores, 1):
         doc_name = doc.metadata.get("doc_name", "未知文档")
         chapter = doc.metadata.get("chapter", "未知章节")
+        content = doc.metadata.get("context_text") or doc.page_content
         parts.append(
             f"[来源{i}] 文档: {doc_name} | 章节: {chapter} | 相关度: {score:.2%}\n"
-            f"{doc.page_content}"
+            f"{content}"
         )
     return "\n\n---\n\n".join(parts)
 

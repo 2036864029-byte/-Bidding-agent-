@@ -25,7 +25,9 @@ def test_both_collections_registered_with_default_names():
         meta = get_collection_meta(name)
         assert meta["embedding_dim"] == 1024
         assert meta["metric"] == "COSINE"
-        assert meta["dense_index_type"] == "IVF_FLAT"
+    # 2026-09-08 重构：public_kb（RAG chunk）dense 索引迁 HNSW；price 语义集合保持 IVF_FLAT
+    assert get_collection_meta(KB_PUBLIC_COLLECTION)["dense_index_type"] == "HNSW"
+    assert get_collection_meta(PRICE_SEMANTIC_COLLECTION)["dense_index_type"] == "IVF_FLAT"
 
 
 def test_unknown_collection_returns_none():

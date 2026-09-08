@@ -59,10 +59,14 @@ def hybrid_search_with_full_fields(
     ranker: Any,
     limit: int,
     expr: Optional[str] = None,
+    group_by_field: Optional[str] = None,
+    group_size: Optional[int] = None,
 ) -> List[Any]:
     """pymilvus hybrid_search，output_fields=['*'] 优先，失败回退基础字段。
 
     expr：可选标量过滤表达式（任务 M3）；None 表示不过滤。
+    group_by_field/group_size：按标量字段分组召回（限流同父碎片）；None 表示不分组。
+    分组由服务端在 RRF 融合之后执行，此时 limit 表示"返回的分组数"。
     """
     kwargs: Dict[str, Any] = {
         "reqs": reqs,
@@ -72,6 +76,10 @@ def hybrid_search_with_full_fields(
     }
     if expr:
         kwargs["filter"] = expr
+    if group_by_field:
+        kwargs["group_by_field"] = group_by_field
+        if group_size is not None:
+            kwargs["group_size"] = group_size
     try:
         return collection.hybrid_search(
             settings.collection_name, **kwargs

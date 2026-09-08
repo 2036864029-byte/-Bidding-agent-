@@ -134,12 +134,29 @@ class MilvusStoreOfflineTests(unittest.TestCase):
         indexes = manager._build_index_params()
 
         fields = {item["field_name"]: item for item in schema.fields}
-        self.assertEqual(set(fields), {"id", "text", "vector", "sparse_vector"})
+        self.assertEqual(set(fields), {
+            "id", "text", "vector", "sparse_vector",
+            "chunk_uid", "doc_id", "doc_type", "doc_name",
+            "chapter", "hierarchy_path", "chunk_index",
+            "parent_chunk_id", "chunk_type", "sequence_in_parent",
+        })
         self.assertTrue(fields["text"]["enable_analyzer"])
         self.assertEqual(len(schema.functions), 1)
         index_by_field = {item["field_name"]: item for item in indexes.indexes}
         self.assertEqual(index_by_field["vector"]["metric_type"], "COSINE")
+        # 2026-09-08 重构：dense 索引默认 HNSW（IVF_FLAT 迁移），参数 M/efConstruction
+        self.assertEqual(index_by_field["vector"]["index_type"], "HNSW")
+        self.assertEqual(
+            index_by_field["vector"]["params"],
+            {"M": 16, "efConstruction": 128},
+        )
         self.assertEqual(index_by_field["sparse_vector"]["metric_type"], "BM25")
+        # 通用标量字段建 INVERTED 索引（判重/按类型过滤）
+        self.assertEqual(index_by_field["chunk_uid"]["index_type"], "INVERTED")
+        self.assertEqual(index_by_field["doc_type"]["index_type"], "INVERTED")
+        # 父子块字段：parent_chunk_id 是分组检索的分组键，须显式声明 + INVERTED
+        self.assertEqual(index_by_field["parent_chunk_id"]["index_type"], "INVERTED")
+        self.assertEqual(index_by_field["chunk_type"]["index_type"], "INVERTED")
 
     def test_records_contain_dense_but_not_client_sparse_vector(self) -> None:
         manager = MilvusStoreManager(_settings(), FakeEmbeddings(3), client=FakeMilvusClient())
@@ -151,6 +168,27 @@ class MilvusStoreOfflineTests(unittest.TestCase):
         self.assertTrue(records[0]["chunk_uid"].startswith("ck-"))
         self.assertEqual(records[0]["schema_version"], "public_kb_v2")
         self.assertEqual(records[0]["embedding_model"], "BAAI/bge-m3")
+
+    def test_records_truncate_overlong_scalar_fields(self) -> None:
+        """chapter/hierarchy_path 超 Schema 上限时截断，避免整批 insert 被拒。"""
+        manager = MilvusStoreManager(_settings(), FakeEmbeddings(3), client=FakeMilvusClient())
+        doc = _document()
+        doc.metadata["chapter"] = "章" * 600
+        doc.metadata["hierarchy_path"] = "层" * 600
+
+        record = manager._build_records([doc], [[0.1, 0.2, 0.3]])[0]
+
+        self.assertEqual(len(record["chapter"]), 512)
+        self.assertEqual(len(record["hierarchy_path"]), 512)
+
+    def test_records_reject_overlong_parent_chunk_id(self) -> None:
+        """parent_chunk_id 超 64 直接报错——静默截断会破坏分组标识。"""
+        manager = MilvusStoreManager(_settings(), FakeEmbeddings(3), client=FakeMilvusClient())
+        doc = _document()
+        doc.metadata["parent_chunk_id"] = "x" * 65
+
+        with self.assertRaises(IngestionContractError):
+            manager._build_records([doc], [[0.1, 0.2, 0.3]])
 
     def test_existing_collection_is_not_dropped_by_default(self) -> None:
         client = FakeMilvusClient(exists=True)
@@ -231,9 +269,56 @@ class MilvusStoreOfflineTests(unittest.TestCase):
 
         self.assertEqual(
             {item["field_name"] for item in schema.fields},
-            {"id", "text", "vector"},
+            {"id", "text", "vector",
+             "chunk_uid", "doc_id", "doc_type", "doc_name",
+             "chapter", "hierarchy_path", "chunk_index",
+             "parent_chunk_id", "chunk_type", "sequence_in_parent"},
         )
-        self.assertEqual([item["field_name"] for item in indexes.indexes], ["vector"])
+        self.assertEqual(
+            [item["field_name"] for item in indexes.indexes],
+            ["vector", "chunk_uid", "doc_type", "parent_chunk_id", "chunk_type"],
+        )
+
+    def test_dense_index_params_dispatch_by_type(self) -> None:
+        from core.vectorstore.index_params import build_dense_index_params
+
+        self.assertEqual(
+            build_dense_index_params(_settings(milvus_dense_index_type="HNSW")),
+            {"M": 16, "efConstruction": 128},
+        )
+        self.assertEqual(
+            build_dense_index_params(_settings(milvus_dense_index_type="IVF_FLAT")),
+            {"nlist": 256},
+        )
+        self.assertEqual(
+            build_dense_index_params(_settings(milvus_dense_index_type="AUTOINDEX")),
+            {},
+        )
+
+    def test_dense_search_params_dispatch_by_type(self) -> None:
+        from core.vectorstore.index_params import build_dense_search_params
+
+        self.assertEqual(
+            build_dense_search_params(
+                _settings(milvus_dense_index_type="HNSW", milvus_hnsw_search_ef=64)
+            ),
+            {"metric_type": "COSINE", "params": {"ef": 64}},
+        )
+        self.assertEqual(
+            build_dense_search_params(
+                _settings(milvus_dense_index_type="IVF_FLAT", nprobe=16)
+            ),
+            {"metric_type": "COSINE", "params": {"nprobe": 16}},
+        )
+        self.assertEqual(
+            build_dense_search_params(_settings(milvus_dense_index_type="AUTOINDEX")),
+            {"metric_type": "COSINE", "params": {}},
+        )
+
+    def test_default_dense_index_type_is_hnsw_with_bm25(self) -> None:
+        settings = _settings()
+        self.assertEqual(settings.milvus_dense_index_type, "HNSW")
+        self.assertTrue(settings.enable_bm25)
 
 
 if __name__ == "__main__":

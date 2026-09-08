@@ -31,6 +31,7 @@ from .ledger import IngestLedger
 from .normalizers import build_normalizer
 from .quality import QualityGate
 from .router import FormatRouter
+from .transforms import detect_doc_type_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -212,9 +213,17 @@ class FileIngestionPipeline:
         from core.contracts import validate_ingestion_documents
 
         doc_name = path.stem  # 与 handoff 的 doc_name 口径一致（跨机器稳定）
+        doc_type: Optional[str] = None
+        if path.suffix.lower() == ".md":
+            try:
+                detected = detect_doc_type_or_none(path)
+                doc_type = detected.value if detected is not None else None
+            except Exception:
+                doc_type = None
         docs = chunk_markdown(
             ir.content, doc_name, self._settings,
             cleaner=self._cleaner, chunker=self._chunker,
+            doc_type=doc_type,
         )
         for doc in docs:
             doc.metadata["chunk_uid"] = compute_chunk_uid(

@@ -33,7 +33,12 @@ from langchain_core.documents import Document
 from core.contracts.chunk_ids import compute_chunk_uid
 from core.config.settings import Settings
 from .sinks.milvus_sink import MilvusSink, MilvusSinkMode
-from .transforms import SemanticChunker, TextCleaner
+from .transforms import (
+    SemanticChunker,
+    TextCleaner,
+    TypedChunker,
+    detect_doc_type,
+)
 from .normalizers.pdf.pdf_structure import adapt_pdf_markdown
 
 logger = logging.getLogger(__name__)
@@ -211,12 +216,16 @@ def chunk_cleaned_markdown(
     settings: Settings,
     *,
     chunker: Optional[SemanticChunker] = None,
+    doc_type: Optional[str] = None,
 ) -> List[Document]:
-    """Phase B：切分链路（当前实现，Phase B 重设计时替换）。消费清洗后 markdown。
+    """Phase B：切分链路。消费清洗后 markdown。
 
-    与旧 adapt_pdf_markdown 口径一致：表格原子块 + SemanticChunker。切分策略
-    与元数据挂载（page_start/end、表格原子块、目录不入 chunk）在 Phase B 重设计。
+    - 未传 doc_type 时保持原 SemanticChunker/adapt_pdf_markdown 行为（向后兼容）。
+    - 传入 doc_type 时走 TypedChunker，按类型化策略分块。
     """
+    if doc_type is not None:
+        return TypedChunker(settings).chunk(clean_md, doc_name, doc_type)
+
     chunker = chunker or SemanticChunker(
         max_chars=settings.chunk_max_chars,
         overlap_chars=settings.chunk_overlap_chars,
@@ -240,13 +249,16 @@ def chunk_markdown(
     *,
     cleaner: Optional[TextCleaner] = None,
     chunker: Optional[SemanticChunker] = None,
+    doc_type: Optional[str] = None,
 ) -> List[Document]:
     """兼容壳：clean_markdown → chunk_cleaned_markdown（Phase A 拆分前的完整链路）。
 
-    保持既有调用方（pipeline / parse_tool / prepare_handoff / 测试）行为不变。
+    保持既有调用方行为不变；新增 doc_type 透传以支持类型化分块。
     """
     cleaned = clean_markdown(markdown, settings, cleaner=cleaner)
-    return chunk_cleaned_markdown(cleaned, doc_name, settings, chunker=chunker)
+    return chunk_cleaned_markdown(
+        cleaned, doc_name, settings, chunker=chunker, doc_type=doc_type
+    )
 
 
 def _freeze_chunk_uid(documents: Sequence[Document]) -> List[Document]:
@@ -551,9 +563,10 @@ def ingest_markdown_dir(
         # *.assembled.md 已是 clean 资产（Phase A 输出），直接分块（不再二次清洗——
         # 二次清洗对 relayout 折行资产可能轻微重排导致 chunk 与资产漂移）。
         clean_md = md_file.read_text(encoding="utf-8")
+        doc_type = detect_doc_type(md_file).value
         all_docs.extend(
             _freeze_chunk_uid(
-                chunk_cleaned_markdown(clean_md, doc_name, settings)
+                chunk_cleaned_markdown(clean_md, doc_name, settings, doc_type=doc_type)
             )
         )
         logger.info("✓ %s → %s 块", md_file.name, len(all_docs))

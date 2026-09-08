@@ -35,8 +35,12 @@ EXPECTED_EMBEDDING_MODEL_ID = EMBEDDING_MODEL_ID  # "BAAI/bge-m3"
 EXPECTED_EMBEDDING_VERSION = EMBEDDING_VERSION      # "bge-m3-v1"
 EXPECTED_EMBEDDING_DIM = 1024
 
-# 两集合共用索引参数（IVF_FLAT + COSINE，nlist=128）
+# 索引参数登记（2026-09-08 HNSW+BM25 重构后）：
+#   - public_kb（RAG chunk）：dense=HNSW（COSINE），sparse=SPARSE_INVERTED_INDEX（BM25）
+#   - mysql_price_semantic：仍 IVF_FLAT（price 链路独立建索引，未迁移）
 INDEX_IVF_FLAT_NLIST = 128
+INDEX_HNSW_M = 16
+INDEX_HNSW_EF_CONSTRUCTION = 128
 INDEX_METRIC = "COSINE"
 INDEX_SPARSE_TYPE = "SPARSE_INVERTED_INDEX"
 
@@ -47,9 +51,11 @@ COLLECTION_REGISTRY = {
         "embedding_model": EXPECTED_EMBEDDING_MODEL_ID,
         "embedding_version": EXPECTED_EMBEDDING_VERSION,
         "embedding_dim": EXPECTED_EMBEDDING_DIM,
-        "dense_index_type": "IVF_FLAT",
+        "dense_index_type": "HNSW",
         "sparse_index_type": INDEX_SPARSE_TYPE,
         "metric": INDEX_METRIC,
+        "hnsw_m": INDEX_HNSW_M,
+        "hnsw_ef_construction": INDEX_HNSW_EF_CONSTRUCTION,
         "nlist": INDEX_IVF_FLAT_NLIST,
         "schema_version": "public_kb_v2",
         "note": "字段级 schema 由 MilvusStoreManager / contracts 声明（A-8 随 chunk 契约上提 core 后统一）",
