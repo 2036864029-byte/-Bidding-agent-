@@ -1,0 +1,69 @@
+[project]
+name = "ztb-demo"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110,<1.0",
+    "httpx>=0.27,<1.0",
+    "langchain-core>=1.5.4,<2.0.0",
+    "langchain-milvus>=0.4.0",
+    "langchain-openai>=1.5.0,<2.0.0",
+    "langgraph>=1.2.11,<2.0.0",
+    "langgraph-checkpoint>=2.0.0",
+    "lxml>=5.0,<7.0",
+    "markdown>=3.6,<4.0",
+    "openai>=2.45,<4",
+    "pymilvus>=2.4.5",
+    "pymysql>=1.1.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+    "python-multipart>=0.0.9,<1.0",
+    "sentence-transformers>=3.0",
+    "setuptools>=65,<70",
+    "tiktoken>=0.7.0,<0.9.0",
+    "uvicorn[standard]>=0.29,<1.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.6",
+]
+
+# ── 工具链配置（整体框架优化执行计划 3.2）────────────────────────
+# 说明：当前仅"报告不阻断"；等存量告警清理到阈值后再在 CI 中设为门禁。
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "archive", "scripts/archive", "test/legacy", "docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# 入口脚本需先改 sys.path 再导入项目模块（E402 属有意为之）
+"api/cli.py" = ["E402"]
+"agent/__main__.py" = ["E402"]
+"public_kb/__main__.py" = ["E402"]
+"scripts/**" = ["E402"]
+"test/**" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false
+# 渐进式：待 core/errors、core/observability 等新模块落地后再用 files 收窄范围
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+addopts = "-q --strict-markers"
+markers = [
+    "unit: 纯离线单测（无外部依赖）",
+    "integration: 需要桩件或本地 DB/Milvus",
+    "e2e: 需要真实 LLM/Milvus/MySQL",
+    "golden: 金标集回归（指标门禁）",
+]
