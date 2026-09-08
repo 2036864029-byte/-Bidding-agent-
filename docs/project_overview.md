@@ -639,14 +639,14 @@ ALTER TABLE `bidding_information_dai`.`notifications`
 
 | 参数 | 生产环境值 |
 |------|-----------|
-| 集合名称 | `public_kb` |
+| 集合名称 | `public_kb`（2026-09-08 起 RAG 实际使用 `public_kb_chunked_v2`，文本分块优化后全量集合） |
 | 向量维度 | 1024（BGE-m3） |
-| 索引类型 | `IVF_FLAT` |
+| dense 索引类型 | `HNSW`（2026-09-08 由 IVF_FLAT 迁移；M=16、efConstruction=128，检索 ef=64） |
 | 相似度度量 | `COSINE` |
-| nlist | 128 |
-| nprobe | 32 |
+| sparse 索引（BM25） | `SPARSE_INVERTED_INDEX`（服务端 BM25，k1=1.2、b=0.75、analyzer=chinese） |
+| 标量索引 | `chunk_uid` / `doc_type`（INVERTED） |
 | 相似度阈值 | 0.45（降级路径阈值）、自适应阈值（主路径） |
-| 检索 Top-K | 5（稠密）、30（混合候选池） |
+| 检索 Top-K | 5（重排后）、30（dense+sparse 混合候选池） |
 
 **数据规模与云端同步状态**（2026-08-13 实测）：
 
