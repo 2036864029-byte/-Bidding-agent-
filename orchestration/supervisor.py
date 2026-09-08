@@ -20,10 +20,11 @@ import os
 import re
 from typing import Any, Callable, List, Optional
 
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 
 from agent.registry import CapabilityRegistry, get_default_registry
+
 from .handoff import AGENT_NODES, HandoffMeta, build_sub_question
 
 logger = logging.getLogger(__name__)
@@ -213,7 +214,14 @@ def build_supervisor_node(
     Args:
         llm / registry / embedder / llm_router: 三级路由依赖（None 走默认，见
             route_question）；离线测试注入 fake。
+
+    注意（W0-4）：L3 router **在构建节点时创建一次**。`build_router_node` 构造期
+    会做一次 structured_output 预检测（真实 LLM 调用）；旧实现把它放在
+    `route_question` 的惰性分支里，导致每个请求都重建一次 router → 每问多一次
+    LLM 往返。
     """
+    if llm_router is None and llm is not None:
+        llm_router = _build_llm_router(llm, registry)
 
     def supervisor_node(state: dict, config: Optional[RunnableConfig] = None) -> dict:
         messages = state.get("messages", [])

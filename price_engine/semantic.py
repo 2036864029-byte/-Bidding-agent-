@@ -15,9 +15,9 @@ from pymilvus import DataType, MilvusClient
 
 from core.config.settings import Settings
 from core.embeddings import get_embeddings
+from core.rdb.mysql_pool import _CLEAN_DB, _get_connection, _get_settings, _release_connection
 from core.vectorstore.namespace import PRICE_SEMANTIC_COLLECTION
 
-from core.rdb.mysql_pool import _CLEAN_DB, _get_connection, _get_settings, _release_connection
 from .models import SearchIntent
 from .schema import _HARDCODED_SCHEMA, _semantic_columns
 
@@ -52,6 +52,10 @@ _SEMANTIC_EXPECTED_ROW_COUNT: Optional[int] = None
 _SEMANTIC_BOOTSTRAP_ATTEMPTED = False
 
 _SEMANTIC_BOOTSTRAP_IN_PROGRESS = False
+
+# W0-9：自举触发是 check-then-set，无锁时并发首请求可能启动两次重建，
+# 而重建第一步是 drop_collection → 两个线程互删集合（审计 A4）。
+_BOOTSTRAP_LOCK = threading.Lock()
 
 def _get_embeddings() -> OpenAIEmbeddings:
     """懒加载 Embedding 客户端，供 P1-3 语义召回复用（9.3 Track A：委托全局单例）。"""
@@ -364,9 +368,10 @@ def _rebuild_mysql_semantic_collection() -> bool:
 
 def _bootstrap_mysql_semantic_collection_async() -> None:
     global _SEMANTIC_BOOTSTRAP_IN_PROGRESS
-    if _SEMANTIC_BOOTSTRAP_IN_PROGRESS:
-        return
-    _SEMANTIC_BOOTSTRAP_IN_PROGRESS = True
+    with _BOOTSTRAP_LOCK:
+        if _SEMANTIC_BOOTSTRAP_IN_PROGRESS:
+            return
+        _SEMANTIC_BOOTSTRAP_IN_PROGRESS = True
     thread = threading.Thread(
         target=_rebuild_mysql_semantic_collection,
         name="mysql-semantic-bootstrap",
@@ -395,10 +400,10 @@ def _ensure_mysql_semantic_collection() -> bool:
     except Exception as e:
         logger.warning("检查 MySQL 语义集合状态失败: %s", e)
 
-    if _SEMANTIC_BOOTSTRAP_ATTEMPTED or not _get_settings().enable_auto_semantic_bootstrap:
-        return False
-
-    _SEMANTIC_BOOTSTRAP_ATTEMPTED = True
+    with _BOOTSTRAP_LOCK:
+        if _SEMANTIC_BOOTSTRAP_ATTEMPTED or not settings.enable_auto_semantic_bootstrap:
+            return False
+        _SEMANTIC_BOOTSTRAP_ATTEMPTED = True
     logger.info("[SEMANTIC_BOOTSTRAP] 语义集合不存在，已启动后台自举任务")
     _bootstrap_mysql_semantic_collection_async()
     return False

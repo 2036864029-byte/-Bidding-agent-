@@ -114,7 +114,46 @@ def test_route_cascade_all_miss_no_llm_falls_back():
     assert r == "fallback"
 
 
+# ── W0-4：router 只构建一次 ───────────────────────────────────
+
+def test_supervisor_node_builds_llm_router_once(monkeypatch):
+    """每请求不得重建 L3 router——构建期会触发一次 LLM 预检测（审计 C4）。"""
+    import orchestration.supervisor as sup_mod
+    from langchain_core.messages import HumanMessage
+
+    calls = {"build": 0}
+
+    def fake_build(llm, registry=None):
+        calls["build"] += 1
+        return lambda state: {"router_intent": "fallback"}
+
+    monkeypatch.setattr(sup_mod, "_build_llm_router", fake_build)
+
+    node = sup_mod.build_supervisor_node(llm=object())
+    assert calls["build"] == 1, "节点构建时应只创建一次 router"
+
+    state = {"messages": [HumanMessage(content="随便问问")]}
+    node(state)
+    node(state)
+    assert calls["build"] == 1, "多次调用节点不得重复构建 router"
+
+
+def test_supervisor_node_respects_injected_llm_router(monkeypatch):
+    """注入 llm_router 时不得再构建（离线测试零 LLM 调用）。"""
+    import orchestration.supervisor as sup_mod
+
+    def boom(llm, registry=None):
+        raise AssertionError("注入 llm_router 时不应构建默认 router")
+
+    monkeypatch.setattr(sup_mod, "_build_llm_router", boom)
+    node = sup_mod.build_supervisor_node(
+        llm=None, llm_router=lambda state: {"router_intent": "general_chat"}
+    )
+    assert callable(node)
+
+
 # ── handoff 决策矩阵 ─────────────────────────────────────────
+
 
 def test_handoff_price_explanation_keyword_to_knowledge():
     meta = decide_handoff("price_inquiry", "XX公司中标了哪些项目？中标通知书有什么法律效力？", {})

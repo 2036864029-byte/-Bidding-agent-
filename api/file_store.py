@@ -41,14 +41,22 @@ def put(record: FileRecord) -> None:
         _store[record.file_id] = record
 
 
-def get(file_id: str) -> Optional[FileRecord]:
-    """读取记录；过期自动清除。"""
+def get(file_id: str, *, session_id: Optional[str] = None) -> Optional[FileRecord]:
+    """读取记录；过期自动清除。
+
+    Args:
+        file_id: 上传返回的文件 id。
+        session_id: 传入时校验归属——非本会话的文件按"不存在"处理（避免
+            跨会话把他人上传内容注入自己的 doc_qa 上下文，W0-6）。
+    """
     with _lock:
         rec = _store.get(file_id)
         if rec is None:
             return None
         if time.time() - rec.created_at > FILE_TTL_SECONDS:
             _store.pop(file_id, None)
+            return None
+        if session_id is not None and rec.session_id != session_id:
             return None
         return rec
 

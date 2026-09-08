@@ -1,6 +1,6 @@
 """price_inquiry 子图（方案 Phase 6 / F-4）守卫出口矩阵离线测试。
 
-不触碰网络/DB：_parse_unified_intent / _build_llm / _normalize_intent_enums / _sql_executor
+不触碰网络/DB：_parse_unified_intent / _build_llm / _normalize_intent_enums / get_query_pool
 全部打桩。覆盖子图路由正确性——各守卫出口（product / project_detail_no_number /
 bare_entity_no_intent / no_entity_for_route / llm_timeout / sql_timeout / POST_GUARD）
 经子图产生的 business_result 与既有语义逐键一致；正常渲染出口走通。
@@ -51,7 +51,7 @@ def _patch_parse(monkeypatch, intent):
 
 
 class _ReadyFuture:
-    """立即返回结果的假 Future（模拟 _sql_executor.submit）。"""
+    """立即返回结果的假 Future（模拟 get_query_pool().submit）。"""
 
     def __init__(self, value):
         self._value = value
@@ -66,6 +66,9 @@ class _ImmediateTimeoutFuture:
     def result(self, timeout=None):
         raise FutureTimeoutError()
 
+    def cancel(self) -> bool:
+        return True
+
 
 def _run(monkeypatch, question="某公司的工商信息", *, sql_value=None, sql_timeout=False):
     if sql_timeout:
@@ -75,7 +78,7 @@ def _run(monkeypatch, question="某公司的工商信息", *, sql_value=None, sq
     else:
         executor = SimpleNamespace(
             submit=lambda fn, intent: (_ for _ in ()).throw(AssertionError("不应触发 SQL")))
-    monkeypatch.setattr(sg, "_sql_executor", executor)
+    monkeypatch.setattr(sg, "get_query_pool", lambda: executor)
     sub = build_price_subgraph()
     return sub.invoke({"messages": [HumanMessage(content=question)]}, config=None)
 
@@ -264,7 +267,7 @@ def test_subgraph_as_parent_node_isolates_pg_keys(monkeypatch):
         "sql_count": 1, "total_sql_time": 0.0, "total_found": 0,
     }
     executor = SimpleNamespace(submit=lambda fn, intent: _ReadyFuture(sql_value))
-    monkeypatch.setattr(sg, "_sql_executor", executor)
+    monkeypatch.setattr(sg, "get_query_pool", lambda: executor)
 
     from langgraph.graph import END, StateGraph
     from agent.state import AgentState

@@ -5,14 +5,22 @@ from __future__ import annotations
 import logging
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import replace
 from typing import Any, Optional
 
 import pymysql
 
-from core.rdb.mysql_pool import _CLEAN_DB, _get_connection, _get_settings, _release_connection
+from core.concurrency.pools import get_sql_pool
+from core.rdb.mysql_pool import (
+    _CLEAN_DB,
+    _get_connection,
+    _get_settings,
+    _release_connection,
+    discard_connection,
+)
 from core.retrieval.pipeline import RecallPipeline
+
 from .models import SearchIntent
 from .schema import _get_classification
 from .semantic import _semantic_recall_candidates
@@ -149,8 +157,6 @@ def _execute_sql_fetch_rows(
             rows = list(rows)
     return rows, elapsed
 
-_sql_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="sql-query")
-
 def _execute_sql_with_timeout(
     conn: pymysql.Connection,
     sql: str,
@@ -161,15 +167,21 @@ def _execute_sql_with_timeout(
 ) -> tuple[list[dict[str, Any]], float]:
     """带超时的 SQL 执行包装器。
 
-    使用 ThreadPoolExecutor 实现跨平台超时控制，超时后返回空结果并记录日志。
+    使用线程池实现跨平台超时控制，超时后返回空结果并记录日志。
     ``timeout`` 缺省取 Settings.sql_query_timeout；D-6 起阶段可传入剩余预算
     （RecallPipeline deadline）作为上限，让全局熔断约束到单条 SQL。
+
+    W0-1/W0-2：
+      - 执行池是 ``core.concurrency.pools.get_sql_pool()``——与"整条查询"池分离，
+        避免同池嵌套导致内层任务永不调度（审计 A1）。
+      - 超时后 ``cancel()`` 并 ``discard_connection(conn)``——孤儿线程可能仍在使用
+        该连接，不能让它被下一个请求取走（审计 A2）。
     """
     settings = _get_settings()
     if timeout is None:
         timeout = float(settings.sql_query_timeout)
 
-    future = _sql_executor.submit(_execute_sql_fetch_rows, conn, sql, params)
+    future = get_sql_pool().submit(_execute_sql_fetch_rows, conn, sql, params)
     try:
         rows, elapsed = future.result(timeout=timeout)
         return rows, elapsed
@@ -178,6 +190,8 @@ def _execute_sql_with_timeout(
             "[SQL_TIMEOUT] 查询超时(%ds): table=%s stage=%s sql=%s",
             timeout, table, stage, re.sub(r"\s+", " ", sql)[:200],
         )
+        future.cancel()
+        discard_connection(conn)
         return [], 0.0
 
 def _execute_recall_chain_core(

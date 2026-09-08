@@ -29,3 +29,8 @@ class ChatResponse(BaseModel):
     citations: List[Dict[str, Any]] = Field(default_factory=list)
     data: Optional[Dict[str, Any]] = None
     latency_ms: Optional[int] = None
+    session_id: Optional[str] = Field(
+        None,
+        description="本轮实际使用的会话 id（请求未传时由服务端生成并回传，"
+                    "客户端应原样带回以延续上下文 / 使用同一会话的上传文件）",
+    )

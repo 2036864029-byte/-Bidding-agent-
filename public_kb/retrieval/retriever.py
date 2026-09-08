@@ -15,20 +15,20 @@ from pymilvus import AnnSearchRequest, RRFRanker
 from core.config.settings import Settings
 from core.contracts import (
     MilvusCollectionContract,
+    RerankerStatus,
     RetrievalDiagnostics,
     RetrievalMode,
-    RerankerStatus,
     build_effective_expr,
     validate_question,
 )
 from core.vectorstore.index_params import build_dense_search_params
+
 from .entities import entity_to_doc, normalize_hit_entity
 from .fallback import dense_only_retrieve
 from .milvus_search import hybrid_search_with_full_fields
 from .parent_assembly import assemble_parent_contexts, is_duplicate_parent
 from .reranker import Reranker
 from .strategies import adaptive_threshold
-
 
 logger = logging.getLogger(__name__)
 
@@ -229,16 +229,16 @@ class HybridRetriever:
                 ),
             )
 
-        reranked = self._reranker.rerank(
+        reranked, reranker_status = self._reranker.rerank(
             query=question,
             documents=[candidate[0] for candidate in candidates],
             top_k=self._rerank_candidate_k(),
         )
 
-        if self._reranker.last_status is RerankerStatus.SUCCESS and reranked:
+        if reranker_status is RerankerStatus.SUCCESS and reranked:
             return self._rerank_result(reranked, candidates)
 
-        # Reranker 失败时保留 RRF 排序，不构造虚假相关度分数。
+        # Reranker 失败或成功但无结果时保留 RRF 排序，不构造虚假相关度分数。
         results: List[Tuple[Document, float]] = []
         seen_parents: set = set()
         for _, rrf_score, entity in candidates:
@@ -257,8 +257,13 @@ class HybridRetriever:
                 dense_count=self._settings.hybrid_dense_limit,
                 sparse_count=self._settings.hybrid_sparse_limit,
                 fusion_count=len(candidates),
-                reranker_status=self._reranker.last_status,
-                fallback_reason="reranker_failed",
+                reranker_status=reranker_status,
+                # B7：区分"reranker 挂了"与"reranker 正常但没返回结果"
+                fallback_reason=(
+                    "reranker_empty"
+                    if reranker_status is RerankerStatus.SUCCESS
+                    else "reranker_failed"
+                ),
             ),
         )
 

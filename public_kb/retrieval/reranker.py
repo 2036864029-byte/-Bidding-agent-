@@ -1,16 +1,20 @@
 # 功能：调用 SiliconFlow Reranker 重排序，并提供故障重试和降级契约。
-"""Reranker protocol and SiliconFlow HTTP client."""
+"""Reranker protocol and SiliconFlow HTTP client.
+
+W0-3：状态按调用返回，不落实例属性。旧实现把 ``last_status`` / ``retry_count``
+写在实例上，而 reranker 随检索单例进程级共享 → 并发请求互相覆盖状态，可能静默
+走错降级分支（审计 A3）。现在 ``rerank()`` 返回 ``(results, status)``。
+"""
 
 from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, Dict, List, Protocol
+from typing import Any, Callable, Dict, List, Protocol, Tuple
 
 import requests
 
 from core.contracts import RerankerStatus
-
 
 logger = logging.getLogger(__name__)
 
@@ -18,15 +22,18 @@ logger = logging.getLogger(__name__)
 class Reranker(Protocol):
     """Protocol implemented by reranker clients used by retrieval."""
 
-    last_status: RerankerStatus
-
     def rerank(
         self,
         query: str,
         documents: List[str],
         top_k: int = 3,
-    ) -> List[Dict[str, Any]]:
-        """Return API results sorted by descending relevance score."""
+    ) -> Tuple[List[Dict[str, Any]], RerankerStatus]:
+        """Return ``(results, status)``.
+
+        ``results`` 为按 relevance 降序的 ``[{"index": int, "relevance_score": float}, ...]``；
+        ``status`` 描述本次调用的结果（NOT_REQUESTED / SUCCESS / FAILED），
+        与调用方共享的实例状态无关。
+        """
         ...
 
 
@@ -53,12 +60,10 @@ class SiliconFlowReranker:
         self._max_retries = max_retries
         self._retry_backoff_seconds = retry_backoff_seconds
         self._sleep_fn = sleep_fn
-        self.last_status = RerankerStatus.NOT_REQUESTED
-        self.retry_count = 0
 
     def rerank(
         self, query: str, documents: List[str], top_k: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> Tuple[List[Dict[str, Any]], RerankerStatus]:
         """Call SiliconFlow to rerank candidate documents.
 
         Args:
@@ -67,15 +72,12 @@ class SiliconFlowReranker:
             top_k: Maximum number of results to return.
 
         Returns:
-            ``[{"index": int, "relevance_score": float}, ...]`` in descending
-            relevance order.
+            ``(results, status)``；``results`` 为降序的
+            ``[{"index": int, "relevance_score": float}, ...]``。
         """
         if not documents:
-            self.last_status = RerankerStatus.NOT_REQUESTED
-            self.retry_count = 0
-            return []
+            return [], RerankerStatus.NOT_REQUESTED
 
-        self.retry_count = 0
         max_attempts = self._max_retries + 1
         for attempt in range(max_attempts):
             try:
@@ -101,30 +103,26 @@ class SiliconFlowReranker:
                     key=lambda item: item.get("relevance_score", 0),
                     reverse=True,
                 )
-                self.last_status = RerankerStatus.SUCCESS
-                return normalized
+                return normalized, RerankerStatus.SUCCESS
             except Exception as exc:
                 if attempt >= self._max_retries or not self._is_retryable(exc):
-                    self.last_status = RerankerStatus.FAILED
                     logger.warning(
                         "Reranker API 调用失败: %s，保留 RRF 原始排序",
                         exc,
                     )
-                    return []
+                    return [], RerankerStatus.FAILED
 
-                self.retry_count = attempt + 1
                 delay = self._retry_backoff_seconds * (2**attempt)
                 logger.warning(
                     "Reranker API 瞬时失败 (%s)，%.2fs 后重试 %d/%d",
                     exc,
                     delay,
-                    self.retry_count,
+                    attempt + 1,
                     self._max_retries,
                 )
                 self._sleep_fn(delay)
 
-        self.last_status = RerankerStatus.FAILED
-        return []
+        return [], RerankerStatus.FAILED
 
     @staticmethod
     def _is_retryable(exc: Exception) -> bool:

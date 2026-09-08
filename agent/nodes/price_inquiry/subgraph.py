@@ -29,6 +29,8 @@ from typing import Annotated, TypedDict
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import END, StateGraph, add_messages
 
+from core.concurrency.pools import get_query_pool
+from core.rdb.mysql_pool import _get_settings
 from price_engine import (
     SearchIntent,
     _build_llm,
@@ -38,13 +40,10 @@ from price_engine import (
     _normalize_intent_enums,
     _parse_unified_intent,
     _safe_parse_intent,
-    _sql_executor,
 )
 from price_engine import queries as _queries_module
 from price_engine.rendering.answer_templates import CAPABILITY_GUIDANCE, render_answer
 from price_engine.rendering.output_templates import _apply_output_template, get_template
-
-from core.rdb.mysql_pool import _get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -369,13 +368,14 @@ def _run_query_node(state: PriceSubgraphState) -> dict:
     remaining_timeout = max(5, total_timeout - llm_elapsed)
     query_start = time.perf_counter()
 
-    # 使用线程池实现跨平台超时控制
-    query_future = _sql_executor.submit(query_fn, intent)
+    # 使用线程池实现跨平台超时控制（W0-1：与单条 SQL 池分离，避免同池嵌套）
+    query_future = get_query_pool().submit(query_fn, intent)
     try:
         query_result = query_future.result(timeout=remaining_timeout)
         query_elapsed = time.perf_counter() - query_start
     except FutureTimeoutError:
         query_elapsed = time.perf_counter() - query_start
+        query_future.cancel()
         logger.warning(
             "[NODE_TIMEOUT] SQL 查询阶段超时: elapsed=%.2fs timeout=%ds sub_route=%s",
             query_elapsed, remaining_timeout, intent.sub_route,

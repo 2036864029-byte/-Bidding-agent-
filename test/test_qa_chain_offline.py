@@ -77,17 +77,13 @@ class FakeCollection:
 
 
 class SuccessfulReranker:
-    last_status = RerankerStatus.SUCCESS
-
     def rerank(self, query: str, documents: list[str], top_k: int):
-        return [{"index": 0, "relevance_score": 0.88}]
+        return [{"index": 0, "relevance_score": 0.88}], RerankerStatus.SUCCESS
 
 
 class FailedReranker:
-    last_status = RerankerStatus.FAILED
-
     def rerank(self, query: str, documents: list[str], top_k: int):
-        return []
+        return [], RerankerStatus.FAILED
 
 
 def _settings(**overrides: object) -> Settings:
@@ -113,8 +109,9 @@ class RerankerTests(unittest.TestCase):
             http_client=FailingHttp, max_retries=0,
         )
 
-        self.assertEqual(reranker.rerank("问题", ["文档"], 1), [])
-        self.assertIs(reranker.last_status, RerankerStatus.FAILED)
+        results, status = reranker.rerank("问题", ["文档"], 1)
+        self.assertEqual(results, [])
+        self.assertIs(status, RerankerStatus.FAILED)
 
     def test_transient_failure_is_retried_without_sleeping_in_tests(self) -> None:
         class RetryableHttp:
@@ -146,12 +143,12 @@ class RerankerTests(unittest.TestCase):
             sleep_fn=sleeps.append,
         )
 
-        results = reranker.rerank("问题", ["文档"], 1)
+        results, status = reranker.rerank("问题", ["文档"], 1)
 
         self.assertEqual(http_client.calls, 2)
         self.assertEqual(sleeps, [0.25])
         self.assertEqual(results[0]["relevance_score"], 0.9)
-        self.assertIs(reranker.last_status, RerankerStatus.SUCCESS)
+        self.assertIs(status, RerankerStatus.SUCCESS)
 
     def test_client_error_is_not_retried(self) -> None:
         class ClientErrorHttp:
@@ -169,9 +166,46 @@ class RerankerTests(unittest.TestCase):
             http_client=http_client, max_retries=2, sleep_fn=lambda seconds: None,
         )
 
-        self.assertEqual(reranker.rerank("问题", ["文档"], 1), [])
+        results, status = reranker.rerank("问题", ["文档"], 1)
+        self.assertEqual(results, [])
         self.assertEqual(http_client.calls, 1)
-        self.assertIs(reranker.last_status, RerankerStatus.FAILED)
+        self.assertIs(status, RerankerStatus.FAILED)
+
+    def test_status_is_per_call_not_shared_instance_state(self) -> None:
+        """W0-3：状态随返回值给出，实例上不再残留 last_status。"""
+
+        class FlakyHttp:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def post(self, *args, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    class Response:
+                        @staticmethod
+                        def raise_for_status():
+                            return None
+
+                        @staticmethod
+                        def json():
+                            return {"results": [{"index": 0, "relevance_score": 0.9}]}
+
+                    return Response()
+                raise TimeoutError("down")
+
+        reranker = _SiliconFlowReranker(
+            "model", "key", "https://example.invalid/v1",
+            http_client=FlakyHttp(), max_retries=0,
+        )
+
+        first, first_status = reranker.rerank("问题", ["文档"], 1)
+        second, second_status = reranker.rerank("问题", ["文档"], 1)
+
+        self.assertTrue(first)
+        self.assertIs(first_status, RerankerStatus.SUCCESS)
+        self.assertEqual(second, [])
+        self.assertIs(second_status, RerankerStatus.FAILED)
+        self.assertFalse(hasattr(reranker, "last_status"))
 
 
 class DenseFallbackTests(unittest.TestCase):

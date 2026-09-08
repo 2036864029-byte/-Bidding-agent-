@@ -56,13 +56,26 @@ def test_chat_invoke_structure_and_session_mapping():
     assert body["intent"] == "knowledge_qa"
     assert body["citations"][0]["doc_name"] == "法A"
     assert isinstance(body["latency_ms"], int)
+    assert body["session_id"] == "s1"
     assert fake.last_thread == "s1"  # session_id → thread_id
 
 
-def test_chat_default_session_is_default():
+def test_chat_without_session_id_generates_isolated_session():
+    """W0-6：未传 session_id 时不再共用 "default"，服务端生成并回传。"""
     client, fake = _client()
-    client.post("/chat", json={"question": "q"})
-    assert fake.last_thread == "default"
+    r = client.post("/chat", json={"question": "q"})
+    assert r.status_code == 200
+    sid = r.json()["session_id"]
+    assert sid and sid != "default"
+    assert fake.last_thread == sid
+
+
+def test_two_anonymous_requests_do_not_share_thread():
+    """W0-6：两个匿名请求必须落在不同会话，否则对话历史互相串扰。"""
+    client, fake = _client()
+    first = client.post("/chat", json={"question": "q1"}).json()["session_id"]
+    second = client.post("/chat", json={"question": "q2"}).json()["session_id"]
+    assert first != second
 
 
 def test_chat_empty_question_422():
@@ -83,9 +96,10 @@ def test_chat_stream_sse():
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/event-stream")
     text = r.text
+    assert "event: session" in text  # W0-6：首个事件回传会话 id
     assert "event: done" in text
     assert "knowledge_qa" in text  # 图事件逐块转发
-    assert fake.last_thread == "default"
+    assert fake.last_thread and fake.last_thread != "default"
 
 
 def test_chat_stream_false_degrades_to_invoke():

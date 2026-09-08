@@ -7,6 +7,7 @@ import threading
 from typing import Optional
 
 from core.rdb.mysql_pool import _CLEAN_DB, _get_connection, _release_connection
+
 from .models import SearchIntent
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,12 @@ _ENUM_CACHE: dict[tuple[str, str], list[str]] = {}
 _ENUM_CACHE_LOCK = threading.Lock()
 
 def _load_enum_values(table: str, column: str) -> list[str]:
-    """懒加载并缓存指定表列的 DISTINCT 枚举值（最多 500 个）。"""
+    """懒加载并缓存指定表列的 DISTINCT 枚举值（最多 500 个）。
+
+    W0-9：**失败不写缓存**。旧实现把"查询失败"也缓存成空列表，一次瞬时 DB 故障
+    就会让该列的枚举归一本进程内永久失效（审计 B4）。现在只有成功结果才入缓存，
+    真正空表（查询成功但无值）仍照常缓存。
+    """
     key = (table, column)
     with _ENUM_CACHE_LOCK:
         if key in _ENUM_CACHE:
@@ -24,18 +30,21 @@ def _load_enum_values(table: str, column: str) -> list[str]:
 
     values: list[str] = []
     conn = _get_connection(_CLEAN_DB)
-    if conn is not None:
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT DISTINCT `{column}` FROM `{table}` "
-                    f"WHERE `{column}` IS NOT NULL AND `{column}` <> '' LIMIT 500"
-                )
-                values = [str(row[0]).strip() for row in cur.fetchall() if row[0]]
-        except Exception as e:
-            logger.debug("加载枚举值失败 %s.%s: %s", table, column, e)
-        finally:
-            _release_connection(conn)
+    if conn is None:
+        logger.debug("枚举值加载跳过 %s.%s：无法连接数据库（不缓存，下次重试）", table, column)
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT DISTINCT `{column}` FROM `{table}` "
+                f"WHERE `{column}` IS NOT NULL AND `{column}` <> '' LIMIT 500"
+            )
+            values = [str(row[0]).strip() for row in cur.fetchall() if row[0]]
+    except Exception as e:
+        logger.debug("加载枚举值失败 %s.%s: %s（不缓存，下次重试）", table, column, e)
+        return []
+    finally:
+        _release_connection(conn)
 
     with _ENUM_CACHE_LOCK:
         _ENUM_CACHE[key] = values

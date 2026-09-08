@@ -5,6 +5,19 @@
 `from agent.nodes.price_inquiry import X` 旧路径由该侧门面 re-export 兼容。
 """
 
+# MySQL 连接池（自 core/rdb/mysql_pool 直取；引擎代码统一改指 core）
+from core.rdb.mysql_pool import (  # noqa: F401
+    _CLEAN_DB,
+    _get_connection,
+    _get_settings,
+    _mysql_base_kwargs,
+    _pool_connections,
+    _pool_in_use,
+    _pool_lock,
+    _release_connection,
+    _settings_cache,
+)
+
 from .enum_norm import (
     _ENUM_CACHE,
     _ENUM_CACHE_LOCK,
@@ -14,7 +27,6 @@ from .enum_norm import (
     _match_enum_value,
     _normalize_intent_enums,
 )
-
 from .intent import (
     _CODE_TOKEN_PATTERN,
     _COMPANY_NAME_MAX_LEN,
@@ -41,26 +53,10 @@ from .intent import (
     _safe_parse_intent,
     _split_overlong_keyword,
 )
-
 from .models import (
     HardFilters,
     SearchIntent,
 )
-
-# MySQL 连接池（自 core/rdb/mysql_pool 直取；引擎代码统一改指 core）
-from core.rdb.mysql_pool import (  # noqa: F401
-    _CLEAN_DB,
-    _get_connection,
-    _get_settings,
-    _mysql_base_kwargs,
-    _pool_connections,
-    _pool_in_use,
-    _pool_lock,
-    _release_connection,
-    _settings_cache,
-)
-
-
 from .queries import (
     _query_all_tables,
     _query_bidding_aggregation,
@@ -68,7 +64,6 @@ from .queries import (
     _query_company_data,
     _query_penalty_by_company_name,
 )
-
 from .recall import (
     _RECALL_STAGE_WEIGHTS,
     _clean_result_row,
@@ -84,15 +79,12 @@ from .recall import (
     _query_semantic_rows,
     _query_tables,
     _rank_records,
-    _sql_executor,
 )
-
 from .schema import (
     _HARDCODED_SCHEMA,
     _get_classification,
     _semantic_columns,
 )
-
 from .semantic import (
     _EMBEDDINGS_CACHE,
     _MYSQL_SEMANTIC_BATCH_SIZE,
@@ -123,7 +115,6 @@ from .semantic import (
     _semantic_collection_row_count,
     _semantic_recall_candidates,
 )
-
 from .sql_builders import (
     _PREFERENCE_FILTER_FIELDS,
     _build_candidate_sql,
@@ -245,7 +236,6 @@ __all__ = [
     "_semantic_recall_candidates",
     "_settings_cache",
     "_split_overlong_keyword",
-    "_sql_executor",
     "_strip_preference_filters",
 ]
 

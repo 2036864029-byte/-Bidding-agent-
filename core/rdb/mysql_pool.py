@@ -1,20 +1,24 @@
 # 功能：MySQL 全局连接池 + Settings 单例访问（价格查询链路基础设施层）。
 """MySQL 连接池 — 由 agent/nodes/price_inquiry/db.py 上提迁移（Phase 0 / A-10）。
 
-迁移要点（v1.3 A-10 修正）：
-  - 池逻辑原样上提；host/user/password/port/clean_db 改从 Settings 读取
-    （core/config/settings.py 新增 MYSQL_* 字段），不再绕过配置直读 os.getenv，
-    也不再硬编码内网地址（原 db.py:25-26 默认 192.168.10.120 / iflytek 已移除）。
-  - host/user 缺失时在连接处报错（提示补 .env），避免静默连到错误地址。
+W0-10 重写要点（审计 A5）：
+  - **上限**：连接数受 ``Settings.mysql_pool_max`` 约束；池满时等待归还，超时返回
+    None（调用方按"数据库不可用"降级为空结果），不再无限增长。
+  - **锁外验证**：`ping()` 是网络 IO，移出锁外执行，避免所有 DB 访问被一把锁串行化。
+  - **空洞清理**：失效连接置 None 后由 ``_compact_pool_locked`` 压实并重映射占用索引。
+  - **超时语义修正**：socket 读写超时改由 ``Settings.mysql_read_timeout`` 显式给出
+    （SSDictCursor 流式读大表需要较长窗口）；单条 SQL 的业务超时由
+    ``price_engine.recall._execute_sql_with_timeout`` 的线程池控制。旧实现用
+    ``kwargs.setdefault`` 想覆盖已存在的 key，从未生效。
 
-price_inquiry/db.py 保留为 re-export 壳，既有 `from .db import _get_connection` 等
-消费方零改动。
+配置（.env）：MYSQL_HOST / MYSQL_USER / MYSQL_PASSWORD / MYSQL_PORT / MYSQL_CLEAN_DB。
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any, Optional
 
 import pymysql
@@ -24,8 +28,9 @@ from core.config.settings import Settings
 logger = logging.getLogger(__name__)
 
 _pool_lock = threading.Lock()
+_pool_cond = threading.Condition(_pool_lock)
 
-_pool_connections: list[pymysql.Connection] = []
+_pool_connections: list[Optional[pymysql.Connection]] = []
 
 _pool_in_use: set[int] = set()
 
@@ -56,67 +61,148 @@ def _mysql_base_kwargs() -> dict[str, Any]:
         "port": settings.mysql_port,
         "charset": "utf8mb4",
         "connect_timeout": min(10, settings.sql_query_timeout),
-        "read_timeout": settings.sql_query_timeout,
-        "write_timeout": settings.sql_query_timeout,
+        "read_timeout": settings.mysql_read_timeout,
+        "write_timeout": settings.mysql_read_timeout,
     }
+
+
+def _safe_close(conn: Optional[pymysql.Connection]) -> None:
+    if conn is None:
+        return
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
+def _pool_max() -> int:
+    return max(1, _get_settings().mysql_pool_max)
+
+
+def _live_count_locked() -> int:
+    return sum(1 for conn in _pool_connections if conn is not None)
+
+
+def _compact_pool_locked() -> None:
+    """压实池：去掉失效连接留下的 None 空洞，并重映射占用索引。
+
+    调用方必须持有 ``_pool_lock``。
+    """
+    global _pool_connections, _pool_in_use
+    if not any(conn is None for conn in _pool_connections):
+        return
+    remap: dict[int, int] = {}
+    kept: list[Optional[pymysql.Connection]] = []
+    for old_index, conn in enumerate(_pool_connections):
+        if conn is None:
+            continue
+        remap[old_index] = len(kept)
+        kept.append(conn)
+    _pool_in_use = {remap[i] for i in _pool_in_use if i in remap}
+    _pool_connections = kept
 
 
 def _get_connection(database: str) -> Optional[pymysql.Connection]:
     """从连接池获取 MySQL 连接。
 
-    优先复用空闲连接（ping 验证存活），无空闲时创建新连接。
+    优先复用空闲连接（锁内只挑索引，存活验证在锁外做网络 ping），无空闲且未达
+    上限时创建新连接；池满则等待归还，超时返回 None。
     """
-    with _pool_lock:
-        # 尝试复用空闲连接
-        for i, conn in enumerate(_pool_connections):
-            if i not in _pool_in_use:
-                try:
-                    conn.ping(reconnect=False)
-                    _pool_in_use.add(i)
-                    conn.select_db(database)
-                    return conn
-                except Exception:
-                    # 连接已断开，移除
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
-                    _pool_connections[i] = None
+    deadline = time.monotonic() + float(_get_settings().sql_query_timeout)
 
-        # 创建新连接
+    while True:
+        candidate: Optional[int] = None
+        with _pool_lock:
+            _compact_pool_locked()
+            for index in range(len(_pool_connections)):
+                if index not in _pool_in_use:
+                    _pool_in_use.add(index)
+                    candidate = index
+                    break
+            if candidate is None and _live_count_locked() >= _pool_max():
+                _pool_cond.wait(timeout=0.5)
+                if time.monotonic() >= deadline:
+                    logger.warning(
+                        "MySQL 连接池已满（上限 %d），等待可用连接超时", _pool_max()
+                    )
+                    return None
+                continue
+
+        if candidate is None:
+            # 未达上限 → 新建连接
+            return _create_connection(database)
+
+        conn = _pool_connections[candidate]
+        if conn is None:  # 压实后被置空，重试
+            with _pool_lock:
+                _pool_in_use.discard(candidate)
+            continue
         try:
-            kwargs = _mysql_base_kwargs()
-            # 流式游标可能需要长时间持有连接，延长超时避免断开
-            kwargs.setdefault("read_timeout", 300)
-            kwargs.setdefault("write_timeout", 300)
-            kwargs.setdefault("connect_timeout", 30)
-            conn = pymysql.connect(**kwargs, database=database)
-            # 设置会话级超时，确保 SSDictCursor 长时间流式读取不被断开
-            with conn.cursor() as cur:
-                cur.execute("SET SESSION net_read_timeout=28800")
-                cur.execute("SET SESSION net_write_timeout=28800")
-                cur.execute("SET SESSION wait_timeout=28800")
-            _pool_connections.append(conn)
-            idx = len(_pool_connections) - 1
-            _pool_in_use.add(idx)
+            # 锁外验证存活（网络 IO 不得在锁内做）
+            conn.ping(reconnect=False)
+            conn.select_db(database)
             return conn
-        except Exception as e:
-            logger.error("连接 %s 失败: %s", database, e)
-            return None
+        except Exception:
+            with _pool_lock:
+                if candidate < len(_pool_connections) and _pool_connections[candidate] is conn:
+                    _pool_connections[candidate] = None
+                _pool_in_use.discard(candidate)
+                _pool_cond.notify_all()
+            _safe_close(conn)
 
 
-def _release_connection(conn: pymysql.Connection) -> None:
-    """释放连接回池。"""
-    with _pool_lock:
-        for i, pooled in enumerate(_pool_connections):
-            if pooled is conn:
-                _pool_in_use.discard(i)
-                return
-    # 不在池中（异常情况），直接关闭
+def _create_connection(database: str) -> Optional[pymysql.Connection]:
+    """新建连接并纳入池管理。"""
     try:
-        conn.close()
-    except Exception:
-        pass
+        kwargs = _mysql_base_kwargs()
+        conn = pymysql.connect(**kwargs, database=database)
+        # 会话级空闲超时：让服务端容忍长连接的静默期
+        with conn.cursor() as cur:
+            cur.execute("SET SESSION net_read_timeout=28800")
+            cur.execute("SET SESSION net_write_timeout=28800")
+            cur.execute("SET SESSION wait_timeout=28800")
+    except Exception as e:
+        logger.error("连接 %s 失败: %s", database, e)
+        return None
+
+    with _pool_lock:
+        _compact_pool_locked()
+        _pool_connections.append(conn)
+        _pool_in_use.add(len(_pool_connections) - 1)
+    return conn
+
+
+def _release_connection(conn: Optional[pymysql.Connection]) -> None:
+    """释放连接回池（唤醒等待者）。"""
+    if conn is None:
+        return
+    with _pool_lock:
+        for index, pooled in enumerate(_pool_connections):
+            if pooled is conn:
+                _pool_in_use.discard(index)
+                _pool_cond.notify_all()
+                return
+    # 不在池中（异常情况或已被 discard），直接关闭
+    _safe_close(conn)
+
+
+def discard_connection(conn: Optional[pymysql.Connection]) -> None:
+    """把连接标记为不可复用：从池中摘除并关闭（W0-2）。
+
+    用于 SQL 超时场景——提交到执行池的任务超时后可能**仍在使用该连接**，若把它
+    放回池里，下一个请求会取到"正被别的线程使用"的连接，导致 pymysql 协议错乱
+    （审计 A2）。摘除后 `_release_connection` 找不到它，会再 close 一次（幂等）。
+    """
+    if conn is None:
+        return
+    with _pool_lock:
+        for index, pooled in enumerate(_pool_connections):
+            if pooled is conn:
+                _pool_connections[index] = None
+                _pool_in_use.discard(index)
+                break
+        _pool_cond.notify_all()
+    _safe_close(conn)
 
 
 # 兼容旧名（模块级 _CLEAN_DB 常量以 env 为准，db.py 原读取语义）

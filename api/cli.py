@@ -13,9 +13,7 @@ renderers（to_reply + render_reply），不再各自维护 _render_business_dat
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
-import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -25,19 +23,11 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from agent import AgentGraph
-from core.protocol.reply import to_reply
+from core.observability.logging import setup_logging
 from core.protocol.renderers.cli import render_reply
+from core.protocol.reply import to_reply
 
-__all__ = ["main", "run_single", "run_interactive"]
-
-
-def setup_logging(verbose: bool = False) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+__all__ = ["main", "run_single", "run_interactive", "setup_logging"]
 
 
 def _safe_print(text: Any = "") -> None:

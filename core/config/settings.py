@@ -414,6 +414,17 @@ class Settings:
     )
 
     # ============================================================
+    # 线程池（W0-1）— "整条查询"与"单条 SQL"必须分池
+    # ============================================================
+    # 同池嵌套会导致并发 ≥ worker 数时内层任务永不调度（审计 A1）。两者独立配置。
+    query_pool_max_workers: int = field(
+        default_factory=lambda: int(os.getenv("QUERY_POOL_MAX_WORKERS", "8"))
+    )
+    sql_pool_max_workers: int = field(
+        default_factory=lambda: int(os.getenv("SQL_POOL_MAX_WORKERS", "8"))
+    )
+
+    # ============================================================
     # price 召回链熔断（P3 D-6）— 全局 deadline 与全表扫描放行开关
     # ============================================================
     # RecallPipeline 全局召回预算：到点未命中即熔断返回空（不再裸进全表扫描）。
@@ -453,6 +464,16 @@ class Settings:
     )
     mysql_clean_db: str = field(
         default_factory=lambda: os.getenv("MYSQL_CLEAN_DB", "ztb_clean")
+    )
+    # 连接池上限（W0-10）：无上限时并发下池会无限增长（审计 A5）。
+    mysql_pool_max: int = field(
+        default_factory=lambda: int(os.getenv("MYSQL_POOL_MAX", "16"))
+    )
+    # socket 读/写超时（W0-10）：SSDictCursor 流式读大表需要较长窗口；
+    # 单条 SQL 的**业务**超时由 _execute_sql_with_timeout 用线程池控制，
+    # 此处只防 socket 层卡死。旧实现试图 setdefault 覆盖但从未生效。
+    mysql_read_timeout: int = field(
+        default_factory=lambda: int(os.getenv("MYSQL_READ_TIMEOUT", "300"))
     )
 
     # ============================================================
@@ -497,6 +518,19 @@ class Settings:
         default_factory=lambda: os.getenv(
             "ENABLE_EFFECTIVE_FILTER", "false"
         ).lower() in {"1", "true", "yes"}
+    )
+
+    # ============================================================
+    # 上传限制（W0-8）— /files/upload 的大小与类型闸门
+    # ============================================================
+    # 大小上限（MB）：整文件读入内存，无上限时可被单请求打爆（审计 A/D 类）。
+    max_upload_mb: int = field(
+        default_factory=lambda: int(os.getenv("MAX_UPLOAD_MB", "20"))
+    )
+    # 扩展名白名单：与 public_kb.ingestion.router._EXT_TO_FORMAT 对齐；
+    # 未命中直接 400，避免任意二进制走"嗅探失败 → 默认 text"的宽松路径。
+    allowed_upload_exts: tuple[str, ...] = (
+        ".pdf", ".csv", ".txt", ".md", ".markdown",
     )
 
     # ============================================================
