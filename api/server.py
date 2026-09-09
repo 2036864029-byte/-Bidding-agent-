@@ -27,6 +27,7 @@ from fastapi.responses import StreamingResponse
 
 from agent import AgentGraph
 from core.config.settings import Settings
+from core.errors.handlers import register_exception_handlers, unhandled_envelope
 from core.observability.context import set_session_id
 from core.observability.logging import setup_logging
 from core.observability.metrics import content_type, render_metrics
@@ -111,9 +112,12 @@ def _sse_events(
             context_docs=context_docs,
         ):
             yield "data: " + json.dumps(event, ensure_ascii=False, default=str) + "\n\n"
-    except Exception as exc:  # 流中异常以 error 事件收尾，不中断连接
-        logger.error("SSE 异常: %s", exc)
-        yield "event: error\ndata: " + json.dumps({"error": str(exc)}, ensure_ascii=False) + "\n\n"
+    except Exception:  # 流中异常以 error 事件收尾，不中断连接
+        # W2-3：只回统一信封，异常原文只进日志（不向客户端泄露内部细节）
+        logger.exception("SSE 异常")
+        yield "event: error\ndata: " + json.dumps(
+            unhandled_envelope(), ensure_ascii=False
+        ) + "\n\n"
     yield "event: done\ndata: {}\n\n"
 
 
@@ -171,6 +175,7 @@ def create_app(
         get_agent_fn: 返回 AgentGraph 的依赖函数；测试可注入 mock。
     """
     app = FastAPI(title="ztb_demo Agent API", version="0.1.0")
+    register_exception_handlers(app)  # W2-3：统一错误信封 + 不泄露内部细节
 
     # 中间件顺序：后添加的在外层。RequestContext 先加 → CORS 在外层，
     # 保证预检请求也能带上 CORS 头。

@@ -34,3 +34,7 @@ class ChatResponse(BaseModel):
         description="本轮实际使用的会话 id（请求未传时由服务端生成并回传，"
                     "客户端应原样带回以延续上下文 / 使用同一会话的上传文件）",
     )
+    error_code: Optional[str] = Field(
+        None,
+        description="统一错误码（W2-3；正常回答为 null，见 core.errors.codes.ErrorCode）",
+    )

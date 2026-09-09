@@ -24,6 +24,8 @@ from langchain_core.messages import AIMessage
 
 from core.observability.metrics import record_branch_latency
 
+from .codes import ErrorCode
+
 logger = logging.getLogger(__name__)
 
 #: 节点函数名 → 用户可读的能力名（降级文案用）
@@ -96,6 +98,8 @@ def with_fallback(
                     "branch": "fallback",
                     "answer": error_msg,
                     "data": {
+                        # W2-3：统一错误码（出口经 to_reply 透出给 API/CLI）
+                        "error_code": ErrorCode.NODE_FAILED.value,
                         "error": str(e)[:200],
                         "failed_branch": node_name,
                     },

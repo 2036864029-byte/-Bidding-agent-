@@ -17,4 +17,5 @@ def reply_to_response(reply: AgentReply) -> Dict[str, Any]:
         "citations": reply.citations,
         "data": reply.data,
         "latency_ms": reply.trace.get("latency_ms"),
+        "error_code": reply.error_code,
     }

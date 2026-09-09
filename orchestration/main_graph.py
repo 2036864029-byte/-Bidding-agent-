@@ -179,8 +179,11 @@ def build_supervisor_graph(
 
     graph = StateGraph(SupervisorState)
 
-    # ── supervisor 节点 ──
-    graph.add_node("supervisor", build_supervisor_node(llm, reg, embedder, llm_router))
+    # ── supervisor 节点（W2-3：与 agent 节点同样纳入兜底）──
+    graph.add_node(
+        "supervisor",
+        _with_fallback(build_supervisor_node(llm, reg, embedder, llm_router)),
+    )
 
     # ── agent 节点（W2-1：registry 驱动；编译子图仍可注入覆盖，供离线测试）──
     agent_nodes = resolve_agent_nodes(reg)
@@ -203,8 +206,8 @@ def build_supervisor_graph(
     for name, fn in agent_nodes.items():
         graph.add_node(name, _stamped_agent(name, _with_fallback(_as_agent_callable(fn))))
 
-    # ── handoff 决策节点 ──
-    graph.add_node("handoff_decider", _handoff_decider_node)
+    # ── handoff 决策节点（W2-3：同样纳入兜底）──
+    graph.add_node("handoff_decider", _with_fallback(_handoff_decider_node))
 
     # ── 边 ──
     graph.set_entry_point("supervisor")

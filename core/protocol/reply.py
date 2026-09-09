@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from core.errors.codes import ErrorCode
+
 ReplyType = Literal["kb_answer", "price_records", "chat", "doc_qa", "fallback"]
 
 # 节点 branch → 回复类型
@@ -37,6 +39,36 @@ class AgentReply(BaseModel):
     trace: Dict[str, Any] = Field(
         default_factory=dict, description="intent / latency_ms / guardrail 等诊断"
     )
+    error_code: Optional[str] = Field(
+        None,
+        description="统一错误码（W2-3；正常回答为 None，见 core.errors.codes.ErrorCode）",
+    )
+
+
+def _infer_error_code(business_result: Dict[str, Any], branch: str) -> Optional[str]:
+    """从 business_result 推断错误码（显式优先，其次按已知标记推断）。"""
+    data = business_result.get("data")
+    if not isinstance(data, dict):
+        return None
+
+    explicit = data.get("error_code")
+    if explicit:
+        return str(explicit)
+
+    if branch == "knowledge_qa":
+        validation = data.get("citation_validation")
+        if isinstance(validation, dict):
+            if validation.get("is_refusal"):
+                return ErrorCode.RETRIEVAL_EMPTY.value
+            if validation.get("all_passed") is False:
+                return ErrorCode.GUARDRAIL_FAILED.value
+
+    if business_result.get("query_type") == "unified_guidance":
+        return ErrorCode.NO_VALID_ENTITY.value
+    if business_result.get("query_type") == "capability_boundary":
+        return ErrorCode.UNSUPPORTED_CAPABILITY.value
+
+    return None
 
 
 def to_reply(
@@ -74,6 +106,7 @@ def to_reply(
         citations=citations,
         data=data,
         trace=trace,
+        error_code=_infer_error_code(business_result, branch),
     )
 
 
