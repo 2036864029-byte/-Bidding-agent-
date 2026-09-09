@@ -20,6 +20,7 @@ from .contracts import (
     validate_qa_result,
     validate_question,
 )
+from .trace import AgentTrace, PlanStep, ReflectionRecord, StepRecord, trace_payload
 
 __all__ = [
     # chunk_ids
@@ -40,4 +41,10 @@ __all__ = [
     "validate_embedding_batch",
     "validate_qa_result",
     "build_effective_expr",
+    # agent trace（W3-3）
+    "AgentTrace",
+    "PlanStep",
+    "StepRecord",
+    "ReflectionRecord",
+    "trace_payload",
 ]
