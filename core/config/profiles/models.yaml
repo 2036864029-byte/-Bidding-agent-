@@ -38,6 +38,11 @@ slots:
     model: null
     temperature: 0.0
     note: doc_agent 工具驱动 agent（P6 Step 3；工具选择需确定性，temperature=0）
+  deep_agent:
+    provider: deepseek
+    model: null
+    temperature: 0.0
+    note: deep_agent 深度综合 agent（W3-3；规划/综合/反思需确定性，temperature=0）
   rewrite:
     provider: deepseek
     model: null

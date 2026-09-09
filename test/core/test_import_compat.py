@@ -80,7 +80,7 @@ def test_db_pool_core_exports_are_consistent():
 
 
 def test_models_yaml_declared_slots():
-    """A-2：models.yaml 声明实际调用点槽位（3 基础 + P6 Step3 doc_agent），general_chat 无槽位。"""
+    """A-2：models.yaml 声明实际调用点槽位（3 基础 + P6 Step3 doc_agent + W3-3 deep_agent），general_chat 无槽位。"""
     from core.llm.registry import available_slots
 
-    assert available_slots() == ["router", "kb_generation", "price_intent", "doc_agent", "rewrite"]
+    assert available_slots() == ["router", "kb_generation", "price_intent", "doc_agent", "deep_agent", "rewrite"]

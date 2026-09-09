@@ -174,7 +174,28 @@ def _seed_doc_agent() -> CapabilitySpec:
     )
 
 
-# 进程级默认注册表（惰性 seed：5 内置 enabled + echo_demo/doc_agent 预留 disabled）
+def _seed_deep_agent() -> CapabilitySpec:
+    """deep_agent（W3-3 Plan-and-Solve + Reflection；enabled=False 预留）。
+
+    三阶段管线（规划→执行→综合→反思）比 doc_agent 更适合复杂综合问题；路由给
+    真实用户需先数据清理 + router golden 重生成（同 doc_agent 先例）。
+    """
+    return CapabilitySpec(
+        id="deep_agent", node="deep_agent",
+        description="深度综合 agent（规划→执行→综合→反思，W3-3 预留）",
+        route_desc="深度综合问答：跨知识检索与结构化数据的多步自主规划",
+        route_tool_doc=(
+            "深度综合问答：需要多步检索/多工具组合才能回答的复杂问题（如先查企业"
+            "中标数据、再查相关法规）。触发：问题同时涉及法规知识与企业数据、或"
+            "需要先拆解再回答的场景。"
+        ),
+        examples=["XX公司最近中标项目涉及哪些法律风险？"],
+        model_slots=["deep_agent"], tools=["kb_search", "price_query"],
+        enabled=False,
+    )
+
+
+# 进程级默认注册表（惰性 seed：5 内置 enabled + echo_demo/doc_agent/deep_agent 预留 disabled）
 _default_registry: Optional[CapabilityRegistry] = None
 
 
@@ -186,6 +207,7 @@ def get_default_registry() -> CapabilityRegistry:
         seed_builtins(reg)
         reg.register(_seed_echo_demo())
         reg.register(_seed_doc_agent())
+        reg.register(_seed_deep_agent())
         _default_registry = reg
     return _default_registry
 

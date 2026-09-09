@@ -21,19 +21,20 @@ def test_default_registry_has_five_builtin_plus_echo():
     reg = get_default_registry()
     ids = reg.ids()
     for want in ("knowledge_qa", "price_inquiry", "general_chat", "doc_qa", "fallback",
-                 "echo_demo", "doc_agent"):
+                 "echo_demo", "doc_agent", "deep_agent"):
         assert want in ids, f"缺能力 {want}"
-    assert len(reg.all()) == 7
+    assert len(reg.all()) == 8
 
 
 def test_default_enabled_candidates_equal_five_builtins():
-    """L2 门禁：router 候选集 = 现有 5 分支（echo_demo / doc_agent 预留默认 disabled）。"""
+    """L2 门禁：router 候选集 = 现有 5 分支（echo_demo / doc_agent / deep_agent 预留默认 disabled）。"""
     reset_default_registry()
     reg = get_default_registry()
     enabled = [s.id for s in reg.enabled_specs()]
     assert enabled == ["knowledge_qa", "price_inquiry", "general_chat", "doc_qa", "fallback"]
     assert not reg.get("echo_demo").enabled
     assert not reg.get("doc_agent").enabled
+    assert not reg.get("deep_agent").enabled
 
 
 def test_capability_spec_fields():
@@ -85,7 +86,7 @@ def test_seed_builtins_reusable_on_fresh_registry():
 def test_builtin_nodespecs_have_callable_entries():
     specs = builtin_specs()
     assert set(specs) == {"knowledge_qa", "price_inquiry", "general_chat", "doc_qa",
-                          "doc_agent", "fallback"}
+                          "doc_agent", "deep_agent", "fallback"}
     for spec in specs.values():
         assert isinstance(spec, NodeSpec)
         assert callable(spec.entry)
