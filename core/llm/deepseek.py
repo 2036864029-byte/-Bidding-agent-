@@ -27,6 +27,7 @@ class DeepSeekProvider(LLMProvider):
         *,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
+        callbacks: Optional[list] = None,
     ) -> ChatOpenAI:
         settings = self._settings
         kwargs: dict = {
@@ -42,6 +43,9 @@ class DeepSeekProvider(LLMProvider):
         }
         if settings.llm_base_url:
             kwargs["base_url"] = settings.llm_base_url
+        if callbacks:
+            # W2-2：LLM 耗时 / token 埋点回调
+            kwargs["callbacks"] = list(callbacks)
         return ChatOpenAI(**kwargs)
 
 

@@ -39,11 +39,13 @@ class LLMProvider(ABC):
         *,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
+        callbacks: Optional[list] = None,
     ) -> BaseChatModel:
         """构造模型实例。
 
         Args:
             model: 显式模型名；None 时沿用 settings.llm_model（支持 env 覆盖）。
             temperature: 显式温度；None 时沿用 settings.llm_temperature。
+            callbacks: 可选的 LangChain 回调（W2-2：LLM 耗时/token 埋点）。
         """
         raise NotImplementedError

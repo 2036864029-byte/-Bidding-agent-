@@ -20,20 +20,23 @@ from pathlib import Path
 from typing import Callable, Generator, Optional
 
 import anyio
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile
 from fastapi import File as FileParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from agent import AgentGraph
 from core.config.settings import Settings
+from core.observability.context import set_session_id
 from core.observability.logging import setup_logging
+from core.observability.metrics import content_type, render_metrics
 from core.protocol.renderers.api import reply_to_response
 from core.protocol.reply import to_reply
 from public_kb.ingestion.parse_tool import parse_file
 
 from . import file_store
 from .deps import get_agent
+from .middleware import RequestContextMiddleware
 from .schemas import ChatRequest, ChatResponse
 
 logger = logging.getLogger(__name__)
@@ -69,6 +72,7 @@ def _resolve_context_docs(file_ids: list[str], session_id: str) -> list[tuple[st
 
 def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
     session_id = _resolve_session_id(req.session_id)
+    set_session_id(session_id)  # W2-2：会话 id 进入日志上下文
     t0 = time.perf_counter()
     result = agent.invoke(
         req.question,
@@ -168,6 +172,9 @@ def create_app(
     """
     app = FastAPI(title="ztb_demo Agent API", version="0.1.0")
 
+    # 中间件顺序：后添加的在外层。RequestContext 先加 → CORS 在外层，
+    # 保证预检请求也能带上 CORS 头。
+    app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_parse_cors_origins(),
@@ -178,6 +185,11 @@ def create_app(
     @app.get("/health")
     def health(agent: AgentGraph = Depends(get_agent_fn)) -> dict:
         return {"status": "ok", "agent_ready": agent is not None}
+
+    @app.get("/metrics")
+    def metrics() -> Response:
+        """Prometheus 文本格式指标（W2-2）。"""
+        return Response(content=render_metrics(), media_type=content_type())
 
     @app.post("/files/upload")
     async def upload_file(
@@ -190,6 +202,7 @@ def create_app(
         未传 session_id 时服务端生成并回传，后续 /chat 带上同一 id 才能使用该文件。
         """
         session = _resolve_session_id(session_id)
+        set_session_id(session)  # W2-2：会话 id 进入日志上下文
         name = file.filename or "upload"
         max_bytes, allowed_exts = _upload_limits()
         _validate_upload_name(name, allowed_exts)
@@ -237,6 +250,7 @@ def create_app(
             # 兼容：stream=false 打到 /chat/stream 时退化为普通响应
             return _invoke_response(agent, req)
         session_id = _resolve_session_id(req.session_id)
+        set_session_id(session_id)  # W2-2：会话 id 进入日志上下文
         # 文件校验放在响应开始之前，失败返回正常 HTTP 404 而不是流中 error 事件
         context_docs = _resolve_context_docs(req.file_ids, session_id)
         return StreamingResponse(

@@ -19,6 +19,7 @@ import yaml
 from langchain_core.language_models import BaseChatModel
 
 from ..config.settings import Settings
+from ..observability.callbacks import LLMMetricsCallback
 from .base import LLMProvider
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,10 @@ def create_llm_for_slot(
     model = provider_cls(settings).build(
         model=slot_cfg.get("model"),
         temperature=slot_cfg.get("temperature"),
+        # W2-2：所有经槽位创建的模型自动挂 LLM 耗时/token 埋点（调用点零改动）
+        callbacks=[LLMMetricsCallback(
+            slot, str(slot_cfg.get("model") or settings.llm_model or ""),
+        )],
     )
     logger.info(
         "模型槽位 %r → provider=%s model=%s temperature=%s",

@@ -28,7 +28,7 @@ class FakeProvider(LLMProvider):
     def __init__(self, settings) -> None:
         super().__init__(settings)
 
-    def build(self, *, model=None, temperature=None):
+    def build(self, *, model=None, temperature=None, callbacks=None):
         return FakeLLM(
             model_name=model or self._settings.llm_model,
             temperature=(
