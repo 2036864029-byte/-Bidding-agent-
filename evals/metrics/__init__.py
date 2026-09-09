@@ -1,4 +1,4 @@
-"""evals.metrics — 评测指标计算（检索层确定性指标起步）。"""
+"""evals.metrics — 评测指标计算（检索层确定性指标 / 路由层准确率）。"""
 
 from __future__ import annotations
 
@@ -15,10 +15,12 @@ from .retrieval import (
     precision_at_k,
     recall_at_k,
     text_hit_rate,
+    text_full_recall,
     text_mrr,
     text_multi_hop_recall,
     text_recall,
 )
+from .router import build_rows, check_gates, evaluate_routing, expected_route_of
 
 __all__ = [
     "RetrievedMap",
@@ -31,9 +33,14 @@ __all__ = [
     "evaluate_retrieval",
     "missing_gold",
     "text_hit_rate",
+    "text_full_recall",
     "text_recall",
     "text_mrr",
     "text_multi_hop_recall",
     "evaluate_retrieval_text",
     "missing_gold_text",
+    "expected_route_of",
+    "build_rows",
+    "evaluate_routing",
+    "check_gates",
 ]

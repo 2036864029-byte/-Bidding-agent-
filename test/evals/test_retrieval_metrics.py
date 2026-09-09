@@ -14,6 +14,7 @@ from evals.metrics import (
     precision_at_k,
     recall_at_k,
     text_hit_rate,
+    text_full_recall,
     text_mrr,
     text_multi_hop_recall,
     text_recall,
@@ -142,11 +143,23 @@ def test_text_mrr_and_multi_hop():
     assert text_multi_hop_recall(samples, texts, k=5) == 1.0  # 两段都召回
 
 
+def test_text_full_recall_counts_all_types():
+    """full_recall = 全部金标段落都召回（不限 query_type，E5-3 双段全中口径）。"""
+    samples = [_st("a", ["金标一", "金标二"], qt="complex"),
+               _st("b", ["金标三"], qt="single_hop")]
+    texts = {"a": ["含金标一的段落", "含金标二的段落"], "b": ["无关"]}
+
+    assert text_full_recall(samples, texts, k=5) == 0.5
+    # multi_hop_recall 会把 complex 过滤掉（池子为空 → 0）
+    assert text_multi_hop_recall(samples, texts, k=5) == 0.0
+
+
 def test_evaluate_retrieval_text_shape():
     samples = [_st("a", ["金标"])]
     out = evaluate_retrieval_text(samples, {"a": ["含金标"]}, k=5)
 
-    assert set(out) == {"hit_rate@5", "recall@5", "mrr@5", "multi_hop_recall@5"}
+    assert set(out) == {"hit_rate@5", "recall@5", "mrr@5", "multi_hop_recall@5",
+                        "full_recall@5"}
     assert out["hit_rate@5"] == 1.0
 
 

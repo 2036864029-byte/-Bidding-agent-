@@ -220,6 +220,26 @@ def text_multi_hop_recall(
     return ok / len(multi)
 
 
+def text_full_recall(
+    samples: Sequence[EvalSample], texts: RetrievedTextMap, *, k: int = 5
+) -> float:
+    """**全部金标段落都被召回**的样本比例（不限 query_type）。
+
+    `text_multi_hop_recall` 只统计 `multi_hop` 样本；本函数是它的全类型版本，供
+    E5-3 对比「双段全中」在 complex 集上的表现（complex 的 `query_type` 不是
+    multi_hop，会被前者过滤掉）。
+    """
+    pool = [s for s in samples if s.ground_truth_text]
+    if not pool:
+        return 0.0
+    ok = sum(
+        1
+        for s in pool
+        if all(_passage_hit(texts.get(s.question, [])[:k], g) for g in s.ground_truth_text)
+    )
+    return ok / len(pool)
+
+
 def evaluate_retrieval_text(
     samples: Sequence[EvalSample], texts: RetrievedTextMap, *, k: int = 5
 ) -> Dict[str, float]:
@@ -229,6 +249,7 @@ def evaluate_retrieval_text(
         f"recall@{k}": round(text_recall(samples, texts, k=k), 4),
         f"mrr@{k}": round(text_mrr(samples, texts, k=k), 4),
         f"multi_hop_recall@{k}": round(text_multi_hop_recall(samples, texts, k=k), 4),
+        f"full_recall@{k}": round(text_full_recall(samples, texts, k=k), 4),
     }
 
 
@@ -260,6 +281,7 @@ __all__ = [
     "text_recall",
     "text_mrr",
     "text_multi_hop_recall",
+    "text_full_recall",
     "evaluate_retrieval_text",
     "missing_gold_text",
 ]
