@@ -23,6 +23,8 @@ from typing import Callable, Dict, Optional
 from langchain_core.messages import AIMessage
 
 from core.observability.metrics import record_branch_latency
+from core.observability.tracing import set_span_attrs
+from core.observability.tracing import span as _span
 
 from .codes import ErrorCode
 
@@ -81,34 +83,44 @@ def with_fallback(
     @functools.wraps(node_fn)
     def wrapped(state: dict, config: Optional[Dict] = None) -> dict:
         _t0 = time.perf_counter()
-        try:
-            if accepts_config(node_fn):
-                result = node_fn(state, config)
-            else:
-                result = node_fn(state)
-        except Exception as e:
-            node_name = getattr(node_fn, "__name__", "unknown")
-            label = labels.get(node_name, "当前")
-            logger.error("节点 [%s] 执行失败: %s", node_name, e, exc_info=True)
+        node_name = getattr(node_fn, "__name__", "unknown")
+        # E0-3：节点 span（所有业务节点都经本包装器，单点覆盖全链路）
+        with _span(f"node.{node_name}", **{"ztb.node": node_name}) as _sp:
+            try:
+                if accepts_config(node_fn):
+                    result = node_fn(state, config)
+                else:
+                    result = node_fn(state)
+            except Exception as e:
+                label = labels.get(node_name, "当前")
+                logger.error("节点 [%s] 执行失败: %s", node_name, e, exc_info=True)
 
-            error_msg = _FALLBACK_TEMPLATE.format(label=label)
-            record_branch_latency("fallback", (time.perf_counter() - _t0) * 1000)
-            return {
-                "business_result": {
-                    "branch": "fallback",
-                    "answer": error_msg,
-                    "data": {
-                        # W2-3：统一错误码（出口经 to_reply 透出给 API/CLI）
-                        "error_code": ErrorCode.NODE_FAILED.value,
-                        "error": str(e)[:200],
-                        "failed_branch": node_name,
+                error_msg = _FALLBACK_TEMPLATE.format(label=label)
+                latency = (time.perf_counter() - _t0) * 1000
+                record_branch_latency("fallback", latency)
+                set_span_attrs(
+                    _sp, **{"ztb.branch": "fallback", "ztb.latency_ms": round(latency, 2)}
+                )
+                return {
+                    "business_result": {
+                        "branch": "fallback",
+                        "answer": error_msg,
+                        "data": {
+                            # W2-3：统一错误码（出口经 to_reply 透出给 API/CLI）
+                            "error_code": ErrorCode.NODE_FAILED.value,
+                            "error": str(e)[:200],
+                            "failed_branch": node_name,
+                        },
                     },
-                },
-                "messages": [AIMessage(content=error_msg)],
-            }
+                    "messages": [AIMessage(content=error_msg)],
+                }
 
-        branch = (result.get("business_result") or {}).get("branch", "?")
-        record_branch_latency(branch, (time.perf_counter() - _t0) * 1000)
+            branch = (result.get("business_result") or {}).get("branch", "?")
+            latency = (time.perf_counter() - _t0) * 1000
+            set_span_attrs(
+                _sp, **{"ztb.branch": branch, "ztb.latency_ms": round(latency, 2)}
+            )
+        record_branch_latency(branch, latency)
         return result
 
     return wrapped

@@ -397,6 +397,10 @@ def main() -> None:
     # W0-7：先配置根 logger，再让 uvicorn 不接管日志（log_config=None），
     # 保证应用侧 INFO 埋点（分支耗时 / SQL profile / 检索埋点）在服务态落盘。
     setup_logging()
+    # E0-3：初始化 OTel 追踪（未配置 ENABLE_TRACING/密钥时 no-op）
+    from core.observability.tracing import setup_tracing
+
+    setup_tracing()
     host = os.getenv("API_HOST", "127.0.0.1")
     port = int(os.getenv("API_PORT", "8000"))
     uvicorn.run(app, host=host, port=port, log_config=None)

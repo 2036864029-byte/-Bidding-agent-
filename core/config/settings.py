@@ -517,6 +517,27 @@ class Settings:
     )
 
     # ============================================================
+    # 可观测 trace（E0-3）— OTel → Langfuse（未配置密钥时全链路 no-op）
+    # ============================================================
+    # 开关与密钥缺一即不启用（dev/test 默认关，零开销、零网络依赖）。
+    enable_tracing: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_TRACING", "false").lower()
+        in {"1", "true", "yes"}
+    )
+    langfuse_host: str = field(
+        default_factory=lambda: os.getenv("LANGFUSE_HOST", "http://localhost:3000")
+    )
+    langfuse_public_key: str = field(
+        default_factory=lambda: os.getenv("LANGFUSE_PUBLIC_KEY", "")
+    )
+    langfuse_secret_key: str = field(
+        default_factory=lambda: os.getenv("LANGFUSE_SECRET_KEY", "")
+    )
+    tracing_service_name: str = field(
+        default_factory=lambda: os.getenv("TRACING_SERVICE_NAME", "ztb-agent")
+    )
+
+    # ============================================================
     # 入库去重（任务 M2）— 基于 chunk_uid 的文本块级去重与幂等
     # ============================================================
     enable_dedup: bool = field(

@@ -46,16 +46,47 @@ def usage_from_response(response: Any) -> Tuple[int, int]:
 
 
 class LLMMetricsCallback(BaseCallbackHandler):
-    """记录每次 LLM 调用的耗时与 token 消耗。"""
+    """记录每次 LLM 调用的耗时与 token 消耗（并输出 OTel span，E0-3）。"""
 
     def __init__(self, slot: str, model: str = "") -> None:
         self._slot = slot
         self._model = model
         self._starts: Dict[UUID, float] = {}
+        self._start_ns: Dict[UUID, int] = {}
 
     def _start(self, run_id: Any) -> None:
         if run_id is not None:
             self._starts[run_id] = time.perf_counter()
+            self._start_ns[run_id] = time.time_ns()
+
+    def _emit_span(
+        self,
+        start_ns: Any,
+        *,
+        latency: Any = None,
+        prompt: int = 0,
+        completion: int = 0,
+        error: Any = None,
+    ) -> None:
+        """输出 LLM span（gen_ai 语义约定）；追踪未启用时为零开销 no-op。"""
+        try:
+            from .tracing import get_tracer
+
+            attrs = {
+                "gen_ai.system": "deepseek",
+                "gen_ai.request.model": self._model,
+                "gen_ai.usage.input_tokens": prompt,
+                "gen_ai.usage.output_tokens": completion,
+                "ztb.slot": self._slot,
+            }
+            if latency is not None:
+                attrs["ztb.latency_ms"] = round(latency * 1000, 2)
+            if error is not None:
+                attrs["ztb.error"] = str(error)[:200]
+            sp = get_tracer().start_span("llm.call", attributes=attrs, start_time=start_ns)
+            sp.end()
+        except Exception:  # 埋点失败绝不影响主流程
+            pass
 
     def on_llm_start(self, serialized, prompts, *, run_id=None, **kwargs) -> None:
         self._start(run_id)
@@ -65,15 +96,20 @@ class LLMMetricsCallback(BaseCallbackHandler):
 
     def on_llm_end(self, response, *, run_id=None, **kwargs) -> None:
         start = self._starts.pop(run_id, None)
-        if start is not None:
-            record_llm_latency(self._slot, self._model, time.perf_counter() - start)
+        start_ns = self._start_ns.pop(run_id, None)
+        latency = time.perf_counter() - start if start is not None else None
+        if latency is not None:
+            record_llm_latency(self._slot, self._model, latency)
         prompt, completion = usage_from_response(response)
         if prompt or completion:
             record_llm_tokens(self._slot, self._model, prompt=prompt, completion=completion)
+        self._emit_span(start_ns, latency=latency, prompt=prompt, completion=completion)
 
     def on_llm_error(self, error, *, run_id=None, **kwargs) -> None:
         self._starts.pop(run_id, None)
+        start_ns = self._start_ns.pop(run_id, None)
         record_llm_error(self._slot, self._model)
+        self._emit_span(start_ns, error=error)
 
 
 __all__ = ["LLMMetricsCallback", "usage_from_response"]

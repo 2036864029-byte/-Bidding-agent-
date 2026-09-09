@@ -23,6 +23,9 @@ from typing import Any, Dict, Iterable, List, Optional
 from langchain_core.documents import Document
 from pydantic import BaseModel, Field
 
+from core.observability.tracing import set_span_attrs
+from core.observability.tracing import span as _span
+
 from .guardrails.citations_models import Citation
 from .rendering.context import format_docs
 
@@ -237,32 +240,43 @@ def kb_search(
     top_k = max(1, int(top_k))
     offset = max(0, int(offset))
 
-    outcome = _get_retriever().retrieve(question)
-    trace = getattr(outcome.diagnostics, "to_dict", lambda: {})() or {}
+    with _span("retrieval.kb_search", **{"ztb.retrieval.top_k": top_k}) as _sp:
+        outcome = _get_retriever().retrieve(question)
+        trace = getattr(outcome.diagnostics, "to_dict", lambda: {})() or {}
 
-    if not outcome.docs:
-        logger.info("kb_search: 检索为空，返回空三元组（question=%s）", question[:60])
-        return RetrievalResult(recall_trace=trace)
+        if not outcome.docs:
+            logger.info("kb_search: 检索为空，返回空三元组（question=%s）", question[:60])
+            set_span_attrs(_sp, **{"ztb.retrieval.docs": 0})
+            return RetrievalResult(recall_trace=trace)
 
-    docs_with_scores = outcome.docs[offset: offset + top_k]
-    if not docs_with_scores:
-        return RetrievalResult(recall_trace=trace)
+        docs_with_scores = outcome.docs[offset: offset + top_k]
+        if not docs_with_scores:
+            set_span_attrs(_sp, **{"ztb.retrieval.docs": 0})
+            return RetrievalResult(recall_trace=trace)
 
-    citations = build_citations(docs_with_scores)
-    return RetrievalResult(
-        chunks=[
-            _project_chunk(
-                _to_chunk(doc, score),
-                summary=summary,
-                include_fields=include_fields,
-                summary_max_chars=summary_max_chars,
-            )
-            for doc, score in docs_with_scores
-        ],
-        citations_meta=citations,
-        rendered_context="" if summary else format_docs(docs_with_scores),
-        recall_trace=trace,
-    )
+        citations = build_citations(docs_with_scores)
+        set_span_attrs(
+            _sp,
+            **{
+                "ztb.retrieval.docs": len(docs_with_scores),
+                "ztb.retrieval.mode": str(trace.get("retrieval_mode", "")),
+                "ztb.retrieval.reranker": str(trace.get("reranker_status", "")),
+            },
+        )
+        return RetrievalResult(
+            chunks=[
+                _project_chunk(
+                    _to_chunk(doc, score),
+                    summary=summary,
+                    include_fields=include_fields,
+                    summary_max_chars=summary_max_chars,
+                )
+                for doc, score in docs_with_scores
+            ],
+            citations_meta=citations,
+            rendered_context="" if summary else format_docs(docs_with_scores),
+            recall_trace=trace,
+        )
 
 
 def kb_search_as_tool():
