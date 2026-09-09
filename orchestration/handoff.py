@@ -21,7 +21,7 @@ class HandoffMeta(BaseModel):
     """一次跨 agent 交接的声明（supervisor 层产生，供条件边路由）。"""
 
     from_agent: str = Field(description="交接发起方 agent id")
-    to: str = Field(description="目标 agent id（必须是 AGENT_NODES 之一）")
+    to: str = Field(description="目标 agent id（必须是 registry enabled 能力之一）")
     reason: str = Field(default="", description="交接原因（人可读，日志/可观测）")
     payload: Dict[str, Any] = Field(
         default_factory=dict, description="交接上下文（sub_question / context_answer 等）"
@@ -31,14 +31,8 @@ class HandoffMeta(BaseModel):
         return f"handoff({self.from_agent}→{self.to}: {self.reason})"
 
 
-# supervisor 主图可调度的 agent 节点集合（registry 中 enabled 能力的子集）
-AGENT_NODES: Dict[str, str] = {
-    "knowledge_qa": "knowledge_qa",
-    "price_inquiry": "price_inquiry",
-    "general_chat": "general_chat",
-    "doc_qa": "doc_qa",
-    "fallback": "fallback",
-}
+# W2-1：可调度的 agent 集改由 CapabilityRegistry 解析（见 registry_wiring.agent_ids），
+# 不再在此硬编码 —— 新增能力只需 registry + 节点 entry 两处登记。
 
 
 def build_sub_question(question: str) -> str:

@@ -19,15 +19,16 @@ general_chat/doc_qa/fallback 单函数，统一 `_stamped_agent` 包装）→ ha
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Optional, TypedDict
+from typing import Any, Callable, Optional
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph import END, StateGraph, add_messages
+from langgraph.graph import END, StateGraph
 
 from agent.registry import CapabilityRegistry, get_default_registry
 from agent.state import AgentState
-from .handoff import AGENT_NODES
+
+from .registry_wiring import resolve_agent_nodes
 from .supervisor import build_supervisor_node, decide_handoff
 
 logger = logging.getLogger(__name__)
@@ -139,18 +140,6 @@ def _stamped_agent(name: str, wrapped_fn: Callable) -> Callable:
     return agent_node
 
 
-def _route_from_supervisor(state: SupervisorState) -> str:
-    route = state.get("supervisor_route", "fallback")
-    return route if route in AGENT_NODES else "fallback"
-
-
-def _route_after_decider(state: SupervisorState) -> str:
-    h = state.get("handoff")
-    if h and h.get("to") in AGENT_NODES:
-        return h["to"]
-    return "end"
-
-
 def build_supervisor_graph(
     *,
     llm: Optional[Any] = None,
@@ -166,15 +155,16 @@ def build_supervisor_graph(
     Args:
         llm: L3 路由 LLM（None 时经 registry 槽位创建）。
         checkpointer: 默认 MemorySaver（与单图一致，thread_id 隔离）。
-        registry: 能力注册表（默认进程级）。
-        knowledge_subgraph / price_subgraph: 注入的编译子图（离线测试 mock 用）。
+        registry: 能力注册表（默认进程级）—— **agent 集与可调度集合由它解析**
+            （W2-1），新增能力不再改本文件。
+        knowledge_subgraph / price_subgraph: 注入的编译子图（离线测试 mock 用），
+            覆盖 registry 解析出的同名 agent。
         embedder / llm_router: 三级路由注入（L2 语义 / L3 LLM 分类器）。
 
     Returns:
         CompiledStateGraph，可直接 invoke（与单图同接口）。
     """
-    from agent.graph import _with_fallback  # 延迟导入：避免 agent.graph ↔ orchestration 循环
-    from agent.nodes import node_doc_qa, node_fallback, node_general_chat
+    from core.errors.fallback import with_fallback as _with_fallback
 
     reg = registry or get_default_registry()
 
@@ -192,20 +182,25 @@ def build_supervisor_graph(
     # ── supervisor 节点 ──
     graph.add_node("supervisor", build_supervisor_node(llm, reg, embedder, llm_router))
 
-    # ── agent 节点（子图可注入，统一打标 + 兜底）──
-    from agent.nodes.knowledge_qa.subgraph import get_knowledge_qa_subgraph
-    from agent.nodes.price_inquiry.subgraph import get_price_subgraph
+    # ── agent 节点（W2-1：registry 驱动；编译子图仍可注入覆盖，供离线测试）──
+    agent_nodes = resolve_agent_nodes(reg)
+    if knowledge_subgraph is not None:
+        agent_nodes["knowledge_qa"] = knowledge_subgraph
+    if price_subgraph is not None:
+        agent_nodes["price_inquiry"] = price_subgraph
+    allowed = set(agent_nodes)
 
-    kb = knowledge_subgraph if knowledge_subgraph is not None else get_knowledge_qa_subgraph()
-    pr = price_subgraph if price_subgraph is not None else get_price_subgraph()
-    agent_specs = {
-        "knowledge_qa": kb,
-        "price_inquiry": pr,
-        "general_chat": node_general_chat,
-        "doc_qa": node_doc_qa,
-        "fallback": node_fallback,
-    }
-    for name, fn in agent_specs.items():
+    def _route_from_supervisor(state: SupervisorState) -> str:
+        route = state.get("supervisor_route", "fallback")
+        return route if route in allowed else "fallback"
+
+    def _route_after_decider(state: SupervisorState) -> str:
+        handoff = state.get("handoff")
+        if handoff and handoff.get("to") in allowed:
+            return handoff["to"]
+        return "end"
+
+    for name, fn in agent_nodes.items():
         graph.add_node(name, _stamped_agent(name, _with_fallback(_as_agent_callable(fn))))
 
     # ── handoff 决策节点 ──
@@ -215,16 +210,15 @@ def build_supervisor_graph(
     graph.set_entry_point("supervisor")
     graph.add_conditional_edges(
         "supervisor", _route_from_supervisor,
-        {name: name for name in agent_specs},
+        {name: name for name in agent_nodes},
     )
-    for name in agent_specs:
+    for name in agent_nodes:
         graph.add_edge(name, "handoff_decider")
     graph.add_conditional_edges(
         "handoff_decider", _route_after_decider,
-        {name: name for name in agent_specs} | {"end": END},
+        {name: name for name in agent_nodes} | {"end": END},
     )
 
     compiled = graph.compile(checkpointer=checkpointer)
-    logger.info("SupervisorStateGraph 编译完成，agents=%s",
-                list(agent_specs.keys()))
+    logger.info("SupervisorStateGraph 编译完成，agents=%s", list(agent_nodes))
     return compiled

@@ -11,20 +11,26 @@ Supervisor 主图把 Step 1 的 compiled subgraph（knowledge_qa / price_inquiry
     public_kb 内部（布局守卫，见 test/core/test_no_reverse_dep.py）。
 """
 
-from .handoff import HandoffMeta, AGENT_NODES, build_sub_question
+from .handoff import HandoffMeta, build_sub_question
+from .main_graph import SupervisorState, build_supervisor_graph
+from .registry_wiring import agent_ids, resolve_agent_nodes
+from .routing_rules import load_rules, load_rules_cached, reset_rules_cache
 from .supervisor import (
+    build_supervisor_node,
     classify_rules,
     classify_semantic,
     decide_handoff,
     route_question,
-    build_supervisor_node,
 )
-from .main_graph import SupervisorState, build_supervisor_graph
 
 __all__ = [
     "HandoffMeta",
-    "AGENT_NODES",
     "build_sub_question",
+    "agent_ids",
+    "resolve_agent_nodes",
+    "load_rules",
+    "load_rules_cached",
+    "reset_rules_cache",
     "classify_rules",
     "classify_semantic",
     "decide_handoff",

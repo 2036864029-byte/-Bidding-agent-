@@ -1,0 +1,29 @@
+# L1 路由规则与 handoff 规则（W2-1 数据化）。
+#
+# 改规则只改本文件，不改代码；加载器见 orchestration/routing_rules.py。
+#
+# L1：确定性快路径，按顺序匹配，首个命中即返回 target（capability id）。
+#   kind=regex   pattern 正则（含反斜杠必须用单引号）；flags 可选 [IGNORECASE]；
+#   max_len 可选（限定问题长度上限，超长不匹配）
+l1:
+  - id: greeting
+    target: general_chat
+    kind: regex
+    pattern: "^(你好|您好|嗨|哈喽|hello|hi|在吗|你是谁|你能做什么|介绍一下你自己)"
+    flags: [IGNORECASE]
+    max_len: 40
+  - id: project_number
+    target: price_inquiry
+    kind: regex
+    pattern: '\[[^\]]+\][A-Za-z0-9\-]{4,}|[A-Z]{2,}\d{4,}[-A-Za-z0-9]*'
+  - id: doc_qa
+    target: doc_qa
+    kind: regex
+    pattern: "上传|分析.{0,6}文档|解读.{0,6}合同|对比.{0,6}标书|文档问答|审阅.{0,6}(合同|标书)"
+
+# handoff：agent 完成后，若来源 agent 匹配且问题含 keywords 中任一关键词 → 交接。
+handoff:
+  - from: price_inquiry
+    to: knowledge_qa
+    reason: 价格/标讯查询结果需政策法规解释
+    keywords: [法律效力, 依据, 法规, 为什么, 解释, 政策, 合规, 规定, 条例, 法条, 第几条]

@@ -11,117 +11,34 @@ Graph — StateGraph 构建与编译。
 
 from __future__ import annotations
 
-import functools
-import inspect
 import logging
 import os
-import time
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.base import BaseCheckpointSaver
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.graph import END, StateGraph
 
 from core.config.settings import Settings as PublicKBSettings
+from core.errors.fallback import accepts_config, with_fallback
 from core.llm.registry import create_llm_for_slot
-from core.observability.metrics import record_branch_latency
 
-from .state import AgentState
-from .router import build_router_node
-from .registry import CapabilityRegistry, get_default_registry
-from .nodes.base import get_node_spec
 from .checkpointer import create_checkpointer
+from .nodes.base import get_node_spec
+from .registry import CapabilityRegistry, get_default_registry
+from .router import build_router_node
+from .state import AgentState
 
 logger = logging.getLogger(__name__)
 
 # ═════════════════════════════════════════════════════════
-# 全局异常兜底包装器
+# 全局异常兜底包装器（W2-1：实现已下沉 core.errors.fallback）
 # ═════════════════════════════════════════════════════════
-
-_BRANCH_LABELS: Dict[str, str] = {
-    "node_knowledge_qa":  "专业知识问答",
-    "node_price_inquiry": "智能询价",
-    "node_general_chat":  "通用对话",
-    "node_doc_qa":        "文档问答",
-}
-
-
-def _accepts_config(node_fn: Callable) -> bool:
-    """节点是否接受可选的 config 参数。
-
-    LangGraph 按节点签名注入 config；`_with_fallback` 的 wrapper 固定为
-    `(state, config=None)`（保证 LangGraph 总会传入），是否继续下传由
-    `_accepts_config` 决定——单参节点（多数业务节点）照旧 `node_fn(state)`。
-    """
-    try:
-        params = inspect.signature(node_fn).parameters.values()
-    except (TypeError, ValueError):
-        return False
-    has_var = any(
-        p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-        for p in params
-    )
-    positional = sum(
-        p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-        for p in params
-    )
-    return has_var or positional >= 2
-
-
-def _with_fallback(node_fn: Callable) -> Callable:
-    """包装业务节点：任何未捕获异常 → 自动降级返回友好提示。
-
-    包装后的节点仍然符合统一接口: (AgentState) → dict（可选 config 透传，
-    供子图类节点转发 thread_id）。
-
-    Args:
-        node_fn: 原始业务节点函数
-
-    Returns:
-        包装后的节点函数
-    """
-
-    @functools.wraps(node_fn)
-    def wrapped(state: AgentState, config: Optional[Dict] = None) -> dict:
-        _t0 = time.perf_counter()
-        try:
-            if _accepts_config(node_fn):
-                result = node_fn(state, config)
-            else:
-                result = node_fn(state)
-        except Exception as e:
-            node_name = getattr(node_fn, "__name__", "unknown")
-            label = _BRANCH_LABELS.get(node_name, "当前")
-            logger.error("节点 [%s] 执行失败: %s", node_name, e, exc_info=True)
-
-            error_msg = (
-                f"抱歉，「{label}」功能暂时不可用，请稍后重试或尝试其他问题。\n\n"
-                f"您可以：\n"
-                f"  - 咨询招投标法规知识\n"
-                f"  - 查询历史中标价格\n"
-                f"  - 进行通用对话"
-            )
-
-            record_branch_latency("fallback", (time.perf_counter() - _t0) * 1000)
-            return {
-                "business_result": {
-                    "branch": "fallback",
-                    "answer": error_msg,
-                    "data": {
-                        "error": str(e)[:200],
-                        "failed_branch": node_name,
-                    },
-                },
-                "messages": [AIMessage(content=error_msg)],
-            }
-
-        # 正常返回 → 记分支耗时
-        branch = (result.get("business_result") or {}).get("branch", "?")
-        record_branch_latency(branch, (time.perf_counter() - _t0) * 1000)
-        return result
-
-    return wrapped
+# 兼容别名保留：既有测试与调用方仍可 `from agent.graph import _with_fallback`。
+# 语义见 core/errors/fallback.py —— 任何未捕获异常 → 友好降级 + 分支耗时指标。
+_with_fallback = with_fallback
+_accepts_config = accepts_config
 
 
 # ═════════════════════════════════════════════════════════

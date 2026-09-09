@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from typing import Any, Callable, List, Optional
 
 from langchain_core.messages import BaseMessage
@@ -25,7 +24,9 @@ from langchain_core.runnables import RunnableConfig
 
 from agent.registry import CapabilityRegistry, get_default_registry
 
-from .handoff import AGENT_NODES, HandoffMeta, build_sub_question
+from .handoff import HandoffMeta, build_sub_question
+from .registry_wiring import agent_ids
+from .routing_rules import RoutingRules, load_rules_cached
 
 logger = logging.getLogger(__name__)
 
@@ -36,25 +37,23 @@ SEMANTIC_ROUTE_ENABLED = os.getenv("SUPERVISOR_SEMANTIC_ROUTE", "false").lower()
 SEMANTIC_ROUTE_THRESHOLD = 0.5
 
 
-# ── L1 规则快路径 ─────────────────────────────────────────────
+# ── L1 规则快路径（W2-1：规则数据化 → orchestration/routing_rules.yaml）────
 
-_GREETING_RE = re.compile(r"^(你好|您好|嗨|哈喽|hello|hi|在吗|你是谁|你能做什么|介绍一下你自己)", re.I)
-_PROJECT_NUMBER_RE = re.compile(r"\[[^\]]+\][A-Za-z0-9\-]{4,}|[A-Z]{2,}\d{4,}[-A-Za-z0-9]*")
-_DOC_QA_RE = re.compile(r"上传|分析.{0,6}文档|解读.{0,6}合同|对比.{0,6}标书|文档问答|审阅.{0,6}(合同|标书)")
-
-
-def classify_rules(question: str) -> Optional[str]:
-    """L1 规则快路径：确定性高精度匹配，返回 capability id 或 None。
+def classify_rules(
+    question: str,
+    rules: Optional[RoutingRules] = None,
+) -> Optional[str]:
+    """L1 规则快路径：按规则文件顺序匹配，首个命中即返回 capability id。
 
     只覆盖高置信快路径；模糊场景留给 L2/L3，避免误路由。
     """
     q = question.strip()
-    if _GREETING_RE.match(q) and len(q) <= 40:
-        return "general_chat"
-    if _PROJECT_NUMBER_RE.search(q):
-        return "price_inquiry"
-    if _DOC_QA_RE.search(q):
-        return "doc_qa"
+    for rule in (rules or load_rules_cached()).l1:
+        if rule.max_len is not None and len(q) > rule.max_len:
+            continue
+        if rule.pattern.search(q):
+            logger.info("supervisor L1 规则命中 rule=%s → %s", rule.id, rule.target)
+            return rule.target
     return None
 
 
@@ -159,45 +158,46 @@ def route_question(
     out = llm_router({"messages": messages})
     intent = out.get("router_intent", "fallback")
     logger.info("supervisor L3 LLM 路由 → %s", intent)
-    return intent if intent in AGENT_NODES else "fallback"
+    return intent if intent in set(agent_ids(registry)) else "fallback"
 
 
-# ── handoff 决策（supervisor 层，agent 零认知）────────────────
-
-_EXPLANATION_KEYWORDS = (
-    "法律效力", "依据", "法规", "为什么", "解释", "政策", "合规",
-    "规定", "条例", "法条", "第几条",
-)
+# ── handoff 决策（supervisor 层，agent 零认知；W2-1 规则数据化）────
 
 
 def decide_handoff(
     intent: str,
     question: str,
     business_result: Optional[dict] = None,
+    rules: Optional[RoutingRules] = None,
 ) -> Optional[HandoffMeta]:
-    """跨 agent 交接决策：price 查询结果需政策法规解释 → 转 knowledge_qa。
+    """跨 agent 交接决策：按 routing_rules.yaml 的 handoff 规则匹配。
 
-    规则（Step 2 确定性版本，可离线测）：
-      - 路由意图为 price_inquiry 且问题含法规解释关键词 → handoff to knowledge_qa。
-      - 其余 → None（不交接）。
+    规则形如 `from=price_inquiry, to=knowledge_qa, keywords=[法律效力, 依据, ...]`：
+    来源 agent 匹配且问题含任一关键词 → 交接。
 
     Args:
-        intent: 本 agent 的路由意图（supervisor_route）。
+        intent: 本 agent 的路由意图。
         question: 原始用户问题。
-        business_result: 上一 agent 的 business_result（Step 2 仅日志记录，供后续
-            场景如「召回空需法规兜底」扩展）。
+        business_result: 上一 agent 的 business_result（供后续场景扩展）。
+        rules: 注入规则（测试用；缺省读 routing_rules.yaml 缓存）。
     """
-    if intent == "price_inquiry" and any(k in question for k in _EXPLANATION_KEYWORDS):
-        logger.info("supervisor handoff 决策：price_inquiry → knowledge_qa（需政策解释）")
-        return HandoffMeta(
-            from_agent="price_inquiry",
-            to="knowledge_qa",
-            reason="价格/标讯查询结果需政策法规解释",
-            payload={
-                "sub_question": build_sub_question(question),
-                "context_answer": (business_result or {}).get("answer", ""),
-            },
-        )
+    for rule in (rules or load_rules_cached()).handoff:
+        if rule.from_agent != intent:
+            continue
+        if any(keyword in question for keyword in rule.keywords):
+            logger.info(
+                "supervisor handoff 决策：%s → %s（%s）",
+                rule.from_agent, rule.to, rule.reason,
+            )
+            return HandoffMeta(
+                from_agent=rule.from_agent,
+                to=rule.to,
+                reason=rule.reason,
+                payload={
+                    "sub_question": build_sub_question(question),
+                    "context_answer": (business_result or {}).get("answer", ""),
+                },
+            )
     return None
 
 
