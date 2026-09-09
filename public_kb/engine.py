@@ -17,12 +17,12 @@ from langchain_openai import OpenAIEmbeddings
 from core.config.settings import Settings
 from core.embeddings import get_embeddings
 from core.llm.registry import create_llm_for_slot
-from .ingestion.pipeline import FileIngestionPipeline
-from .ingestion.sinks.milvus_sink import MilvusSink
-from .generation.chain import build_chain
-from .retrieval.reranker import SiliconFlowReranker
 from core.vectorstore.milvus_client import MilvusStoreManager
 
+from .generation.chain import build_chain
+from .ingestion.pipeline import FileIngestionPipeline
+from .ingestion.sinks.milvus_sink import MilvusSink
+from .retrieval.reranker import SiliconFlowReranker
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +111,11 @@ class PublicKnowledgeRAG:
         logger.warning("正在清空 public_kb 集合...")
         self._store_manager.clear_collection()
         self._qa_chain = None
+        # B11：工具路径的 retriever 单例持有旧的 MilvusClient/集合；不失效的话
+        # 同进程清空重建后 kb_search 仍指向已删集合，直到重启。
+        from .tools import reset_retriever
+
+        reset_retriever()
         logger.warning("public_kb 集合已清空。")
 
     def ensure_loaded(self) -> None:
@@ -155,12 +160,14 @@ class PublicKnowledgeRAG:
         """Build the LCEL chain with native Milvus hybrid retrieval when available."""
         try:
             collection = self._store_manager.collection
-        except RuntimeError:
-            collection = None
-            logger.info("MilvusClient 不可用，问答链将使用纯稠密检索")
+            store = self._store_manager.store
+        except RuntimeError as exc:
+            # B10：旧实现只把 collection 包进 try，store 在 try 外抛错——日志承诺的
+            # "MilvusClient 不可用则走纯稠密"从未发生。集合未加载时显式报可读错误。
+            raise RuntimeError(f"知识库集合未加载，无法构建问答链: {exc}") from exc
 
         self._qa_chain = build_chain(
-            vector_store=self._store_manager.store,
+            vector_store=store,
             llm=self._llm,
             settings=self._settings,
             collection=collection,

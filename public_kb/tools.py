@@ -75,12 +75,12 @@ def _build_retriever():
     collection/store + BGE embeddings + SiliconFlow reranker）。重依赖在此延迟导入，
     保证 import public_kb.tools 轻量。
     """
-    from core.vectorstore.milvus_client import MilvusStoreManager
-
     from core.config.settings import Settings
     from core.embeddings import get_embeddings
-    from .retrieval.retriever import HybridRetriever
+    from core.vectorstore.milvus_client import MilvusStoreManager
+
     from .retrieval.reranker import SiliconFlowReranker
+    from .retrieval.retriever import HybridRetriever
 
     settings = Settings()
     embeddings = get_embeddings(settings)
@@ -151,14 +151,18 @@ def kb_search(question: str, *, top_k: int = 8) -> RetrievalResult:
     """
     from .guardrails.citations_build import build_citations
 
+    # B12：top_k 可能由 LLM 通过工具参数传入（可为 0/负数），先钳制再截断，
+    # 否则"检索有结果但 chunks 被截空"会被上层误判为无召回而拒答。
+    top_k = max(1, int(top_k))
+
     outcome = _get_retriever().retrieve(question)
-    docs_with_scores = outcome.docs[:top_k]
     trace = getattr(outcome.diagnostics, "to_dict", lambda: {})() or {}
 
-    if not docs_with_scores:
+    if not outcome.docs:
         logger.info("kb_search: 检索为空，返回空三元组（question=%s）", question[:60])
         return RetrievalResult(recall_trace=trace)
 
+    docs_with_scores = outcome.docs[:top_k]
     citations = build_citations(docs_with_scores)
     return RetrievalResult(
         chunks=[_to_chunk(doc, score) for doc, score in docs_with_scores],

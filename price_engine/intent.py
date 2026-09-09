@@ -23,8 +23,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 from core.llm.registry import create_llm_for_slot
-
 from core.rdb.mysql_pool import _get_settings
+
 from .models import HardFilters, SearchIntent
 
 logger = logging.getLogger(__name__)
@@ -351,7 +351,13 @@ def _post_process_intent(intent: SearchIntent) -> SearchIntent:
         [_normalize_token(token) for token in intent.exact_tokens if _normalize_token(token)]
     )[:3]
     if intent.top_n is not None:
-        intent.top_n = max(1, min(int(intent.top_n), 20))
+        # B2：LLM 可能输出 "top3"/"abc" 等非数字，直接 int() 会抛 ValueError 并冒泡出
+        # _parse_unified_intent（该调用在 try 之外）→ 用户看到"功能暂不可用"。
+        try:
+            intent.top_n = max(1, min(int(intent.top_n), 20))
+        except (TypeError, ValueError):
+            logger.warning("[UNIFIED_INTENT] top_n 非法值 %r，已忽略", intent.top_n)
+            intent.top_n = None
     return intent
 
 def _parse_unified_intent(question: str, llm: ChatOpenAI) -> SearchIntent:

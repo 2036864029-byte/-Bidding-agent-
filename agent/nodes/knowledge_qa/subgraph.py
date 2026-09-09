@@ -24,6 +24,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import END, StateGraph, add_messages
 
 from core.config.settings import Settings
+from core.contracts import KnowledgeBaseContractError
 from core.llm.registry import create_llm_for_slot
 from core.observability.metrics import record_guardrail_fail
 from public_kb.guardrails.citations_validate import CitationValidator
@@ -157,6 +158,18 @@ def _retrieve_node(state: KnowledgeQaState) -> dict:
     question = str(messages[-1].content)
     try:
         retrieval = kb_search(question)
+    except KnowledgeBaseContractError as e:
+        # B9：空白/非法问题由 validate_question 抛 ValueError 子类；旧实现只捕
+        # RuntimeError，异常冒泡到图级 _with_fallback → 用户看到"功能暂不可用"。
+        logger.warning("knowledge_qa(subgraph): 问题不合法 — %s", e)
+        return {
+            "qa_aborted": True,
+            "business_result": {
+                "branch": "knowledge_qa",
+                "answer": _NO_QUESTION_ANSWER,
+                "data": {"sources": []},
+            },
+        }
     except RuntimeError as e:
         logger.warning("knowledge_qa(subgraph): 检索未就绪 — %s", e)
         return {"qa_error": str(e)}

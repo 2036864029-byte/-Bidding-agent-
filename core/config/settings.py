@@ -190,14 +190,6 @@ class Settings:
     pdf_tiered_min_text_chars: int = field(
         default_factory=lambda: int(os.getenv("PDF_TIERED_MIN_TEXT_CHARS", "80"))
     )
-    pdf_tiered_table_min_rows: int = field(
-        default_factory=lambda: int(os.getenv("PDF_TIERED_TABLE_MIN_ROWS", "2"))
-    )
-    pdf_tiered_table_max_empty_ratio: float = field(
-        default_factory=lambda: float(
-            os.getenv("PDF_TIERED_TABLE_MAX_EMPTY_RATIO", "0.30")
-        )
-    )
     pdf_tiered_image_area_ratio: float = field(
         default_factory=lambda: float(
             os.getenv("PDF_TIERED_IMAGE_AREA_RATIO", "0.35")
@@ -333,9 +325,9 @@ class Settings:
     chunk_max_chars_law_compilation: int = 700
     chunk_max_chars_qa: int = 900
     chunk_max_chars_book_practical: int = 1000
-    # parent 块硬上限：超过则放弃 parent+child，直接按句切成 atom，
-    # 防止整篇无条号文本（如政策正文）生成超 VARCHAR(65535) 的巨型 parent。
-    chunk_max_parent_chars: int = 60000
+    # 注（W1-6）：原 `chunk_max_parent_chars` 已删除——typed_chunker 一期不落 parent
+    # 行（child 只指向合成父标识），检索期父块拼接上限由 retrieval_parent_max_chars
+    # 控制，该字段从未被任何代码读取。
     # 批量 embedding 并发
     embedding_batch_size: int = 100
     embedding_max_workers: int = 4

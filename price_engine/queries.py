@@ -9,6 +9,7 @@ from typing import Any, Optional
 import pymysql
 
 from core.rdb.mysql_pool import _CLEAN_DB, _get_connection, _release_connection
+
 from .models import SearchIntent
 from .recall import _clean_result_row, _query_tables
 from .sql_builders import _build_order_clause
@@ -201,6 +202,10 @@ def _query_bidding_aggregation(intent: SearchIntent) -> Optional[dict[str, Any]]
 
     top_n = intent.top_n or 1
     order_clause = _build_order_clause(intent)
+    if order_clause == "ORDER BY `_score_` DESC":
+        # B1：本 SQL 的 select 列表没有 _score_ 列（聚合走的是字段列表而非召回列），
+        # 默认排序会触发 MySQL 1054 并被下方 except 吞掉 → 静默回退普通检索。
+        order_clause = "ORDER BY `winning_amount` DESC"
 
     where_clause = " AND ".join(conditions) if conditions else "1=1"
 
