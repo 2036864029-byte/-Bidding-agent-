@@ -21,7 +21,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import time
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Annotated, TypedDict
@@ -34,7 +33,6 @@ from core.rdb.mysql_pool import _get_settings
 from price_engine import (
     SearchIntent,
     _build_llm,
-    _extract_project_number_candidate,
     _is_valid_company_name,
     _looks_like_code,
     _normalize_intent_enums,
@@ -42,6 +40,11 @@ from price_engine import (
     _safe_parse_intent,
 )
 from price_engine import queries as _queries_module
+from price_engine.guards import (
+    QUERY_INTENT_KEYWORDS,
+    has_valid_query_entity,
+    normalize_project_number,
+)
 from price_engine.rendering.answer_templates import CAPABILITY_GUIDANCE, render_answer
 from price_engine.rendering.output_templates import _apply_output_template, get_template
 
@@ -156,38 +159,10 @@ _UNIFIED_GUIDANCE_TEXT = (
     "请问您想了解哪方面的信息呢？"
 )
 
-_QUERY_INTENT_KEYWORDS = re.compile(
-    r"查|问|是?什么|哪些|哪个|如何|怎么|多少|有无|有没有|"
-    r"查询|了解|看看|帮忙|请问|推荐|帮我|"
-    r"中标|招标|采购|投标|发包|工商|不良|处罚|违法|"
-    r"详情|记录|历史|介绍|信息|情况|"
-    r"中标情况|中标历史|不良记录|工商信息|经营范围"
-)
-
-
-def _has_valid_query_entity(intent: SearchIntent) -> bool:
-    """P0-11：前置校验 — 检查是否提取到有效的查询实体。
-
-    合法实体：
-    - project_number（格式含字母+数字，如 AH2024-001）→ 精确匹配
-    - company_name（工商主体名称格式校验通过，用于 company_query）
-    - purchaser（采购人名称格式校验通过，用于 bidding_query）
-    - successful_bidder（中标供应商名称格式校验通过，用于 bidding_query）
-
-    未通过格式校验的实体名将视为无效，触发统一引导话术，
-    防止 LLM 将项目名片段/口语化表达误提取为"企业名"。"""
-    hf = intent.hard_filters
-
-    if hf.project_number and _looks_like_code(hf.project_number):
-        return True
-    # P0-11：公司名必须通过工商主体名称格式校验
-    if hf.company_name and _is_valid_company_name(hf.company_name):
-        return True
-    if hf.purchaser and _is_valid_company_name(hf.purchaser):
-        return True
-    if hf.successful_bidder and _is_valid_company_name(hf.successful_bidder):
-        return True
-    return False
+# W1-3：实体校验 / 查询意图关键词 / 项目编号纠偏收敛到 price_engine.guards，
+# 与 tools.price_query 入口共用同一套判定（此前 tools 入口绕过这些守卫）。
+_QUERY_INTENT_KEYWORDS = QUERY_INTENT_KEYWORDS
+_has_valid_query_entity = has_valid_query_entity
 
 
 def _build_unified_guidance(
@@ -282,35 +257,21 @@ def _guard_entity_node(state: PriceSubgraphState) -> dict:
         return {"pg_exit": "guidance", "pg_reason": "project_detail_no_number",
                 "pg_intent": intent}
 
-    # P0-12：后置修正 — 若意图中已提取到有效 project_number，
-    # 但 LLM 未将其归类为 project_detail，则强制修正路由和查询类型。
+    # P0-12：项目编号纠偏/注入（W1-3：与 tools 入口共用 price_engine.guards）。
     # 确保"只要识别到项目编号即触发项目查询"的宽松意图策略落地。
-    if intent.hard_filters.project_number and _looks_like_code(intent.hard_filters.project_number):
-        if intent.query_type != "project_detail":
-            logger.info(
-                "[PROJECT_NUMBER_CORRECT] LLM 分类为 '%s'，但已提取到项目编号 '%s'，"
-                "强制修正为 project_detail。question=%.50s",
-                intent.query_type,
-                intent.hard_filters.project_number,
-                question,
-            )
-            intent.query_type = "project_detail"
-            intent.sub_route = "bidding_query"
-
-    # P0-12：确定性兜底 — 若 LLM 未能提取到项目编号，但原始文本中
-    # 包含明显项目编号格式的字符串，直接注入到 intent 中。
-    if not intent.hard_filters.project_number or not _looks_like_code(intent.hard_filters.project_number):
-        extracted_pn = _extract_project_number_candidate(question)
-        if extracted_pn:
-            logger.info(
-                "[PROJECT_NUMBER_INJECT] LLM 未提取到，但确定性扫描发现 '%s'，"
-                "注入 intent。question=%.50s",
-                extracted_pn,
-                question,
-            )
-            intent.hard_filters.project_number = extracted_pn
-            intent.query_type = "project_detail"
-            intent.sub_route = "bidding_query"
+    action = normalize_project_number(intent, question)
+    if action and action.startswith("corrected"):
+        logger.info(
+            "[PROJECT_NUMBER_CORRECT] 已提取到项目编号 '%s'，强制修正为 project_detail。"
+            "question=%.50s",
+            intent.hard_filters.project_number, question,
+        )
+    elif action:
+        logger.info(
+            "[PROJECT_NUMBER_INJECT] LLM 未提取到，但确定性扫描发现 '%s'，注入 intent。"
+            "question=%.50s",
+            intent.hard_filters.project_number, question,
+        )
 
     # 第二层：裸实体名校验 — 用户仅输入实体名而无查询意图关键词
     # P0-12修正：若已有有效项目编号，跳过裸实体检查（项目编号本身就是合法的查询信号）

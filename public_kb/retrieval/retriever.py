@@ -21,6 +21,7 @@ from core.contracts import (
     build_effective_expr,
     validate_question,
 )
+from core.observability.metrics import record_recall_fallback
 from core.vectorstore.index_params import build_dense_search_params
 
 from .entities import entity_to_doc, normalize_hit_entity
@@ -311,6 +312,8 @@ class HybridRetriever:
         dense_vec: Optional[List[float]] = None,
         expr: Optional[str] = None,
     ) -> RetrievalResult:
+        # W1-4：降级层指标接线（此前 record_recall_fallback 无任何调用方）
+        record_recall_fallback(reason)
         docs = dense_only_retrieve(
             question,
             self._vector_store,

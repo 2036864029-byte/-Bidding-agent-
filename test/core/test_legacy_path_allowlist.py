@@ -34,6 +34,8 @@ REMOVED_SHELLS: dict[str, str] = {
     "agent.nodes.knowledge_qa.chain": "已删除（answer_knowledge 仅测试引用，随 legacy 一并清退）",
     "public_kb.generation.prompts": "public_kb.rendering.prompts",
     "public_kb.ingestion.models": "已删除（无生产消费方）",
+    # W1-4（未接线机制处理）
+    "agent.guardrail_hooks": "已删除（with_guardrails 零生产调用；子图内联护栏为准）",
 }
 
 _SHELL_FILES = [
@@ -54,6 +56,7 @@ _SHELL_FILES = [
     "agent/nodes/knowledge_qa/chain.py",
     "public_kb/generation/prompts.py",
     "public_kb/ingestion/models.py",
+    "agent/guardrail_hooks.py",
 ]
 
 

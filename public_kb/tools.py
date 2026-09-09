@@ -76,13 +76,21 @@ def _build_retriever():
     保证 import public_kb.tools 轻量。
     """
     from core.config.settings import Settings
+    from core.contracts import ConfigurationContractError
     from core.embeddings import get_embeddings
     from core.vectorstore.milvus_client import MilvusStoreManager
 
     from .retrieval.reranker import SiliconFlowReranker
     from .retrieval.retriever import HybridRetriever
+    from .schema_registry import validate_embedding_config_strict
 
     settings = Settings()
+    # W1-4：embedding 配置与集合约定校验接线（换模型/维度须重建集合）。
+    # 契约错误转 RuntimeError，由上层按"知识库不可用"引导，而不是静默用错向量空间。
+    try:
+        validate_embedding_config_strict(settings)
+    except ConfigurationContractError as exc:
+        raise RuntimeError(f"embedding 配置与集合约定不一致，拒绝检索: {exc}") from exc
     embeddings = get_embeddings(settings)
     manager = MilvusStoreManager(settings, embeddings)
     manager.load_existing()  # 集合不存在时 collection 置空 → 走稠密降级

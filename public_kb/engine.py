@@ -15,6 +15,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_openai import OpenAIEmbeddings
 
 from core.config.settings import Settings
+from core.contracts import validate_qa_result
 from core.embeddings import get_embeddings
 from core.llm.registry import create_llm_for_slot
 from core.vectorstore.milvus_client import MilvusStoreManager
@@ -23,6 +24,7 @@ from .generation.chain import build_chain
 from .ingestion.pipeline import FileIngestionPipeline
 from .ingestion.sinks.milvus_sink import MilvusSink
 from .retrieval.reranker import SiliconFlowReranker
+from .schema_registry import validate_embedding_config_strict
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,9 @@ class PublicKnowledgeRAG:
         store_manager: Optional[MilvusStoreManager] = None,
     ) -> None:
         self._settings = settings or Settings()
+        # W1-4：embedding 配置与集合约定校验接线（换模型/维度必须重建集合，
+        # 否则旧向量空间被新查询向量污染）。不一致直接拒绝构造。
+        validate_embedding_config_strict(self._settings)
         self._embeddings: OpenAIEmbeddings = (
             embeddings if embeddings is not None else get_embeddings(self._settings)
         )
@@ -103,6 +108,8 @@ class PublicKnowledgeRAG:
 
         logger.info("用户提问: %s", question[:100])
         result: Dict[str, Any] = self._qa_chain.invoke(question)
+        # W1-4：契约校验接线（此前 validate_qa_result 无任何生产调用方）
+        validate_qa_result(result)
         logger.info("回答完成，来源数: %d", len(result.get("sources", [])))
         return result
 
