@@ -29,15 +29,40 @@ from core.config.settings import Settings
 from core.llm.registry import create_llm_for_slot
 
 
+def build_registry(*, enable_deep_agent: bool = False):
+    """构造路由用注册表（默认与线上一致；--enable-deep-agent 时把预留能力打开）。
+
+    用于「启用 deep_agent 前的误路由检查」：与默认注册表只差 deep_agent 一项。
+    """
+    from dataclasses import replace
+
+    from agent.registry import (
+        CapabilityRegistry,
+        _seed_deep_agent,
+        _seed_doc_agent,
+        _seed_echo_demo,
+        seed_builtins,
+    )
+
+    reg = CapabilityRegistry()
+    seed_builtins(reg)
+    reg.register(_seed_echo_demo())
+    reg.register(_seed_doc_agent())
+    reg.register(replace(_seed_deep_agent(), enabled=enable_deep_agent))
+    return reg
+
+
 def load_set(path: Path) -> list[dict]:
     data = json.loads(path.read_text(encoding="utf-8"))
     return data.get("items", data)  # {"items":[...]} 或裸数组
 
 
-def run(path: Path, out: Path) -> None:
+def run(path: Path, out: Path, *, enable_deep_agent: bool = False) -> None:
     items = load_set(path)
     llm = create_llm_for_slot("router", Settings())
-    router_node = build_router_node(llm)
+    registry = build_registry(enable_deep_agent=enable_deep_agent)
+    router_node = build_router_node(llm, registry=registry)
+    print(f"候选集: {[c.id for c in registry.enabled_specs()]}")
 
     rows, correct = [], 0
     for it in items:
@@ -63,7 +88,7 @@ def run(path: Path, out: Path) -> None:
     print(f"== {path.name} → {out}")
     print(f"   accuracy={acc:.2%} ({correct}/{len(rows)})")
     for r in rows:
-        mark = "✓" if r["got"] == r["expected"] else "✗"
+        mark = "OK " if r["got"] == r["expected"] else "MISS"
         print(f"   {mark} [{r['expected']:>13}]  {r['got']:<13}  {r['q']}")
 
 
@@ -71,8 +96,12 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--set", type=Path, default=ROOT / "eval" / "router_intent_set.json")
     p.add_argument("--out", type=Path, default=ROOT / "test_report" / "router_intent_after.json")
+    p.add_argument(
+        "--enable-deep-agent", action="store_true",
+        help="把预留的 deep_agent 打开后再跑（误路由检查用）",
+    )
     args = p.parse_args()
-    run(args.set, args.out)
+    run(args.set, args.out, enable_deep_agent=args.enable_deep_agent)
 
 
 if __name__ == "__main__":
