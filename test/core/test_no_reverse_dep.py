@@ -6,10 +6,9 @@
   - public_kb.services.*   → 迁移至 core.llm / core.embeddings（A-4/A-7）
   - public_kb.config       → 迁移至 core.config.settings（A-1）
 保留（后续 Phase 处理，不在 P0 禁令内）：
-  - `from public_kb import PublicKnowledgeRAG`（knowledge_qa legacy 路径内部懒加载，P2 随旧路径删除）
   - `public_kb.guardrails`（agent/__main__ CLI 引用渲染，P6 已收敛）
-B-4 后新增合法耦合面：knowledge_qa 工具路径经 public_kb.tools / guardrails /
-rendering 门面复用 RAG；旧 RAG 引擎耦合收敛于 knowledge_qa/legacy.py。
+W1-1 后新增合法耦合面：knowledge_qa 只有子图一条实现，经 public_kb.tools /
+guardrails / rendering 门面复用 RAG（legacy.py / chain.py 已删除）。
 """
 
 from __future__ import annotations
@@ -49,27 +48,24 @@ def test_agent_source_has_no_public_kb_infra_imports():
     assert not violations, "agent/ 仍反向依赖已迁移的 public_kb 基础设施:\n" + "\n".join(violations)
 
 
-def test_knowledge_qa_entry_and_tool_chain_coupling():
-    """B-4/F-5 分层守卫：入口不得直连 public_kb；工具编排只经门面。
+def test_knowledge_qa_entry_and_subgraph_coupling():
+    """W1-1 分层守卫：入口不得直连 public_kb；子图只经门面。
 
-    - node.py（入口）：不 import 任何 public_kb.*（旧 RAG 引擎耦合收敛于 legacy.py）。
-    - chain.py / subgraph.py（工具编排 / 子图，P6/F-1 起）：只允许经
-      public_kb.tools/guardrails/rendering 门面复用，禁止直连
-      retrieval/generation/ingestion/rag_engine/qa_chain 内部实现。
+    - node.py（入口）：不 import 任何 public_kb.*。
+    - subgraph.py（知识问答唯一实现）：只允许经 public_kb.tools /
+      guardrails / rendering 门面复用，禁止直连 retrieval/generation/ingestion 内部。
     """
     kb_root = AGENT_ROOT / "nodes" / "knowledge_qa"
     node_tree = ast.parse((kb_root / "node.py").read_text(encoding="utf-8"))
-    chain_tree = ast.parse((kb_root / "chain.py").read_text(encoding="utf-8"))
     subgraph_tree = ast.parse((kb_root / "subgraph.py").read_text(encoding="utf-8"))
 
     for module in _imported_modules(node_tree):
         assert not module.startswith("public_kb"), f"node 入口直连 public_kb: {module}"
 
     allowed_surfaces = ("public_kb.tools", "public_kb.guardrails", "public_kb.rendering")
-    for tree, name in ((chain_tree, "chain.py"), (subgraph_tree, "subgraph.py")):
-        for module in _imported_modules(tree):
-            if module.startswith("public_kb"):
-                assert module.startswith(allowed_surfaces), f"{name} 直连 public_kb 内部: {module}"
+    for module in _imported_modules(subgraph_tree):
+        if module.startswith("public_kb"):
+            assert module.startswith(allowed_surfaces), f"subgraph.py 直连 public_kb 内部: {module}"
 
 
 def test_orchestration_has_no_public_kb_infra_imports():

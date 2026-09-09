@@ -1,148 +1,85 @@
-"""knowledge_qa 拆包后 节点分发 + 工具链路 离线测试（方案 Phase 1 / B-4、B-9）。
+"""knowledge_qa 节点单一实现测试（W1-1 收口后）。
 
-不触碰任何网络：工具链路的 kb_search / llm 均打桩；开关经 monkeypatch。
+W1-1 删除了 `USE_TOOL_KB` 开关与 legacy `rag.query()` / `chain.answer_knowledge`，
+节点恒走 knowledge_qa 子图。本文件验证：分发消失、config 透传、空消息友好降级，
+以及旧模块不得回潮。
 """
 
 from __future__ import annotations
 
-import warnings
 from types import SimpleNamespace
 
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.runnables import RunnableLambda
-
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-from public_kb.guardrails.citations_models import Citation
-from public_kb.tools import Chunk, RetrievalResult
 
 import agent.nodes.knowledge_qa.node as node_mod
-import agent.nodes.knowledge_qa.chain as chain_mod
 
 
-# ── 夹具 ──────────────────────────────────────────────────────
-
-def _triple(n: int = 1) -> RetrievalResult:
-    chunks = [
-        Chunk(content="招标方式分为公开招标和邀请招标。", chunk_id=1, chunk_uid="u1",
-              doc_name="招标投标法", chapter="第一章", chunk_index=0, score=0.9)
-    ][:n]
-    citations = [
-        Citation(context_index=1, chunk_id=1, chunk_uid="u1",
-                 doc_name="招标投标法", chapter="第一章", chunk_index=0,
-                 text="招标方式分为公开招标和邀请招标。", score=0.9)
-    ][:n]
-    return RetrievalResult(
-        chunks=chunks,
-        citations_meta=citations,
-        rendered_context="[来源1] 文档: 招标投标法 | 章节: 第一章\n招标方式分为公开招标和邀请招标。",
-        recall_trace={"mode": "fake"},
-    )
+def _fake_invoke(state, config=None):
+    return {
+        "business_result": {
+            "branch": "knowledge_qa",
+            "answer": "按【来源1】…",
+            "data": {"citation_validation": {"all_passed": True}},
+        },
+        "messages": [AIMessage(content="按【来源1】…")],
+    }
 
 
-def _llm_like(content: str):
-    """返回一个能参与 `prompt | llm | parser` 的假 Runnable。"""
-    return RunnableLambda(lambda messages: AIMessage(content=content))
+def test_node_always_invokes_subgraph(monkeypatch):
+    """无开关可切：节点唯一路径就是子图。"""
+    called = {}
 
-
-# ── 节点分发 ─────────────────────────────────────────────────
-
-def test_default_switch_is_off_tool_path():
-    """USE_TOOL_KB 默认 false（.env 未设置时）—— 保持旧行为。"""
-    assert node_mod._TOOL_PATH_ENABLED is False
-
-
-def test_node_dispatches_to_legacy_when_switch_off(monkeypatch):
-    monkeypatch.setattr(node_mod, "_TOOL_PATH_ENABLED", False)
-    called = {"legacy": False, "tool": False}
-
-    def fake_legacy(state):
-        called["legacy"] = True
-        return {"business_result": {"branch": "knowledge_qa", "answer": "legacy", "data": {}}}
-
-    def boom(state, config=None):
-        called["tool"] = True
-        raise AssertionError("不应走工具路径")
-
-    monkeypatch.setattr(node_mod, "run_legacy_node", fake_legacy)
-    monkeypatch.setattr(node_mod, "get_knowledge_qa_subgraph", lambda: SimpleNamespace(invoke=boom))
-
-    out = node_mod.node_knowledge_qa({"messages": [HumanMessage(content="招标方式有哪些")]})
-    assert called["legacy"] and not called["tool"]
-    assert out["business_result"]["answer"] == "legacy"
-
-
-def test_node_dispatches_to_tool_path_when_switch_on(monkeypatch):
-    monkeypatch.setattr(node_mod, "_TOOL_PATH_ENABLED", True)
-
-    def fake_invoke(state, config=None):
-        return {
-            "business_result": {"branch": "knowledge_qa", "answer": "按【来源1】…",
-                                "data": {"citation_validation": {"all_passed": True}}},
-            "messages": [AIMessage(content="按【来源1】…")],
-        }
+    def spy(state, config=None):
+        called["state"] = state
+        return _fake_invoke(state, config)
 
     monkeypatch.setattr(node_mod, "get_knowledge_qa_subgraph",
-                        lambda: SimpleNamespace(invoke=fake_invoke))
+                        lambda: SimpleNamespace(invoke=spy))
 
     out = node_mod.node_knowledge_qa({"messages": [HumanMessage(content="招标方式有哪些")]})
+
+    assert called["state"]["messages"][-1].content == "招标方式有哪些"
     assert out["business_result"]["branch"] == "knowledge_qa"
-    assert out["business_result"]["answer"] == "按【来源1】…"
     assert out["business_result"]["data"]["citation_validation"] == {"all_passed": True}
     assert out["messages"][0].content == "按【来源1】…"
 
 
 def test_node_forwards_config_to_subgraph(monkeypatch):
-    """子图化后：config（thread_id）透传子图 invoke（P6 记忆依赖）。"""
-    monkeypatch.setattr(node_mod, "_TOOL_PATH_ENABLED", True)
+    """子图化后：config（thread_id）透传子图 invoke（多轮记忆依赖）。"""
     seen = {}
 
-    def fake_invoke(state, config=None):
+    def spy(state, config=None):
         seen["config"] = config
         seen["state"] = state
-        return {"business_result": {"branch": "knowledge_qa", "answer": "x", "data": {}},
-                "messages": [AIMessage(content="x")]}
+        return _fake_invoke(state, config)
 
     monkeypatch.setattr(node_mod, "get_knowledge_qa_subgraph",
-                        lambda: SimpleNamespace(invoke=fake_invoke))
+                        lambda: SimpleNamespace(invoke=spy))
 
     node_mod.node_knowledge_qa(
         {"messages": [HumanMessage(content="q")]},
         config={"configurable": {"thread_id": "t1"}},
     )
+
     assert seen["config"] == {"configurable": {"thread_id": "t1"}}
     assert seen["state"]["messages"][-1].content == "q"
 
 
-def test_node_empty_messages_friendly(monkeypatch):
-    monkeypatch.setattr(node_mod, "_TOOL_PATH_ENABLED", True)
+def test_node_empty_messages_friendly():
+    """空消息由子图直接给友好提示（不建 LLM）。"""
     out = node_mod.node_knowledge_qa({"messages": []})
     assert "没有收到您的问题" in out["business_result"]["answer"]
 
 
-# ── 工具链路 chain.answer_knowledge ──────────────────────────
+def test_legacy_switch_and_modules_removed():
+    """W1-1/W1-2：开关字段与旧实现模块不得回潮。"""
+    from pathlib import Path
 
-def test_chain_empty_retrieval_refuses(monkeypatch):
-    monkeypatch.setattr(chain_mod, "kb_search", lambda q: RetrievalResult())
-    out = chain_mod.answer_knowledge("查无此条")
-    assert "暂无相关内容" in out["answer"]
-    assert out["sources"] == []
-    assert out["citations"] == []
-    assert out["citation_validation"]["is_refusal"] is True
-    assert out["retrieval_diagnostics"] == {}
+    from core.config.settings import Settings
 
+    assert not hasattr(Settings(), "enable_kb_tool_path")
+    assert not hasattr(node_mod, "_TOOL_PATH_ENABLED")
 
-def test_chain_full_triple_generates_and_validates(monkeypatch):
-    monkeypatch.setattr(chain_mod, "kb_search", lambda q: _triple(1))
-    monkeypatch.setattr(chain_mod, "_get_llm", lambda: _llm_like("招标方式包括公开招标和邀请招标。【来源1】"))
-
-    out = chain_mod.answer_knowledge("招标方式有哪些？")
-
-    assert "招标方式" in out["answer"]
-    assert len(out["citations"]) == 1
-    assert out["citations"][0]["chunk_uid"] == "u1"
-    # 引用标记解析到有效来源 → 校验通过
-    assert out["citation_validation"]["all_passed"] is True
-    assert out["retrieval_diagnostics"] == {"mode": "fake"}
-    # legacy sources 视图由 chunk 构建
-    assert out["sources"][0]["doc"] == "招标投标法"
+    kb_root = Path(node_mod.__file__).resolve().parent
+    assert not (kb_root / "legacy.py").exists()
+    assert not (kb_root / "chain.py").exists()

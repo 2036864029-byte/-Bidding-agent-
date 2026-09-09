@@ -6,9 +6,10 @@
 
 用法：
     uv run python scripts/run_agent_live_smoke.py                 # 默认（AGENT_MODE=supervisor）
-    AGENT_MODE=single USE_TOOL_KB=false uv run python scripts/run_agent_live_smoke.py
+    AGENT_MODE=single uv run python scripts/run_agent_live_smoke.py
 
-注意：``USE_TOOL_KB`` 与 ``AGENT_MODE`` 都在**导入期**读取，切换必须新起进程。
+注意：``AGENT_MODE`` 在**导入期**读取，切换必须新起进程。
+（W1-1 后 `USE_TOOL_KB` 开关已删除，knowledge 恒走子图。）
 
 依赖真实 DeepSeek / Milvus / MySQL。
 """
@@ -146,8 +147,7 @@ def _check(case: dict, row: dict, mode: str) -> tuple[bool | None, str]:
 
 def main() -> int:
     mode = os.getenv("AGENT_MODE", "supervisor")
-    tool_kb = os.getenv("USE_TOOL_KB", "false")
-    print(f"== agent live smoke ==  AGENT_MODE={mode}  USE_TOOL_KB={tool_kb}", flush=True)
+    print(f"== agent live smoke ==  AGENT_MODE={mode}", flush=True)
 
     project_number, company = _sample_from_db()
     print(f"sample project_number={project_number!r} company={company!r}\n", flush=True)
@@ -196,7 +196,7 @@ def main() -> int:
 
     print("\n" + "=" * 78, flush=True)
     print(f"结果：{passed}/{len(rows) - skipped} 通过，{skipped} 跳过"
-          f"（AGENT_MODE={mode} USE_TOOL_KB={tool_kb}）", flush=True)
+          f"（AGENT_MODE={mode}）", flush=True)
     for row in rows:
         ok, why = _check(next(c for c in _cases(project_number, company)
                               if c["name"] == row["name"]), row, mode)
@@ -204,9 +204,9 @@ def main() -> int:
             print(f"  FAIL {row['name']}: {why}", flush=True)
 
     REPORT_DIR.mkdir(exist_ok=True)
-    out = REPORT_DIR / f"agent_live_smoke_{mode}_{tool_kb}.json"
+    out = REPORT_DIR / f"agent_live_smoke_{mode}.json"
     out.write_text(json.dumps(
-        {"mode": mode, "use_tool_kb": tool_kb, "passed": passed,
+        {"mode": mode, "passed": passed,
          "skipped": skipped, "total": len(rows), "rows": rows},
         ensure_ascii=False, indent=2,
     ), encoding="utf-8")

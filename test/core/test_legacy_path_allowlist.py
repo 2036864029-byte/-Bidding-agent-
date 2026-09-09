@@ -29,6 +29,11 @@ REMOVED_SHELLS: dict[str, str] = {
     "public_kb.services.milvus_store": "core.vectorstore.milvus_client",
     "agent.nodes.answer_templates": "price_engine.rendering.answer_templates",
     "agent.nodes.output_templates": "price_engine.rendering.output_templates",
+    # W1-1/W1-2（knowledge 单一实现 + 死代码清退）
+    "agent.nodes.knowledge_qa.legacy": "已删除（旧 rag.query 路径，knowledge_qa 子图为唯一实现）",
+    "agent.nodes.knowledge_qa.chain": "已删除（answer_knowledge 仅测试引用，随 legacy 一并清退）",
+    "public_kb.generation.prompts": "public_kb.rendering.prompts",
+    "public_kb.ingestion.models": "已删除（无生产消费方）",
 }
 
 _SHELL_FILES = [
@@ -45,6 +50,10 @@ _SHELL_FILES = [
     "agent/nodes/answer_templates.py",
     "agent/nodes/output_templates.py",
     "agent/nodes/price_inquiry/db.py",
+    "agent/nodes/knowledge_qa/legacy.py",
+    "agent/nodes/knowledge_qa/chain.py",
+    "public_kb/generation/prompts.py",
+    "public_kb/ingestion/models.py",
 ]
 
 

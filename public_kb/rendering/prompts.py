@@ -1,10 +1,16 @@
-# 功能：构造公共知识库问答使用的系统提示词和用户模板。
-"""Prompt construction for the public knowledge QA chain."""
+# 功能：RAG 问答提示词模板（渲染层单一来源）。
+"""Prompt construction — 由 public_kb/generation/prompts.py 迁入（W1-2）。
+
+W1-2：该模板原先在 `public_kb/generation/prompts.py` 与
+`agent/nodes/knowledge_qa/prompts.py` 各存一份、逐字重复。现收敛到渲染层
+（`public_kb.rendering` 是 agent 侧允许的复用门面），两条链路共用同一份：
+  - `public_kb/generation/chain.py`（LCEL 链路 / PublicKnowledgeRAG）
+  - `agent/nodes/knowledge_qa/subgraph.py`（工具链路，经 agent 侧 prompts.py 转发）
+"""
 
 from __future__ import annotations
 
 from langchain_core.prompts import ChatPromptTemplate
-
 
 INLINE_CITATION_INSTRUCTION = (
     "回答时必须在相关结论句末标注引用来源编号，格式如【来源1】【来源2】。\n"
@@ -31,3 +37,6 @@ def build_prompt(system_text: str, enable_inline_citations: bool = True) -> Chat
         ("system", system),
         ("user",   USER_TEMPLATE),
     ])
+
+
+__all__ = ["INLINE_CITATION_INSTRUCTION", "USER_TEMPLATE", "build_prompt"]

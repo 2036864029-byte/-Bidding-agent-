@@ -1,34 +1,27 @@
-"""知识问答生成提示词（Phase 1 / B-4）— agent 侧生成编排自持模板。
+"""知识问答提示词（W1-2：模板收敛到 public_kb.rendering.prompts，本文件只保留重试变体）。
 
-与旧 public_kb/generation/prompts.py 的 build_prompt 逐字等价（同一
-system_prompt + 内联引用指令）。旧路径（rag.query）保留到 USE_TOOL_KB 切 true
-并经 P2 验证后删除，届时删除 public_kb/generation/prompts.py 的重复实现。
+- 首轮模板与 LCEL 链路（`public_kb.generation.chain`）共用同一份，不再各存一份副本。
+- 重试模板 = 首轮 + 「修改要求」反馈块（护栏失败后重生成用，仅 agent 侧需要）。
 """
 
 from __future__ import annotations
 
 from langchain_core.prompts import ChatPromptTemplate
 
-
-INLINE_CITATION_INSTRUCTION = (
-    "回答时必须在相关结论句末标注引用来源编号，格式如【来源1】【来源2】。\n"
-    "未使用的参考资料不要标注其编号。"
+from public_kb.rendering.prompts import (  # noqa: F401  # re-export 供既有导入路径
+    INLINE_CITATION_INSTRUCTION,
+    USER_TEMPLATE,
+    build_prompt,
 )
 
-USER_TEMPLATE = """参考资料：
-{context}
-
-用户问题：{question}"""
-
-# 护栏失败重试模板（Phase 6 / F-3）：在首轮模板基础上追加「修改要求」反馈。
 RETRY_USER_TEMPLATE = USER_TEMPLATE + """
 
 修改要求（上一轮回答未通过引用校验，请修正引用标注后重新回答）：
 {feedback}"""
 
 
-def build_prompt(system_text: str, enable_inline_citations: bool = True) -> ChatPromptTemplate:
-    """构建问答提示词模板。
+def build_retry_prompt(system_text: str, enable_inline_citations: bool = True) -> ChatPromptTemplate:
+    """构建护栏失败重试提示词模板（首轮模板 + 修改要求块）。
 
     Args:
         system_text: system 提示词正文（来自 Settings.system_prompt）。
@@ -39,16 +32,14 @@ def build_prompt(system_text: str, enable_inline_citations: bool = True) -> Chat
         system += "\n\n" + INLINE_CITATION_INSTRUCTION
     return ChatPromptTemplate.from_messages([
         ("system", system),
-        ("user",   USER_TEMPLATE),
-    ])
-
-
-def build_retry_prompt(system_text: str, enable_inline_citations: bool = True) -> ChatPromptTemplate:
-    """构建护栏失败重试提示词模板（首轮模板 + 修改要求块）。"""
-    system = system_text
-    if enable_inline_citations:
-        system += "\n\n" + INLINE_CITATION_INSTRUCTION
-    return ChatPromptTemplate.from_messages([
-        ("system", system),
         ("user",   RETRY_USER_TEMPLATE),
     ])
+
+
+__all__ = [
+    "INLINE_CITATION_INSTRUCTION",
+    "USER_TEMPLATE",
+    "RETRY_USER_TEMPLATE",
+    "build_prompt",
+    "build_retry_prompt",
+]

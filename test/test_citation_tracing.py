@@ -12,17 +12,19 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from langchain_core.documents import Document  # noqa: E402
 from langchain_core.language_models.fake_chat_models import (  # noqa: E402
     FakeListChatModel,
 )
 from langchain_core.messages import HumanMessage  # noqa: E402
-from langchain_core.documents import Document  # noqa: E402
 
+from core.config.settings import CitationRuleConfig, Settings  # noqa: E402
 from core.contracts.chunk_ids import (  # noqa: E402
     compute_chunk_uid,
     compute_text_hash,
     normalize_chunk_text,
 )
+from public_kb.generation.chain import build_chain as build_qa_chain  # noqa: E402
 from public_kb.guardrails import (  # noqa: E402
     Citation,
     CitationValidator,
@@ -30,12 +32,12 @@ from public_kb.guardrails import (  # noqa: E402
     format_citations,
     parse_citation_markers,
 )
-from core.config.settings import CitationRuleConfig, Settings  # noqa: E402
-from public_kb.generation.chain import build_chain as build_qa_chain  # noqa: E402
 from public_kb.retrieval.entities import entity_to_doc as _entity_to_doc  # noqa: E402
 from public_kb.retrieval.fallback import dense_only_retrieve as _dense_only_retrieve  # noqa: E402
 from public_kb.retrieval.milvus_search import (  # noqa: E402
     hybrid_search_with_full_fields as _hybrid_search_with_full_fields,
+)
+from public_kb.retrieval.milvus_search import (
     search_with_full_fields as _search_with_full_fields,
 )
 from public_kb.retrieval.reranker import SiliconFlowReranker  # noqa: E402
@@ -539,40 +541,39 @@ def test_format_citations_text_cap():
 # ────────────────────────────────────────────────
 # knowledge_qa 节点：citations 透传 business_result
 # ────────────────────────────────────────────────
-def test_node_knowledge_qa_passes_citations():
+def test_node_knowledge_qa_passes_citations(monkeypatch):
+    """W1-1：节点经子图透传 sources / citations / citation_validation。"""
+    from langchain_core.messages import AIMessage
+    from langchain_core.runnables import RunnableLambda
+
     from agent.nodes import knowledge_qa as kqa
-    # B-4 拆包后旧路径实现（含 _rag_engine 单例）收敛于 knowledge_qa/legacy.py
-    from agent.nodes.knowledge_qa import legacy as kqa_legacy
+    from agent.nodes.knowledge_qa import subgraph as kqa_subgraph
+    from public_kb.tools import Chunk, RetrievalResult
 
-    citations = [{
-        "context_index": 1, "chunk_id": 7001, "chunk_uid": "ck-x",
-        "doc_name": "法A", "chapter": "第一章", "chunk_index": 0,
-        "text": "第一条", "score": 0.9, "metadata": {},
-    }]
-    validation = {"all_passed": True, "is_refusal": False}
+    chunk = Chunk(content="第一条", chunk_id=7001, chunk_uid="ck-x",
+                  doc_name="法A", chapter="第一章", chunk_index=0, score=0.9)
+    citation = Citation(
+        context_index=1, chunk_id=7001, chunk_uid="ck-x",
+        doc_name="法A", chapter="第一章", chunk_index=0,
+        text="第一条", score=0.9,
+    )
+    retrieval = RetrievalResult(
+        chunks=[chunk], citations_meta=[citation],
+        rendered_context="ctx", recall_trace={"mode": "fake"},
+    )
 
-    class _FakeRAG:
-        def query(self, question):
-            return {
-                "answer": "答案【来源1】",
-                "sources": [{"doc": "法A"}],
-                "citations": citations,
-                "citation_validation": validation,
-            }
+    monkeypatch.setattr(kqa_subgraph, "kb_search", lambda q: retrieval)
+    monkeypatch.setattr(
+        kqa_subgraph, "_get_llm",
+        lambda: RunnableLambda(lambda _pv: AIMessage(content="答案【来源1】")),
+    )
 
-    saved = kqa_legacy._rag_engine
-    kqa_legacy._rag_engine = _FakeRAG()
-    try:
-        result = kqa.node_knowledge_qa(
-            {"messages": [HumanMessage(content="问题？")]}
-        )
-    finally:
-        kqa_legacy._rag_engine = saved
+    result = kqa.node_knowledge_qa({"messages": [HumanMessage(content="问题？")]})
 
     data = result["business_result"]["data"]
-    assert data["sources"] == [{"doc": "法A"}]
-    assert data["citations"] == citations
-    assert data["citation_validation"] == validation
+    assert data["sources"][0]["doc"] == "法A"
+    assert data["citations"][0]["chunk_uid"] == "ck-x"
+    assert data["citation_validation"]["all_passed"] is True
 
 
 if __name__ == "__main__":

@@ -1,10 +1,11 @@
-"""knowledge_qa 子图（方案 Phase 6 / F-1）离线测试。
+"""knowledge_qa 子图离线测试（W1-1 收口后：子图即唯一实现）。
 
-不触碰网络：kb_search / _get_llm 打桩（与 test/test_knowledge_qa_tool.py 同款夹具）。
+不触碰网络：kb_search / _get_llm 打桩。
 覆盖：
   1. 子图能力探针：作父图节点时 qa_* 独有键不泄漏、messages/business_result 合并回父图。
-  2. 行为等价：子图终态 vs chain.answer_knowledge 在相同 fixtures 上逐键一致（F-1 门禁）。
+  2. 终态契约：正常生成 / 空检索拒答的 answer/citations/校验报告/诊断字段。
   3. 出口矩阵：拒答 / 检索未就绪(RuntimeError) / 空消息 / 正常生成。
+  4. 护栏失败有界重试。
 """
 
 from __future__ import annotations
@@ -13,17 +14,15 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 from langgraph.graph import END, StateGraph
 
-import agent.nodes.knowledge_qa.chain as chain_mod
 import agent.nodes.knowledge_qa.subgraph as subgraph_mod
 from agent.nodes.knowledge_qa.subgraph import (
-    KB_MAX_ATTEMPTS,
     _REFUSAL_ANSWER,
+    KB_MAX_ATTEMPTS,
     build_knowledge_qa_subgraph,
 )
 from agent.state import AgentState
 from public_kb.guardrails.citations_models import Citation
 from public_kb.tools import Chunk, RetrievalResult
-
 
 # ── 夹具（与 test_knowledge_qa_tool 同构）─────────────────────
 
@@ -50,9 +49,7 @@ def _llm_like(content: str):
 
 
 def _patch_tool_path(monkeypatch, *, retrieval, answer):
-    """同时打桩 chain 与 subgraph 的共享符号（二者各持独立绑定，须分别替换）。"""
-    monkeypatch.setattr(chain_mod, "kb_search", lambda q: retrieval)
-    monkeypatch.setattr(chain_mod, "_get_llm", lambda: _llm_like(answer))
+    """打桩子图共享符号：kb_search / _get_llm。"""
     monkeypatch.setattr(subgraph_mod, "kb_search", lambda q: retrieval)
     monkeypatch.setattr(subgraph_mod, "_get_llm", lambda: _llm_like(answer))
 
@@ -78,38 +75,38 @@ def test_subgraph_as_parent_node_isolates_internal_keys(monkeypatch):
     assert out["messages"][-1].content == out["business_result"]["answer"]
 
 
-# ── 2. 行为等价：子图 vs chain（F-1 门禁）─────────────────────
+# ── 2. 终态契约 ───────────────────────────────────────────────
 
-def test_subgraph_equals_chain_full_triple(monkeypatch):
-    """正常生成路径：终态与 chain.answer_knowledge 逐键一致。"""
+def test_subgraph_full_triple_generates_and_validates(monkeypatch):
+    """正常生成路径：答案 / 引用 / 校验报告 / 诊断字段齐备。"""
     _patch_tool_path(monkeypatch, retrieval=_triple(1),
                      answer="招标方式包括公开招标和邀请招标。【来源1】")
-    chain_out = chain_mod.answer_knowledge("招标方式有哪些？")
     sub = build_knowledge_qa_subgraph()
     state_out = sub.invoke({"messages": [HumanMessage(content="招标方式有哪些？")]})
     biz = state_out["business_result"]
 
-    assert biz["answer"] == chain_out["answer"]
-    assert biz["data"]["sources"] == chain_out["sources"]
-    assert biz["data"]["citations"] == chain_out["citations"]
-    assert biz["data"]["citation_validation"] == chain_out["citation_validation"]
-    assert biz["data"]["retrieval_diagnostics"] == chain_out["retrieval_diagnostics"]
-    assert state_out["messages"][-1].content == chain_out["answer"]
+    assert biz["answer"] == "招标方式包括公开招标和邀请招标。【来源1】"
+    assert len(biz["data"]["citations"]) == 1
+    assert biz["data"]["citations"][0]["chunk_uid"] == "u1"
+    assert biz["data"]["citation_validation"]["all_passed"] is True
+    # W1-1：诊断必须透出（旧 legacy 路径会丢弃它）
+    assert biz["data"]["retrieval_diagnostics"] == {"mode": "fake"}
+    assert biz["data"]["sources"][0]["doc"] == "招标投标法"
+    assert state_out["messages"][-1].content == biz["answer"]
 
 
-def test_subgraph_equals_chain_refusal(monkeypatch):
-    """空检索拒答路径：终态与 chain 逐键一致（含拒答护栏报告）。"""
+def test_subgraph_empty_retrieval_refuses(monkeypatch):
+    """空检索拒答路径：拒答文案 + 拒答护栏报告 + 空诊断。"""
     _patch_tool_path(monkeypatch, retrieval=RetrievalResult(), answer="不应触发生成")
-    chain_out = chain_mod.answer_knowledge("查无此条")
     sub = build_knowledge_qa_subgraph()
     state_out = sub.invoke({"messages": [HumanMessage(content="查无此条")]})
     biz = state_out["business_result"]
 
-    assert biz["answer"] == chain_out["answer"] == _REFUSAL_ANSWER
-    assert biz["data"]["sources"] == chain_out["sources"] == []
-    assert biz["data"]["citations"] == chain_out["citations"] == []
-    assert biz["data"]["citation_validation"] == chain_out["citation_validation"]
-    assert biz["data"]["retrieval_diagnostics"] == chain_out["retrieval_diagnostics"]
+    assert biz["answer"] == _REFUSAL_ANSWER
+    assert biz["data"]["sources"] == []
+    assert biz["data"]["citations"] == []
+    assert biz["data"]["citation_validation"]["is_refusal"] is True
+    assert biz["data"]["retrieval_diagnostics"] == {}
 
 
 # ── 3. 出口矩阵 ──────────────────────────────────────────────

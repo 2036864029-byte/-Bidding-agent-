@@ -11,14 +11,14 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_milvus import Milvus as MilvusVectorStore
 
-from ..guardrails import CitationValidator, build_citations
 from core.config.settings import Settings
 from core.contracts import validate_question
+
+from ..guardrails import CitationValidator, build_citations
+from ..rendering.context import build_sources, format_docs
+from ..rendering.prompts import build_prompt
 from ..retrieval.reranker import Reranker
 from ..retrieval.retriever import HybridRetriever, RetrievalResult
-from ..rendering.context import build_sources, format_docs
-from .prompts import build_prompt
-
 
 logger = logging.getLogger(__name__)
 

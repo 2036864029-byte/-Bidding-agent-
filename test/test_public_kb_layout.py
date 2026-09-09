@@ -8,34 +8,32 @@ from pathlib import Path
 
 import public_kb
 from agent.nodes.knowledge_qa import node_knowledge_qa
+from core.config.settings import Settings
 from core.contracts import (
+    RerankerStatus,
     RetrievalDiagnostics,
     RetrievalMode,
-    RerankerStatus,
     validate_ingestion_documents,
 )
 from core.contracts.chunk_ids import compute_chunk_uid
-from core.config.settings import Settings
-from public_kb.guardrails import CitationValidator
-from public_kb.generation.chain import build_chain
-from public_kb.ingestion.models import IngestionResult, SourceResult, StageResult
-from public_kb.ingestion.pipeline import FileIngestionPipeline
-from public_kb.ingestion.csv_loader import CsvLoader, save_chunks_to_markdown
-from public_kb.ingestion.transforms.chunker import SemanticChunker
-from public_kb.ingestion.transforms.cleaner import TextCleaner
-from public_kb.generation.chain import build_chain as build_qa_chain
-from public_kb.retrieval.fallback import dense_only_retrieve as stable_dense_only_retrieve
-from public_kb.retrieval.reranker import SiliconFlowReranker as stable_siliconflow_reranker
-from public_kb.retrieval.retriever import HybridRetrievalError as StableHybridRetrievalError
-from public_kb.engine import PublicKnowledgeRAG
-from public_kb.retrieval.fallback import dense_only_retrieve
-from public_kb.retrieval.reranker import Reranker, SiliconFlowReranker
-from public_kb.retrieval.retriever import HybridRetrievalError, HybridRetriever
 from core.embeddings.bge_m3 import _SafeEmbeddings, create_embeddings
 from core.llm.deepseek import create_llm
 from core.vectorstore.milvus_client import MilvusStoreManager
+from public_kb.engine import PublicKnowledgeRAG
+from public_kb.generation.chain import build_chain
+from public_kb.generation.chain import build_chain as build_qa_chain
+from public_kb.guardrails import CitationValidator
+from public_kb.ingestion.csv_loader import CsvLoader, save_chunks_to_markdown
+from public_kb.ingestion.pipeline import FileIngestionPipeline
+from public_kb.ingestion.transforms.chunker import SemanticChunker
+from public_kb.ingestion.transforms.cleaner import TextCleaner
+from public_kb.retrieval.fallback import dense_only_retrieve
+from public_kb.retrieval.fallback import dense_only_retrieve as stable_dense_only_retrieve
+from public_kb.retrieval.reranker import Reranker, SiliconFlowReranker
+from public_kb.retrieval.reranker import SiliconFlowReranker as stable_siliconflow_reranker
+from public_kb.retrieval.retriever import HybridRetrievalError, HybridRetriever
+from public_kb.retrieval.retriever import HybridRetrievalError as StableHybridRetrievalError
 from public_kb.services.mineru_parser import MinerUParser
-
 
 PUBLIC_KB_ROOT = Path(public_kb.__file__).resolve().parent
 LEGACY_MODULES = {
@@ -72,9 +70,6 @@ def test_stable_public_entries_import_without_initializing_services():
 
 def test_consolidated_pipeline_boundaries_import():
     assert FileIngestionPipeline is not None
-    assert SourceResult is not None
-    assert StageResult is not None
-    assert IngestionResult is not None
     assert validate_ingestion_documents is not None
     assert SemanticChunker is not None
     assert TextCleaner is not None

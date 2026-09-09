@@ -1,48 +1,105 @@
-"""knowledge_qa 子图（方案 Phase 6 / F-1）— 工具链路的图化编排。
+"""knowledge_qa 子图 — 知识问答的**唯一实现**（W1-1 收口后）。
 
-把 chain.answer_knowledge 的线性流程（kb_search → prompt|llm → 护栏 → 拒答）改造成
-可独立编译的 StateGraph 子图。F-2 起由 node.node_knowledge_qa 主调子图（config 转发
-thread_id）；graph.py / NodeSpec / registry 零改动。
+流程：kb_search（检索 + 三元组）→ prompt|llm 生成 → 引用护栏 R1~R7 → 失败有界重试
+→ 拒答。`node.node_knowledge_qa`（single 模式）与 supervisor 主图都直接调本子图；
+LCEL 旧链路（`PublicKnowledgeRAG.query`）不再是 agent 路径。
 
-状态边界（langgraph 子图命名空间，已探针验证）：
+状态边界（langgraph 子图命名空间）：
   - 共享通道 messages / business_result 自动合并回父图（AgentState 不动）。
-  - qa_* 独有键只在子图作用域内读写，不污染 AgentState —— 与 state.py 明示设计
-    原则一致（P4-2 State 分层继续推迟）。
+  - qa_* 独有键只在子图作用域内读写，不污染 AgentState。
 
-行为等价性（F-1 门禁）：与 chain.answer_knowledge / node._run_tool_node 在相同
-mock fixtures 上逐键一致；重试循环属 F-3，本步不引入。
+运行时单例（W1-1 自 agent/nodes/knowledge_qa/chain.py 迁入）：settings / llm /
+validator / prompt 均带锁惰性创建。
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Annotated, TypedDict
+import threading
+from typing import Annotated, Any, Dict, Optional, TypedDict
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.output_parsers import StrOutputParser
 from langgraph.graph import END, StateGraph, add_messages
 
-from public_kb.tools import RetrievalResult, kb_search
-
-from .chain import (
-    _REFUSAL_ANSWER,
-    _chunk_to_source,
-    _get_llm,
-    _get_prompt,
-    _get_settings,
-    _get_validator,
-)
-
+from core.config.settings import Settings
+from core.llm.registry import create_llm_for_slot
 from core.observability.metrics import record_guardrail_fail
-from .prompts import build_retry_prompt
+from public_kb.guardrails.citations_validate import CitationValidator
+from public_kb.tools import Chunk, RetrievalResult, kb_search
+
+from .prompts import build_prompt, build_retry_prompt
 
 logger = logging.getLogger(__name__)
+
+_REFUSAL_ANSWER = "抱歉，公共知识库中暂无相关内容，无法提供可靠回答。"
 
 _KB_NOT_READY_ANSWER = "知识库尚未初始化，请先执行入库操作。"
 _KB_NOT_READY_MESSAGE = "知识库尚未初始化，请联系管理员。"
 _NO_QUESTION_ANSWER = "抱歉，没有收到您的问题，请重新输入。"
 # 护栏失败重试上限（F-3）：首轮生成 + ≤1 次带反馈重生成，有界不无限循环。
 KB_MAX_ATTEMPTS = 2
+
+# ── 运行时单例（带锁惰性；W1-1 自 chain.py 迁入）─────────────────
+_lock = threading.Lock()
+_settings: Optional[Settings] = None
+_llm: Optional[BaseChatModel] = None
+_validator: Optional[CitationValidator] = None
+_prompt: Optional[Any] = None
+
+
+def _get_settings() -> Settings:
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
+
+
+def _get_llm() -> BaseChatModel:
+    global _llm
+    if _llm is None:
+        with _lock:
+            if _llm is None:
+                # 槽位 kb_generation（models.yaml：model 继承 env LLM_MODEL，temp=0.0）
+                _llm = create_llm_for_slot("kb_generation", _get_settings())
+    return _llm
+
+
+def _get_validator() -> CitationValidator:
+    global _validator
+    if _validator is None:
+        _validator = CitationValidator(_get_settings().citation_rules)
+    return _validator
+
+
+def _get_prompt():
+    global _prompt
+    if _prompt is None:
+        s = _get_settings()
+        _prompt = build_prompt(
+            s.system_prompt,
+            enable_inline_citations=s.enable_inline_citations,
+        )
+    return _prompt
+
+
+def reset_runtime() -> None:
+    """清空惰性单例（测试用）。"""
+    global _llm, _validator, _prompt, _settings
+    _llm = _validator = _prompt = _settings = None
+
+
+def _chunk_to_source(chunk: Chunk) -> Dict[str, Any]:
+    """chunk → legacy sources 视图（保持既有消费方字段契约）。"""
+    content = chunk.content
+    return {
+        "doc": chunk.doc_name or "未知文档",
+        "chapter": chunk.chapter or "未知章节",
+        "chunk_index": chunk.chunk_index,
+        "content_snippet": content[:200] + "..." if len(content) > 200 else content,
+        "score": chunk.score,
+    }
 
 
 class KnowledgeQaState(TypedDict, total=False):

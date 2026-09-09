@@ -486,15 +486,6 @@ class Settings:
     )
 
     # ============================================================
-    # knowledge_qa 新工具链路开关（Phase 1 / B-4、B-11）
-    # 默认 false = 走旧 rag.query()（行为不变）；true = 走 kb_search→prompt→
-    # 槽位 kb_generation→护栏 的新编排。待 live 验证后再切 true（方案偏差记录）。
-    # ============================================================
-    enable_kb_tool_path: bool = field(
-        default_factory=lambda: os.getenv("USE_TOOL_KB", "false").lower()
-        in {"1", "true", "yes"}
-    )
-
     # knowledge_qa 子图护栏失败重试开关（方案 Phase 6 / F-3）
     # 默认 true：护栏（R1~R7）失败时把失败原因注入 prompt 重生成一次（总 ≤2 次），
     # 提高引用合规率；false = 返回答案 + 校验报告（P6 前现状语义）。
