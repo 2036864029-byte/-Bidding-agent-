@@ -1,0 +1,22 @@
+{
+  "source": "testset_1000_local.jsonl",
+  "source_size": 1000,
+  "seed": 42,
+  "git_commit": "ccc75aa",
+  "dev": {
+    "file": "dev_100.jsonl",
+    "size": 100,
+    "distribution": {
+      "multi_hop": 35,
+      "single_hop": 65
+    }
+  },
+  "holdout": {
+    "file": "holdout_200.jsonl",
+    "size": 200,
+    "distribution": {
+      "multi_hop": 70,
+      "single_hop": 130
+    }
+  }
+}

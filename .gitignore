@@ -56,13 +56,17 @@ htmlcov/
 .cache/
 
 # ===== 数据资产 — 团队成员各自获取，不入仓 =====
-DATA/
+# 例外：评测金标集（体积小、必须版本化，见 docs/plan1/评测与可观测性/）
+DATA/*
+!DATA/eval_rag/
 raw_pdfs/
 new_pdfs/
 raw_policy/
 raw_tables/
 cloud_sync/
 *.jsonl
+# 例外：评测金标集必须版本化（见 docs/plan1/评测与可观测性/）
+!DATA/eval_rag/*.jsonl
 
 # ===== 本地备份 =====
 backup.sql
