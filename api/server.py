@@ -2,7 +2,8 @@
 """server（方案 Phase 2 / C-5）。
 
 - create_app(get_agent=...) 工厂：便于测试注入 mock agent。
-- POST /chat：stream=false → invoke 返回 ChatResponse；stream=true → SSE 逐事件转发。
+- POST /chat：stream=false → invoke 返回 ChatResponse；stream=true → SSE 逐 token 转发
+  （W3-2：生成节点 .stream 实时写 sink → async 端点逐帧转发 token/result/error/done）。
 - GET /health：agent 就绪标志。
 - CORS origin 走 env CORS_ORIGINS（逗号分隔，默认 *）。
 - 入口：python -m api.server（uvicorn，host/port 走 env，默认 127.0.0.1:8000）。
@@ -10,14 +11,16 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 from functools import partial
 from pathlib import Path
-from typing import Callable, Generator, Optional
+from typing import AsyncIterator, Callable, Optional
 
 import anyio
 from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile
@@ -35,6 +38,7 @@ from core.observability.metrics import content_type, render_metrics
 from core.protocol.renderers.api import reply_to_response
 from core.protocol.reply import to_reply
 from core.session import get_session_registry
+from core.streaming.sink import StreamSink, set_active_sink
 from public_kb.ingestion.parse_tool import parse_file
 
 from . import file_store
@@ -88,7 +92,8 @@ def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
         context_docs=_resolve_context_docs(req.file_ids, session_id),
     )
     latency_ms = int((time.perf_counter() - t0) * 1000)
-    business_result = result.get("business_result") or {"branch": "fallback", "answer": "", "data": None}
+    fallback_biz = {"branch": "fallback", "answer": "", "data": None}
+    business_result = result.get("business_result") or fallback_biz
     reply = to_reply(
         business_result,
         intent=str(result.get("intent", "unknown")),
@@ -105,43 +110,116 @@ def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
     return ChatResponse(**reply_to_response(reply), session_id=session_id)
 
 
-def _sse_events(
+def _run_stream_worker(
     agent: AgentGraph,
     req: ChatRequest,
     session_id: str,
     context_docs: list[tuple[str, str]],
-) -> Generator[str, None, None]:
-    """把 AgentGraph.stream() 的图事件逐块转发为 SSE data。
+    sink: StreamSink,
+) -> None:
+    """SSE 工作线程：完整跑一次 ``agent.invoke``，token 由生成节点实时写入 sink。
 
-    首个事件回传 session_id（请求未带时由服务端生成），供客户端延续会话。
-    context_docs 已在响应开始前解析完毕——文件校验失败走正常 HTTP 404，
-    不会变成流中途的 error 事件。
+    W3-2：图执行是同步整链（节点契约 ``(state)->dict``），放在独立 daemon 线程；
+    端点侧经 ``copy_context().run`` 显式带入上下文（本 Python 的 threading.Thread
+    不自动拷贝 contextvars），生成节点的 ``emit_token`` 经 contextvar 命中 sink；
+    端点侧从 sink 队列逐帧转发，互不阻塞。终态/异常也写 sink，供端点发
+    ``result`` / ``error`` / ``done`` 事件。
     """
-    yield "event: session\ndata: " + json.dumps(
-        {"session_id": session_id}, ensure_ascii=False
-    ) + "\n\n"
+    t0 = time.perf_counter()
     try:
-        for event in agent.stream(
+        result = agent.invoke(
             req.question,
             thread_id=session_id,
             context_docs=context_docs,
-        ):
-            yield "data: " + json.dumps(event, ensure_ascii=False, default=str) + "\n\n"
-    except Exception:  # 流中异常以 error 事件收尾，不中断连接
-        # W2-3：只回统一信封，异常原文只进日志（不向客户端泄露内部细节）
-        logger.exception("SSE 异常")
+        )
+    except Exception:  # 图级异常（节点内异常已被 _with_fallback 兜住，到不了这里）
+        logger.exception("SSE 流式图执行异常")
         record_audit(
             action="chat_stream", status="error", session_id=session_id,
             question=req.question, error_code="sys_2500",
         )
-        yield "event: error\ndata: " + json.dumps(
-            unhandled_envelope(), ensure_ascii=False
-        ) + "\n\n"
-    else:
-        record_audit(
-            action="chat_stream", status="ok", session_id=session_id,
-            question=req.question,
-        )
+        sink.put_event("error", unhandled_envelope())
+        sink.put_event("done", None)
+        return
+
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+    fallback_biz = {"branch": "fallback", "answer": "", "data": None}
+    business_result = result.get("business_result") or fallback_biz
+    reply = to_reply(
+        business_result,
+        intent=str(result.get("intent", "unknown")),
+        latency_ms=latency_ms,
+    )
+    payload = reply_to_response(reply)
+    payload["session_id"] = session_id
+    record_audit(
+        action="chat_stream",
+        status="ok" if not reply.error_code else "error",
+        session_id=session_id,
+        question=req.question,
+        latency_ms=latency_ms,
+        error_code=reply.error_code,
+    )
+    sink.put_event("result", payload)
+    sink.put_event("done", None)
+
+
+async def _sse_stream(
+    agent: AgentGraph,
+    req: ChatRequest,
+    session_id: str,
+    context_docs: list[tuple[str, str]],
+) -> AsyncIterator[str]:
+    """SSE 事件流（async 生成器）：sink 队列 → ``token`` / ``result`` / ``error`` / ``done``。
+
+    事件协议（W3-2）：
+      - ``event: session``  —— 首个事件回传会话 id（请求未带时服务端生成）
+      - ``event: token``    —— 生成节点增量 token（data={"delta": "..."}），客户端累积展示
+      - ``event: result``   —— 终态结构化响应（与 POST /chat 同构 + session_id），
+                              客户端以 ``result.answer`` 为权威终态（覆盖 token 累积）
+      - ``event: error``    —— 图执行异常统一信封（不回内部细节）
+      - ``event: done``     —— 流结束
+    """
+    sink = StreamSink()
+    set_active_sink(sink)
+    yield "event: session\ndata: " + json.dumps(
+        {"session_id": session_id}, ensure_ascii=False
+    ) + "\n\n"
+
+    # threading.Thread 在此 Python 环境**不拷贝**调用方 contextvars（实测），
+    # 而生成节点的 emit_token / 审计的 request_id 都依赖 contextvar —— 显式用
+    # copy_context().run() 把当前上下文（含 sink、request_id、session_id）带入图线程。
+    ctx = contextvars.copy_context()
+    worker = threading.Thread(
+        target=lambda: ctx.run(
+            _run_stream_worker, agent, req, session_id, context_docs, sink,
+        ),
+        daemon=True,
+        name=f"sse-{session_id[:8]}",
+    )
+    worker.start()
+
+    while True:
+        item = await anyio.to_thread.run_sync(sink.get)
+        if item is None:  # 超时：无新事件；工作线程已退且无 done → 防悬挂收尾
+            if not worker.is_alive():
+                break
+            continue
+        kind, payload = item
+        if kind == "token":
+            yield "event: token\ndata: " + json.dumps(
+                {"delta": payload}, ensure_ascii=False
+            ) + "\n\n"
+        elif kind == "result":
+            yield "event: result\ndata: " + json.dumps(
+                payload, ensure_ascii=False, default=str
+            ) + "\n\n"
+        elif kind == "error":
+            yield "event: error\ndata: " + json.dumps(
+                payload, ensure_ascii=False, default=str
+            ) + "\n\n"
+        elif kind == "done":
+            break
     yield "event: done\ndata: {}\n\n"
 
 
@@ -292,7 +370,7 @@ def create_app(
         return _invoke_response(agent, req)
 
     @app.post("/chat/stream")
-    def chat_stream(req: ChatRequest, agent: AgentGraph = Depends(get_agent_fn)):
+    async def chat_stream(req: ChatRequest, agent: AgentGraph = Depends(get_agent_fn)):
         if not req.stream:
             # 兼容：stream=false 打到 /chat/stream 时退化为普通响应
             return _invoke_response(agent, req)
@@ -302,7 +380,7 @@ def create_app(
         # 文件校验放在响应开始之前，失败返回正常 HTTP 404 而不是流中 error 事件
         context_docs = _resolve_context_docs(req.file_ids, session_id)
         return StreamingResponse(
-            _sse_events(agent, req, session_id, context_docs),
+            _sse_stream(agent, req, session_id, context_docs),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

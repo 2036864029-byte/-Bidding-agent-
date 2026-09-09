@@ -15,7 +15,7 @@ def _context_state(question="帮我分析这份标书", name="标书.pdf", body=
 
 
 class FakeRunnable:
-    """可组合的可运行替身：__or__ 返回自身，invoke 记录入参返回固定答案。"""
+    """可组合的可运行替身：__or__ 返回自身，invoke/stream 记录入参返回固定答案。"""
 
     def __init__(self, answer: str = "根据文档内容，该标书满足要求。") -> None:
         self.answer = answer
@@ -27,6 +27,10 @@ class FakeRunnable:
     def invoke(self, inputs):
         self.inputs = inputs
         return self.answer
+
+    def stream(self, inputs):
+        self.inputs = inputs
+        yield self.answer
 
 
 def test_no_doc_returns_guidance():
@@ -59,6 +63,9 @@ def test_generation_failure_returns_failed_status(monkeypatch):
             return self
 
         def invoke(self, inputs):
+            raise RuntimeError("mock llm 失败")
+
+        def stream(self, inputs):
             raise RuntimeError("mock llm 失败")
 
     monkeypatch.setattr(doc_qa, "_get_llm", lambda: Failing())

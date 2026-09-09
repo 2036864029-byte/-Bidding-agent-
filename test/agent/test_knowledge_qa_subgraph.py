@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 from langgraph.graph import END, StateGraph
@@ -229,3 +230,44 @@ def test_subgraph_refusal_never_triggers_retry(monkeypatch):
     assert biz["answer"] == _REFUSAL_ANSWER
     assert biz["data"]["citation_validation"]["is_refusal"] is True
     assert "qa_attempts" not in state_out
+
+
+# ── 5. 真流式（W3-2）：生成节点逐 token 写入活动 sink ──────────
+
+def test_subgraph_generate_streams_tokens_to_sink(monkeypatch):
+    """活动 sink 下：生成节点逐 token 写入，且 token 拼接 == 权威终态 answer。
+
+    非流式路径（无 sink）由 sink 模块单测与既有子图终态测试覆盖，此处只验
+    「有 sink → 实时输出」这条新路径。
+    """
+    from core.streaming.sink import StreamSink, reset_active_sink, set_active_sink
+
+    _patch_retrieval(monkeypatch)
+    monkeypatch.setattr(
+        subgraph_mod, "_get_llm",
+        lambda: FakeListChatModel(
+            responses=["招标方式分为公开招标和邀请招标。【来源1】"],
+        ),
+    )
+    sink = StreamSink()
+    token = set_active_sink(sink)
+    try:
+        sub = build_knowledge_qa_subgraph()
+        state_out = sub.invoke({"messages": [HumanMessage(content="招标方式有哪些？")]})
+    finally:
+        reset_active_sink(token)
+
+    biz = state_out["business_result"]
+    assert biz["answer"] == "招标方式分为公开招标和邀请招标。【来源1】"
+
+    tokens: list[str] = []
+    while True:
+        item = sink.get(timeout=0.01)
+        if item is None:
+            break
+        assert item[0] == "token"  # 只写 token 类事件（终态由父图状态承载）
+        tokens.append(item[1])
+    assert tokens
+    assert "".join(tokens) == biz["answer"]  # 逐 token 拼接 == 权威终态
+    # 引用校验仍通过——流式改造不改变护栏语义
+    assert biz["data"]["citation_validation"]["all_passed"] is True

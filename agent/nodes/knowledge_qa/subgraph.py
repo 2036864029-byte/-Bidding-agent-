@@ -27,6 +27,7 @@ from core.config.settings import Settings
 from core.contracts import KnowledgeBaseContractError
 from core.llm.registry import create_llm_for_slot
 from core.observability.metrics import record_guardrail_fail
+from core.streaming.sink import emit_token
 from public_kb.guardrails.citations_validate import CitationValidator
 from public_kb.tools import Chunk, RetrievalResult, kb_search
 
@@ -188,7 +189,13 @@ def _route_after_retrieve(state: KnowledgeQaState) -> str:
 
 
 def _generate_node(state: KnowledgeQaState) -> dict:
-    """② 生成：prompt|槽位 kb_generation|parser（同 chain 现状；护栏失败后带反馈重生成）。"""
+    """② 生成：prompt|槽位 kb_generation|parser（同 chain 现状；护栏失败后带反馈重生成）。
+
+    W3-2：链路从 ``.invoke`` 改为 ``.stream``——每收到一个 token 就经
+    ``emit_token`` 写入当前请求的流式 sink（无 sink 时零开销退化为纯累积），
+    结果仍按序拼接，终态与旧行为完全一致。重试轮同样流式（客户端以
+    result 事件的 ``answer`` 为权威终态，token 仅作实时展示）。
+    """
     retrieval = state["qa_retrieval"]
     feedback = state.get("qa_feedback", "")
     if feedback:
@@ -198,18 +205,22 @@ def _generate_node(state: KnowledgeQaState) -> dict:
             enable_inline_citations=settings.enable_inline_citations,
         )
         answer_chain = retry_prompt | _get_llm() | StrOutputParser()
-        raw_answer: str = answer_chain.invoke({
+        inputs: Dict[str, Any] = {
             "context": retrieval.rendered_context,
             "question": state["qa_question"],
             "feedback": feedback,
-        })
+        }
     else:
         answer_chain = _get_prompt() | _get_llm() | StrOutputParser()
-        raw_answer: str = answer_chain.invoke({
+        inputs = {
             "context": retrieval.rendered_context,
             "question": state["qa_question"],
-        })
-    return {"qa_raw_answer": raw_answer.strip()}
+        }
+    parts: list[str] = []
+    for chunk in answer_chain.stream(inputs):
+        emit_token(chunk)
+        parts.append(chunk)
+    return {"qa_raw_answer": "".join(parts).strip()}
 
 
 def _finalize(retrieval: RetrievalResult, answer: str, report) -> dict:

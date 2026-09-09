@@ -34,6 +34,26 @@ class FakeAgent:
         yield {"type": "final", "answer": "ok"}
 
 
+class _TokenFakeAgent(FakeAgent):
+    """invoke 期间经流式 sink 逐 token 输出（模拟生成节点 .stream 行为，W3-2）。"""
+
+    def invoke(self, question: str, thread_id: str = "default", *, context_docs=None) -> dict:
+        from core.streaming.sink import emit_token
+
+        self.last_thread = thread_id
+        for tok in ["mock", "答案", "【来源1】"]:
+            emit_token(tok)
+        return {
+            "answer": "mock 答案【来源1】",
+            "intent": "knowledge_qa",
+            "business_result": {
+                "branch": "knowledge_qa",
+                "answer": "mock 答案【来源1】",
+                "data": {"sources": [{"doc": "法A"}]},
+            },
+        }
+
+
 def _client() -> TestClient:
     fake = FakeAgent()
     return TestClient(create_app(get_agent_fn=lambda: fake)), fake
@@ -98,8 +118,27 @@ def test_chat_stream_sse():
     text = r.text
     assert "event: session" in text  # W0-6：首个事件回传会话 id
     assert "event: done" in text
-    assert "knowledge_qa" in text  # 图事件逐块转发
+    # W3-2：终态经 result 事件回传（与 POST /chat 同构），intent 可见
+    assert "event: result" in text
+    assert "knowledge_qa" in text
+    assert "mock 答案" in text
     assert fake.last_thread and fake.last_thread != "default"
+
+
+def test_chat_stream_emits_tokens_before_result():
+    """W3-2：生成节点逐 token 输出 → SSE 先 token 事件后 result 终态。"""
+    client = TestClient(create_app(get_agent_fn=lambda: _TokenFakeAgent()))
+    r = client.post("/chat/stream", json={"question": "q", "stream": True})
+    assert r.status_code == 200
+    text = r.text
+    assert '"delta"' in text  # token 事件负载
+    assert text.count("event: token") == 3
+    # 三个 token 全部在 result 终态之前按序输出
+    idx_delta = [i for i in range(len(text)) if text.startswith('"delta"', i)]
+    idx_result = text.index("event: result")
+    assert len(idx_delta) == 3
+    assert all(i < idx_result for i in idx_delta)
+    assert text.index('"mock"') < text.index('"答案"') < text.index('"【来源1】"')
 
 
 def test_chat_stream_false_degrades_to_invoke():

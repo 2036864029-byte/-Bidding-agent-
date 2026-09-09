@@ -19,9 +19,11 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-from ..state import AgentState
 from core.config.settings import Settings
 from core.llm.registry import create_llm_for_slot
+from core.streaming.sink import emit_token
+
+from ..state import AgentState
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +152,12 @@ def node_doc_qa(state: AgentState, config=None) -> dict:
 
     try:
         chain = _get_prompt() | _get_llm() | StrOutputParser()
-        answer = chain.invoke({"context": context, "question": question}).strip()
+        # W3-2：.invoke → .stream，逐 token 写入流式 sink（无 sink 时纯累积）
+        parts: List[str] = []
+        for chunk in chain.stream({"context": context, "question": question}):
+            emit_token(chunk)
+            parts.append(chunk)
+        answer = "".join(parts).strip()
     except Exception as e:
         logger.error("doc_qa 生成失败: %s", e, exc_info=True)
         answer = "抱歉，文档处理失败，请重新上传后再试。"
