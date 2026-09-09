@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from core.errors.codes import ErrorCode
 
-ReplyType = Literal["kb_answer", "price_records", "chat", "doc_qa", "fallback"]
+ReplyType = Literal["kb_answer", "price_records", "chat", "doc_qa", "safety", "fallback"]
 
 # 节点 branch → 回复类型
 _BRANCH_TO_REPLY: Dict[str, ReplyType] = {
@@ -21,6 +21,7 @@ _BRANCH_TO_REPLY: Dict[str, ReplyType] = {
     "price_inquiry": "price_records",
     "general_chat": "chat",
     "doc_qa": "doc_qa",
+    "safety": "safety",
     "fallback": "fallback",
 }
 

@@ -94,11 +94,17 @@ def build_graph(
     graph.add_node("rewrite", build_rewrite_node())
 
     # ── 注册节点 ──
-    # Router（不需要 _with_fallback，自身有异常处理）
+    # Router（不需要 _with_fallback，自身有异常处理）；W3-4 内容安全前置挂在入口：
+    # 命中（超长/有害请求）→ 短路返回安全回复；未命中 → 照常路由。
+    from .guardrails.output import with_output_guardrails
+    from .nodes.safety import SAFETY_BLOCKED_ROUTE, with_safety_gate
+
     router_node = build_router_node(llm, registry=reg)
-    graph.add_node("router", router_node)
+    graph.add_node("router", with_safety_gate(router_node))
 
     # 业务节点 — 按 registry enabled 能力动态注册；fallback 本身已是兜底不包装
+    # W3-4：`with_output_guardrails` 外包 `_with_fallback` —— 异常兜底后再做
+    # 输出形状校验（必填/answer 非空/data 契约），失败降级但保留诊断。
     path_map: Dict[str, str] = {}
     wired_nodes: set[str] = set()
     for spec in specs:
@@ -112,7 +118,7 @@ def build_graph(
                 f"capability {spec.id!r} 引用的节点 {node_name!r} 未登记 NodeSpec，"
                 "请在 agent.nodes.base 中 register 该节点 entry"
             )
-        entry = ns.entry if node_name == "fallback" else _with_fallback(ns.entry)
+        entry = ns.entry if node_name == "fallback" else with_output_guardrails(_with_fallback(ns.entry))
         graph.add_node(node_name, entry)
         wired_nodes.add(node_name)
         path_map[spec.id] = node_name
@@ -124,7 +130,11 @@ def build_graph(
     graph.add_edge("rewrite", "router")
 
     # router → 条件边分发到业务节点（map 由 registry 生成）
-    graph.add_conditional_edges("router", _route_by_intent, path_map)
+    # W3-4：安全闸门短路时 router_intent=SAFETY_BLOCKED_ROUTE → 直接 END。
+    graph.add_conditional_edges(
+        "router", _route_by_intent,
+        {**path_map, SAFETY_BLOCKED_ROUTE: END},
+    )
 
     # 所有业务节点 → END（直接终止，无中间 format_output 层）
     for node_name in wired_nodes:

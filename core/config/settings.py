@@ -24,6 +24,19 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".
 _ENV_PATH = os.path.join(_PROJECT_ROOT, ".env")
 load_dotenv(_ENV_PATH)
 
+# W3-4 内容安全：默认的有害执行请求关键词（动作导向，见 Settings.safety_harmful_keywords）。
+# 只拦「可执行的有害指令」；不拦合法话题词（围标/串标/行贿受贿/伪造公章罪等
+# "认定/责任"类知识问题——误伤即能力受损）。关键词表可经 env 扩展。
+_DEFAULT_SAFETY_KEYWORDS = [
+    # 明确动作请求（前缀 + 有害动作）
+    "帮我伪造", "替我伪造", "帮我虚", "帮我篡改", "帮我删除", "帮我删掉",
+    "帮我作弊", "帮我骗",
+    # 直接祈使（改数据/删记录/收买评标等可执行指令）
+    "伪造标书", "伪造中标", "伪造业绩", "虚开中标", "收买评标",
+    "删除处罚", "删除不良", "删掉处罚", "删掉不良", "修改中标", "篡改中标",
+    "篡改记录", "删除记录", "开后门", "给回扣", "索贿",
+]
+
 
 @dataclass
 class CitationRuleConfig:
@@ -484,6 +497,23 @@ class Settings:
     kb_guardrail_retry: bool = field(
         default_factory=lambda: os.getenv("KB_GUARDRAIL_RETRY", "true").lower()
         in {"1", "true", "yes"}
+    )
+
+    # ============================================================
+    # 内容安全前置（W3-4）— 路由前的确定性输入闸门
+    # ============================================================
+    # 问题长度上限（字符）：超长即拒绝（防注入/耗 token 的攻击向量）。
+    max_question_chars: int = field(
+        default_factory=lambda: int(os.getenv("MAX_QUESTION_CHARS", "2000"))
+    )
+    # 明确的可执行有害请求关键词（逗号分隔，env 可扩展）：动作导向，只拦
+    # 「帮我伪造… / 删掉处罚记录 / 篡改…」这类可执行有害指令；不拦「围标串标/
+    # 行贿受贿」等合法话题词（那些是知识库正常覆盖的专业问题）。
+    safety_harmful_keywords: list = field(
+        default_factory=lambda: [
+            k.strip() for k in os.getenv("SAFETY_HARMFUL_KEYWORDS", "").split(",")
+            if k.strip()
+        ] or _DEFAULT_SAFETY_KEYWORDS
     )
 
     # ============================================================

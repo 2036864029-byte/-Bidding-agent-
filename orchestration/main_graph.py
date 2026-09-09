@@ -184,13 +184,22 @@ def build_supervisor_graph(
 
     graph.add_node("rewrite", build_rewrite_node())
 
-    # ── supervisor 节点（W2-3：与 agent 节点同样纳入兜底）──
+    # ── supervisor 节点（W2-3：与 agent 节点同样纳入兜底；W3-4：内容安全前置）──
+    # 安全闸门在最外层：命中（超长/有害请求）→ 短路返回安全回复，跳过三级路由，
+    # 并把 supervisor_route 置为 SAFETY_BLOCKED_ROUTE 哨兵 → 条件边直达 END。
+    from agent.guardrails.output import with_output_guardrails
+    from agent.nodes.safety import SAFETY_BLOCKED_ROUTE, with_safety_gate
+
     graph.add_node(
         "supervisor",
-        _with_fallback(build_supervisor_node(llm, reg, embedder, llm_router)),
+        with_safety_gate(
+            _with_fallback(build_supervisor_node(llm, reg, embedder, llm_router)),
+            route_key="supervisor_route",
+        ),
     )
 
     # ── agent 节点（W2-1：registry 驱动；编译子图仍可注入覆盖，供离线测试）──
+    # W3-4：`with_output_guardrails` 外包 `_with_fallback` —— 兜底后再做输出形状校验。
     agent_nodes = resolve_agent_nodes(reg)
     if knowledge_subgraph is not None:
         agent_nodes["knowledge_qa"] = knowledge_subgraph
@@ -199,6 +208,9 @@ def build_supervisor_graph(
     allowed = set(agent_nodes)
 
     def _route_from_supervisor(state: SupervisorState) -> str:
+        # W3-4：安全闸门短路 → 哨兵路由到 end（不落入业务节点覆盖安全结果）
+        if state.get("supervisor_route") == SAFETY_BLOCKED_ROUTE:
+            return "end"
         route = state.get("supervisor_route", "fallback")
         return route if route in allowed else "fallback"
 
@@ -209,7 +221,12 @@ def build_supervisor_graph(
         return "end"
 
     for name, fn in agent_nodes.items():
-        graph.add_node(name, _stamped_agent(name, _with_fallback(_as_agent_callable(fn))))
+        graph.add_node(
+            name,
+            _stamped_agent(
+                name, with_output_guardrails(_with_fallback(_as_agent_callable(fn)))
+            ),
+        )
 
     # ── handoff 决策节点（W2-3：同样纳入兜底）──
     graph.add_node("handoff_decider", _with_fallback(_handoff_decider_node))
@@ -219,7 +236,7 @@ def build_supervisor_graph(
     graph.add_edge("rewrite", "supervisor")
     graph.add_conditional_edges(
         "supervisor", _route_from_supervisor,
-        {name: name for name in agent_nodes},
+        {name: name for name in agent_nodes} | {"end": END},
     )
     for name in agent_nodes:
         graph.add_edge(name, "handoff_decider")
