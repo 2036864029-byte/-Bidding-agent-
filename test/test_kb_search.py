@@ -83,3 +83,64 @@ def test_kb_search_as_tool_builds_but_returns_callable(monkeypatch):
     out = tool.invoke({"question": "测试", "top_k": 3})
     assert out["chunks"] == []
     assert out["citations_meta"] == []
+
+
+# ── W3-3 Deep Agent 工具契约：摘要 / 字段可选 / 分页 ──────────
+
+def test_kb_search_summary_truncates_and_drops_context(monkeypatch):
+    docs = [(_doc("长内容" * 100, chunk_id=1, chunk_uid="u1", score=0.9), 0.9)]
+    monkeypatch.setattr("public_kb.tools._get_retriever", lambda: _fake_retriever(docs))
+
+    result = kb_search("q", summary=True)
+
+    chunk = result.chunks[0]
+    assert chunk.content.endswith("…")
+    assert len(chunk.content) <= 241  # 240 字截断 + 省略号
+    assert result.rendered_context == ""  # compact 契约省略渲染上下文
+    assert len(result.citations_meta) == 1  # 引用元数据保留
+
+
+def test_kb_search_include_fields_filters(monkeypatch):
+    docs = [(_doc("内容", chunk_id=1, chunk_uid="u1", doc_name="法", chapter="章", score=0.9), 0.9)]
+    monkeypatch.setattr("public_kb.tools._get_retriever", lambda: _fake_retriever(docs))
+
+    chunk = kb_search("q", include_fields=["doc_name", "chapter"]).chunks[0]
+
+    assert chunk.doc_name == "法"
+    assert chunk.chapter == "章"
+    assert chunk.content == ""
+    assert chunk.chunk_uid is None
+    assert chunk.chunk_id is None
+
+
+def test_kb_search_pagination_offset(monkeypatch):
+    docs = [(_doc(f"内容{i}", chunk_id=i), 0.5) for i in range(10)]
+    monkeypatch.setattr("public_kb.tools._get_retriever", lambda: _fake_retriever(docs))
+
+    page1 = kb_search("q", top_k=3, offset=0)
+    page2 = kb_search("q", top_k=3, offset=3)
+
+    assert [c.chunk_id for c in page1.chunks] == [0, 1, 2]
+    assert [c.chunk_id for c in page2.chunks] == [3, 4, 5]
+    assert len(page2.citations_meta) == 3  # 引用/上下文按窗口生成
+
+
+def test_kb_search_offset_beyond_range_empty(monkeypatch):
+    docs = [(_doc("内容", chunk_id=0), 0.5)]
+    monkeypatch.setattr("public_kb.tools._get_retriever", lambda: _fake_retriever(docs))
+
+    result = kb_search("q", top_k=3, offset=5)
+
+    assert result.chunks == []
+    assert result.recall_trace == {"mode": "fake"}
+
+
+def test_kb_search_as_tool_defaults_compact(monkeypatch):
+    docs = [(_doc("内容A" * 200, chunk_id=1, chunk_uid="u1", score=0.9), 0.9)]
+    monkeypatch.setattr("public_kb.tools._get_retriever", lambda: _fake_retriever(docs))
+
+    tool = kb_search_as_tool()
+    out = tool.invoke({"question": "q"})
+
+    assert out["chunks"][0]["content"].endswith("…")  # 默认摘要契约
+    assert out["rendered_context"] == ""

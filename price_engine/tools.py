@@ -32,18 +32,23 @@ _SUB_ROUTE_QUERY_FN: Dict[str, Any] = {
 _EMPTY_RESULT: Dict[str, Any] = {
     "records": [], "total_found": 0, "queried_tables": [],
     "sql_count": 0, "total_sql_time": 0.0,
+    "truncated": False, "total_returned": 0,
 }
 
 
-def price_query(question: str) -> Dict[str, Any]:
+def price_query(question: str, *, max_rows: Optional[int] = None) -> Dict[str, Any]:
     """自然语言结构化业务查询 → 记录列表（价格/标讯引擎工具门面）。
 
     Args:
         question: 用户查询（如「XX公司的工商信息」「XX中标了哪些项目」）。
+        max_rows: 返回 records 行数上限（None=不限制；>0 时生效，W3-3 工具契约）。
+            截断时 ``truncated=True``、``total_returned`` 为截断前条数；
+            ``total_found`` 始终为全量命中数，便于 agent 感知还有更多。
 
     Returns:
         {"records": [...], "total_found": int, "queried_tables": [...],
-         "sql_count": int, "total_sql_time": float}
+         "sql_count": int, "total_sql_time": float,
+         "truncated": bool, "total_returned": int}
         守卫拦截时额外带 ``guard_reason``（records 为空）。
     """
     llm = _build_llm()
@@ -77,21 +82,36 @@ def price_query(question: str) -> Dict[str, Any]:
         return _refuse("no_entity_for_route")
 
     query_fn = _SUB_ROUTE_QUERY_FN.get(intent.sub_route, _query_all_tables)
-    return query_fn(intent)
+    result = query_fn(intent)
+    if max_rows is not None:
+        limit = max(1, int(max_rows))
+        records = result.get("records") or []
+        result = {
+            **result,
+            "truncated": len(records) > limit,
+            "total_returned": len(records),
+            "records": records[:limit],
+        }
+    return result
 
 
 class _PriceQueryArgs(BaseModel):
     question: str = Field(description="用户结构化业务查询问题（企业/处罚/中标情报）")
+    max_rows: int = Field(10, description="返回记录行数上限（默认 10；total_found 仍为全量命中数）")
 
 
 def price_query_as_tool() -> StructuredTool:
-    """langchain tool 包装（P6 多 Agent 直接挂 agent 用）。"""
+    """langchain tool 包装（P6 多 Agent / W3-3 Deep Agent 用）。"""
+
+    def _func(question: str, max_rows: int = 10) -> dict:
+        return price_query(question, max_rows=max_rows)
+
     return StructuredTool.from_function(
         name="price_query",
         description=(
             "结构化业务数据查询：企业工商信息、企业不良记录/处罚、招投标中标情报。"
             "输入自然语言问题，返回结构化记录列表。"
         ),
-        func=price_query,
+        func=_func,
         args_schema=_PriceQueryArgs,
     )

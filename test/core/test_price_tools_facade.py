@@ -122,3 +122,59 @@ def test_guards_are_shared_with_subgraph():
 
     assert sg._has_valid_query_entity is guards.has_valid_query_entity
     assert sg._QUERY_INTENT_KEYWORDS is guards.QUERY_INTENT_KEYWORDS
+
+
+# ── W3-3 工具契约：price_query 限行数 ─────────────────────────
+
+def test_price_query_max_rows_truncates(monkeypatch):
+    """max_rows 截断 records，total_found 保留全量命中数，truncated/total_returned 标记。"""
+    _patch_intent_flow(monkeypatch, "company_query")
+    records = [{"company_name": f"公司{i}"} for i in range(20)]
+
+    def fake_company(intent):  # noqa: ARG001
+        return {"records": records, "total_found": 20}
+
+    monkeypatch.setitem(tools_mod._SUB_ROUTE_QUERY_FN, "company_query", fake_company)
+    r = price_query("查一下", max_rows=5)
+
+    assert len(r["records"]) == 5
+    assert r["records"][0]["company_name"] == "公司0"
+    assert r["truncated"] is True
+    assert r["total_returned"] == 20
+    assert r["total_found"] == 20  # 全量命中数保留
+
+
+def test_price_query_max_rows_within_limit_no_truncation(monkeypatch):
+    _patch_intent_flow(monkeypatch, "company_query")
+    records = [{"company_name": "A"}]
+
+    def fake_company(intent):  # noqa: ARG001
+        return {"records": records, "total_found": 1}
+
+    monkeypatch.setitem(tools_mod._SUB_ROUTE_QUERY_FN, "company_query", fake_company)
+    r = price_query("查一下", max_rows=10)
+
+    assert r["records"] == records
+    assert r["truncated"] is False
+    assert r["total_returned"] == 1
+
+
+def test_price_query_default_no_limit(monkeypatch):
+    """不传 max_rows 时行为与旧版一致（不截断、不带 truncated 标记）。"""
+    _patch_intent_flow(monkeypatch, "company_query")
+    records = [{"company_name": f"公司{i}"} for i in range(30)]
+
+    def fake_company(intent):  # noqa: ARG001
+        return {"records": records, "total_found": 30}
+
+    monkeypatch.setitem(tools_mod._SUB_ROUTE_QUERY_FN, "company_query", fake_company)
+    r = price_query("查一下")
+
+    assert len(r["records"]) == 30
+    assert "truncated" not in r
+
+
+def test_price_query_as_tool_exposes_max_rows():
+    tool = price_query_as_tool()
+    assert "max_rows" in tool.args
+    assert tool.args["max_rows"]["default"] == 10

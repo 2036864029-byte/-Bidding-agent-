@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from langchain_core.documents import Document
 from pydantic import BaseModel, Field
@@ -132,6 +132,10 @@ def reset_retriever() -> None:
 # kb_search 主入口
 # ═════════════════════════════════════════════════════════
 
+# W3-3：summary 契约的摘要长度（块正文截断阈值）。
+_SUMMARY_MAX_CHARS = 240
+
+
 def _to_chunk(doc: Document, score: float) -> Chunk:
     meta = doc.metadata or {}
     chunk_id = meta.get("chunk_id")
@@ -147,12 +151,81 @@ def _to_chunk(doc: Document, score: float) -> Chunk:
     )
 
 
-def kb_search(question: str, *, top_k: int = 8) -> RetrievalResult:
+def _project_chunk(
+    chunk: Chunk,
+    *,
+    summary: bool,
+    include_fields: Optional[Iterable[str]],
+    summary_max_chars: int,
+) -> Chunk:
+    """按工具契约投影单个 chunk（W3-3 Deep Agent 契约）。
+
+    summary=True → content 截为摘要片段（超 summary_max_chars 字截断并加 …）；
+    include_fields 非空 → 只保留白名单顶层字段（其余置空值，metadata 同步过滤）。
+    返回新对象不改原 chunk——子图全量路径（summary=False、无字段过滤）逐字段不变。
+    """
+    content = chunk.content
+    if summary and len(content) > summary_max_chars:
+        content = content[:summary_max_chars] + "…"
+
+    if include_fields is None:
+        return Chunk(
+            content=content,
+            score=chunk.score,
+            chunk_id=chunk.chunk_id,
+            chunk_uid=chunk.chunk_uid,
+            doc_name=chunk.doc_name,
+            chapter=chunk.chapter,
+            chunk_index=chunk.chunk_index,
+            metadata=chunk.metadata,
+        )
+
+    allowed = set(include_fields)
+    blank = {  # 字段白名单过滤时的空值（与 Chunk 各字段类型一致）
+        "content": "",
+        "score": 0.0,
+        "chunk_id": None,
+        "chunk_uid": None,
+        "doc_name": "",
+        "chapter": "",
+        "chunk_index": -1,
+    }
+    values = {
+        name: (getattr(chunk, name) if name in allowed else blank[name])
+        for name in blank
+    }
+    return Chunk(
+        content=values["content"],
+        score=values["score"],
+        chunk_id=values["chunk_id"],
+        chunk_uid=values["chunk_uid"],
+        doc_name=values["doc_name"],
+        chapter=values["chapter"],
+        chunk_index=values["chunk_index"],
+        metadata={k: v for k, v in chunk.metadata.items() if k in allowed},
+    )
+
+
+def kb_search(
+    question: str,
+    *,
+    top_k: int = 8,
+    offset: int = 0,
+    summary: bool = False,
+    include_fields: Optional[Iterable[str]] = None,
+    summary_max_chars: int = _SUMMARY_MAX_CHARS,
+) -> RetrievalResult:
     """检索公共知识库，返回三元组（不调 LLM）。
 
     Args:
         question: 用户问题。
-        top_k: 返回的精排块上限（在检索结果上截断）。
+        top_k: 返回的精排块上限（分页窗口大小）。
+        offset: 分页偏移（与 top_k 组成分页窗口；引用/渲染上下文按窗口生成）。
+        summary: True → 只返回摘要块（content 截断）且省略 rendered_context，
+            便于 agent 多次检索组合进上下文（compact 契约）。
+        include_fields: 只保留指定顶层字段（content/score/doc_name/chapter/
+            chunk_id/chunk_uid/chunk_index），其余置空；None=返回全部。
+        summary_max_chars: summary 模式的正文截断阈值。
 
     Returns:
         RetrievalResult（空结果时三元组为空，由调用方决定拒答/降级）。
@@ -162,6 +235,7 @@ def kb_search(question: str, *, top_k: int = 8) -> RetrievalResult:
     # B12：top_k 可能由 LLM 通过工具参数传入（可为 0/负数），先钳制再截断，
     # 否则"检索有结果但 chunks 被截空"会被上层误判为无召回而拒答。
     top_k = max(1, int(top_k))
+    offset = max(0, int(offset))
 
     outcome = _get_retriever().retrieve(question)
     trace = getattr(outcome.diagnostics, "to_dict", lambda: {})() or {}
@@ -170,35 +244,62 @@ def kb_search(question: str, *, top_k: int = 8) -> RetrievalResult:
         logger.info("kb_search: 检索为空，返回空三元组（question=%s）", question[:60])
         return RetrievalResult(recall_trace=trace)
 
-    docs_with_scores = outcome.docs[:top_k]
+    docs_with_scores = outcome.docs[offset: offset + top_k]
+    if not docs_with_scores:
+        return RetrievalResult(recall_trace=trace)
+
     citations = build_citations(docs_with_scores)
     return RetrievalResult(
-        chunks=[_to_chunk(doc, score) for doc, score in docs_with_scores],
+        chunks=[
+            _project_chunk(
+                _to_chunk(doc, score),
+                summary=summary,
+                include_fields=include_fields,
+                summary_max_chars=summary_max_chars,
+            )
+            for doc, score in docs_with_scores
+        ],
         citations_meta=citations,
-        rendered_context=format_docs(docs_with_scores),
+        rendered_context="" if summary else format_docs(docs_with_scores),
         recall_trace=trace,
     )
 
 
 def kb_search_as_tool():
-    """构建 LangChain tool 形态的 kb_search（**只建不接线**，P6 多 Agent 用）。
+    """构建 LangChain tool 形态的 kb_search（**只建不接线**，P6 多 Agent / W3-3 用）。
 
     调用方拿到 tool 后自行绑定；本函数不注册到任何 agent。
+    默认 summary=True（compact 契约：内容截断、省 rendered_context），供 agent
+    多次检索组合上下文；需要全文时显式 summary=False。
     """
     from langchain_core.tools import tool
 
     @tool
-    def kb_search_tool(question: str, top_k: int = 8) -> dict:
+    def kb_search_tool(
+        question: str,
+        top_k: int = 5,
+        offset: int = 0,
+        summary: bool = True,
+        include_fields: Optional[List[str]] = None,
+    ) -> dict:
         """检索招投标公共知识库（法规/招标知识），返回三元组（含引用元数据与渲染上下文）。
 
         Args:
             question: 用户问题。
-            top_k: 返回的精排块上限（默认 8）。
+            top_k: 返回的精排块上限（默认 5）。
+            offset: 分页偏移（与 top_k 组成分页窗口）。
+            summary: True → 只返回摘要块（content 截断、省略 rendered_context），
+                适合 agent 多次检索组合上下文；False → 返回完整块与渲染上下文。
+            include_fields: 只保留指定字段（content/score/doc_name/chapter/
+                chunk_id/chunk_uid/chunk_index），不传返回全部。
 
         Returns:
             dict：{chunks, citations_meta, rendered_context, recall_trace}。
         """
-        result = kb_search(question, top_k=top_k)
+        result = kb_search(
+            question, top_k=top_k, offset=offset,
+            summary=summary, include_fields=include_fields,
+        )
         return result.model_dump(mode="json")
 
     return kb_search_tool
