@@ -38,3 +38,8 @@ slots:
     model: null
     temperature: 0.0
     note: doc_agent 工具驱动 agent（P6 Step 3；工具选择需确定性，temperature=0）
+  rewrite:
+    provider: deepseek
+    model: null
+    temperature: 0.0
+    note: 多轮查询改写/指代消解（W3-1；需确定性，temperature=0）

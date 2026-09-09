@@ -179,6 +179,11 @@ def build_supervisor_graph(
 
     graph = StateGraph(SupervisorState)
 
+    # ── 查询改写节点（W3-1）：入口先归一化追问，再走 supervisor 路由 ──
+    from agent.nodes.rewrite import build_rewrite_node
+
+    graph.add_node("rewrite", build_rewrite_node())
+
     # ── supervisor 节点（W2-3：与 agent 节点同样纳入兜底）──
     graph.add_node(
         "supervisor",
@@ -210,7 +215,8 @@ def build_supervisor_graph(
     graph.add_node("handoff_decider", _with_fallback(_handoff_decider_node))
 
     # ── 边 ──
-    graph.set_entry_point("supervisor")
+    graph.set_entry_point("rewrite")
+    graph.add_edge("rewrite", "supervisor")
     graph.add_conditional_edges(
         "supervisor", _route_from_supervisor,
         {name: name for name in agent_nodes},

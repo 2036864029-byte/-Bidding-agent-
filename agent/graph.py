@@ -88,6 +88,11 @@ def build_graph(
     # ── 创建图 ──
     graph = StateGraph(AgentState)
 
+    # ── 查询改写节点（W3-1）：入口先归一化追问，再路由 ──
+    from .nodes.rewrite import build_rewrite_node
+
+    graph.add_node("rewrite", build_rewrite_node())
+
     # ── 注册节点 ──
     # Router（不需要 _with_fallback，自身有异常处理）
     router_node = build_router_node(llm, registry=reg)
@@ -114,8 +119,9 @@ def build_graph(
         logger.info("动态注册节点: %s (capability=%s)", node_name, spec.id)
 
     # ── 边 ──
-    # START → router
-    graph.set_entry_point("router")
+    # START → rewrite → router
+    graph.set_entry_point("rewrite")
+    graph.add_edge("rewrite", "router")
 
     # router → 条件边分发到业务节点（map 由 registry 生成）
     graph.add_conditional_edges("router", _route_by_intent, path_map)

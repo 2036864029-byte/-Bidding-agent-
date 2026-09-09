@@ -145,6 +145,26 @@ def _check(case: dict, row: dict, mode: str) -> tuple[bool | None, str]:
     return True, "ok"
 
 
+def _check_multi_turn(agent, company: str) -> tuple[bool, str]:
+    """W3-1：多轮追问验证——第二问"那它有没有不良记录？"须被改写为含公司名的
+    独立问题，返回的应是该公司的不良记录查询而非"请提供公司全称"引导。"""
+    q1 = f"{company}中标了哪些项目？"
+    q2 = "那它有没有不良记录？"
+    agent.invoke(q1, thread_id="smoke-multiturn")
+    result = agent.invoke(q2, thread_id="smoke-multiturn")
+    br = result.get("business_result") or {}
+    answer = str(br.get("answer") or "")
+    branch = br.get("branch")
+    mention = company[:6] in answer
+    ok = branch == "price_inquiry" and mention
+    why = f"branch={branch} 提到公司={mention}"
+    if branch != "price_inquiry":
+        why += "（预期 price_inquiry）"
+    elif not mention:
+        why += "（改写未生效：返回的是引导语而非该公司记录）"
+    return ok, why
+
+
 def main() -> int:
     mode = os.getenv("AGENT_MODE", "supervisor")
     print(f"== agent live smoke ==  AGENT_MODE={mode}", flush=True)
@@ -202,6 +222,11 @@ def main() -> int:
                               if c["name"] == row["name"]), row, mode)
         if ok is False:
             print(f"  FAIL {row['name']}: {why}", flush=True)
+
+    # W3-1：多轮追问改写
+    print("-" * 78, flush=True)
+    mt_ok, mt_why = _check_multi_turn(agent, company)
+    print(f"[multi_turn] 那它有没有不良记录？ -> {'PASS' if mt_ok else 'FAIL: ' + mt_why}", flush=True)
 
     REPORT_DIR.mkdir(exist_ok=True)
     out = REPORT_DIR / f"agent_live_smoke_{mode}.json"

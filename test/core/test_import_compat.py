@@ -83,4 +83,4 @@ def test_models_yaml_declared_slots():
     """A-2：models.yaml 声明实际调用点槽位（3 基础 + P6 Step3 doc_agent），general_chat 无槽位。"""
     from core.llm.registry import available_slots
 
-    assert available_slots() == ["router", "kb_generation", "price_intent", "doc_agent"]
+    assert available_slots() == ["router", "kb_generation", "price_intent", "doc_agent", "rewrite"]
