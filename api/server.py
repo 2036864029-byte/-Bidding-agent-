@@ -28,6 +28,7 @@ from fastapi.responses import StreamingResponse
 from agent import AgentGraph
 from core.config.settings import Settings
 from core.errors.handlers import register_exception_handlers, unhandled_envelope
+from core.observability.audit import record_audit
 from core.observability.context import set_session_id
 from core.observability.logging import setup_logging
 from core.observability.metrics import content_type, render_metrics
@@ -38,7 +39,11 @@ from public_kb.ingestion.parse_tool import parse_file
 
 from . import file_store
 from .deps import get_agent
-from .middleware import RateLimitMiddleware, RequestContextMiddleware
+from .middleware import (
+    ApiKeyAuthMiddleware,
+    RateLimitMiddleware,
+    RequestContextMiddleware,
+)
 from .schemas import ChatRequest, ChatResponse
 
 logger = logging.getLogger(__name__)
@@ -89,6 +94,14 @@ def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
         intent=str(result.get("intent", "unknown")),
         latency_ms=latency_ms,
     )
+    record_audit(
+        action="chat",
+        status="ok" if not reply.error_code else "error",
+        session_id=session_id,
+        question=req.question,
+        latency_ms=latency_ms,
+        error_code=reply.error_code,
+    )
     return ChatResponse(**reply_to_response(reply), session_id=session_id)
 
 
@@ -117,9 +130,18 @@ def _sse_events(
     except Exception:  # 流中异常以 error 事件收尾，不中断连接
         # W2-3：只回统一信封，异常原文只进日志（不向客户端泄露内部细节）
         logger.exception("SSE 异常")
+        record_audit(
+            action="chat_stream", status="error", session_id=session_id,
+            question=req.question, error_code="sys_2500",
+        )
         yield "event: error\ndata: " + json.dumps(
             unhandled_envelope(), ensure_ascii=False
         ) + "\n\n"
+    else:
+        record_audit(
+            action="chat_stream", status="ok", session_id=session_id,
+            question=req.question,
+        )
     yield "event: done\ndata: {}\n\n"
 
 
@@ -187,6 +209,13 @@ def create_app(
         per_minute=settings.rate_limit_per_minute,
         burst=settings.rate_limit_burst,
     )
+    app.add_middleware(
+        ApiKeyAuthMiddleware,
+        keys=[k for k in settings.api_keys.split(",") if k.strip()],
+        exempt_paths=[
+            p.strip() for p in settings.auth_exempt_paths.split(",") if p.strip()
+        ],
+    )
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -242,6 +271,10 @@ def create_app(
         logger.info(
             "upload: file_id=%s name=%s format=%s chunks=%d",
             record.file_id, record.source_name, record.source_format, record.chunk_count,
+        )
+        record_audit(
+            action="upload", status="ok", session_id=session,
+            extra={"file": record.source_name, "bytes": len(data)},
         )
         return {
             "file_id": record.file_id,

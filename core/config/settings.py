@@ -550,6 +550,26 @@ class Settings:
     )
 
     # ============================================================
+    # 鉴权与审计（W3-0）
+    # ============================================================
+    # 逗号分隔的 API Key；为空 = 关闭鉴权（本地/内网）。原始 Key 不落任何日志。
+    api_keys: str = field(default_factory=lambda: os.getenv("API_KEYS", ""))
+    auth_exempt_paths: str = field(
+        default_factory=lambda: os.getenv(
+            "AUTH_EXEMPT_PATHS", "/health,/metrics,/docs,/openapi.json,/redoc"
+        )
+    )
+    # 审计日志落盘路径（空 = 只进 audit logger，输出到 stderr）
+    audit_log_path: str = field(
+        default_factory=lambda: os.getenv("AUDIT_LOG_PATH", "")
+    )
+    # 审计是否记录用户问题（含企业名等个人信息，截断 120 字符；可关闭）
+    audit_log_questions: bool = field(
+        default_factory=lambda: os.getenv("AUDIT_LOG_QUESTIONS", "true").lower()
+        in {"1", "true", "yes"}
+    )
+
+    # ============================================================
     # 系统提示词
     # ============================================================
     system_prompt: str = (

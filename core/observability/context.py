@@ -17,6 +17,7 @@ from typing import Optional
 
 _request_id: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
 _session_id: ContextVar[Optional[str]] = ContextVar("session_id", default=None)
+_api_key_id: ContextVar[Optional[str]] = ContextVar("api_key_id", default=None)
 
 MISSING = "-"
 
@@ -42,10 +43,19 @@ def get_session_id() -> Optional[str]:
     return _session_id.get()
 
 
+def set_api_key_id(value: Optional[str]) -> None:
+    _api_key_id.set(value)
+
+
+def get_api_key_id() -> Optional[str]:
+    return _api_key_id.get()
+
+
 def reset_context() -> None:
     """清空上下文（测试用）。"""
     _request_id.set(None)
     _session_id.set(None)
+    _api_key_id.set(None)
 
 
 __all__ = [
@@ -55,5 +65,7 @@ __all__ = [
     "get_request_id",
     "set_session_id",
     "get_session_id",
+    "set_api_key_id",
+    "get_api_key_id",
     "reset_context",
 ]

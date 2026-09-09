@@ -24,6 +24,7 @@ class ErrorCode(str, Enum):
     RETRIEVAL_EMPTY = "biz_1003"
     GUARDRAIL_FAILED = "biz_1004"
     UNSUPPORTED_CAPABILITY = "biz_1005"
+    UNAUTHORIZED = "biz_1006"
 
     # ── 系统错误 ──
     NODE_FAILED = "sys_2001"
