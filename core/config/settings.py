@@ -517,6 +517,39 @@ class Settings:
     )
 
     # ============================================================
+    # 会话与检查点（W2-4）
+    # ============================================================
+    # 记忆后端：memory（进程内，重启丢失）| sqlite | postgres | redis。
+    # 服务态默认 sqlite —— MemorySaver 不跨进程共享，多 worker 下会话会串。
+    checkpointer_backend: str = field(
+        default_factory=lambda: os.getenv("CHECKPOINTER_BACKEND", "sqlite")
+    )
+    checkpointer_sqlite_path: str = field(
+        default_factory=lambda: os.getenv(
+            "CHECKPOINTER_SQLITE_PATH",
+            os.path.join(_PROJECT_ROOT, "DATA", "checkpoints.db"),
+        )
+    )
+    # 会话空闲过期（秒）：超时清理其检查点；0 = 不过期。
+    session_ttl_seconds: int = field(
+        default_factory=lambda: int(os.getenv("SESSION_TTL_SECONDS", "86400"))
+    )
+    # 惰性清理的扫描间隔（秒）——每次 touch 时若距上次扫描超过该间隔则扫一次。
+    session_sweep_interval_seconds: int = field(
+        default_factory=lambda: int(os.getenv("SESSION_SWEEP_INTERVAL_SECONDS", "300"))
+    )
+
+    # ============================================================
+    # 入口限流（W2-5）— 进程内令牌桶；0 = 关闭
+    # ============================================================
+    rate_limit_per_minute: int = field(
+        default_factory=lambda: int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
+    )
+    rate_limit_burst: int = field(
+        default_factory=lambda: int(os.getenv("RATE_LIMIT_BURST", "20"))
+    )
+
+    # ============================================================
     # 系统提示词
     # ============================================================
     system_prompt: str = (

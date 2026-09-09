@@ -28,6 +28,7 @@ class ErrorCode(str, Enum):
     # ── 系统错误 ──
     NODE_FAILED = "sys_2001"
     ROUTE_FAILED = "sys_2002"
+    RATE_LIMITED = "sys_2003"
     INTERNAL = "sys_2500"
 
     # ── 模型错误 ──

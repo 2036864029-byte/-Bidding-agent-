@@ -33,11 +33,12 @@ from core.observability.logging import setup_logging
 from core.observability.metrics import content_type, render_metrics
 from core.protocol.renderers.api import reply_to_response
 from core.protocol.reply import to_reply
+from core.session import get_session_registry
 from public_kb.ingestion.parse_tool import parse_file
 
 from . import file_store
 from .deps import get_agent
-from .middleware import RequestContextMiddleware
+from .middleware import RateLimitMiddleware, RequestContextMiddleware
 from .schemas import ChatRequest, ChatResponse
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,7 @@ def _resolve_context_docs(file_ids: list[str], session_id: str) -> list[tuple[st
 def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
     session_id = _resolve_session_id(req.session_id)
     set_session_id(session_id)  # W2-2：会话 id 进入日志上下文
+    get_session_registry().touch(session_id)  # W2-4：登记会话（触发惰性过期清理）
     t0 = time.perf_counter()
     result = agent.invoke(
         req.question,
@@ -177,8 +179,14 @@ def create_app(
     app = FastAPI(title="ztb_demo Agent API", version="0.1.0")
     register_exception_handlers(app)  # W2-3：统一错误信封 + 不泄露内部细节
 
-    # 中间件顺序：后添加的在外层。RequestContext 先加 → CORS 在外层，
-    # 保证预检请求也能带上 CORS 头。
+    # 中间件顺序：后添加的在外层。目标（外→内）：CORS → RequestContext → RateLimit，
+    # 这样 request_id 先就位（限流 429 信封与访问日志都能带上），CORS 仍能处理预检。
+    settings = Settings()
+    app.add_middleware(
+        RateLimitMiddleware,
+        per_minute=settings.rate_limit_per_minute,
+        burst=settings.rate_limit_burst,
+    )
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -208,6 +216,7 @@ def create_app(
         """
         session = _resolve_session_id(session_id)
         set_session_id(session)  # W2-2：会话 id 进入日志上下文
+        get_session_registry().touch(session)  # W2-4：登记会话
         name = file.filename or "upload"
         max_bytes, allowed_exts = _upload_limits()
         _validate_upload_name(name, allowed_exts)
@@ -256,6 +265,7 @@ def create_app(
             return _invoke_response(agent, req)
         session_id = _resolve_session_id(req.session_id)
         set_session_id(session_id)  # W2-2：会话 id 进入日志上下文
+        get_session_registry().touch(session_id)  # W2-4：登记会话
         # 文件校验放在响应开始之前，失败返回正常 HTTP 404 而不是流中 error 事件
         context_docs = _resolve_context_docs(req.file_ids, session_id)
         return StreamingResponse(

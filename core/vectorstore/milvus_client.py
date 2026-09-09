@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from typing import Any, List, Optional, Sequence, Tuple
 
 from langchain_core.documents import Document
@@ -18,7 +18,7 @@ from langchain_milvus import Milvus as MilvusVectorStore
 from langchain_openai import OpenAIEmbeddings
 from pymilvus import DataType, Function, FunctionType, MilvusClient
 
-from core.contracts.chunk_ids import compute_chunk_uid
+from core.concurrency.pools import get_embedding_pool
 from core.config.settings import Settings
 from core.contracts import (
     ConfigurationContractError,
@@ -27,8 +27,8 @@ from core.contracts import (
     validate_embedding_batch,
     validate_ingestion_documents,
 )
+from core.contracts.chunk_ids import compute_chunk_uid
 from core.vectorstore.index_params import build_dense_index_params
-
 
 logger = logging.getLogger(__name__)
 
@@ -308,15 +308,15 @@ class MilvusStoreManager:
             vectors = self._embeddings.embed_documents(texts)
             return idx, vectors
 
-        max_workers = max(1, self._settings.embedding_max_workers)
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(_embed_one, (idx, batch))
-                for idx, batch in enumerate(batches)
-            ]
-            for future in as_completed(futures):
-                idx, vectors = future.result()
-                batch_vectors[idx] = vectors
+        # W2-5：向量化线程池集中到 core.concurrency.pools（进程级复用）
+        executor = get_embedding_pool()
+        futures = [
+            executor.submit(_embed_one, (idx, batch))
+            for idx, batch in enumerate(batches)
+        ]
+        for future in as_completed(futures):
+            idx, vectors = future.result()
+            batch_vectors[idx] = vectors
 
         for idx, batch in enumerate(batches):
             vectors = batch_vectors[idx]

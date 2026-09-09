@@ -282,3 +282,13 @@ class AgentGraph:
         config = {"configurable": {"thread_id": thread_id}}
         state = self._graph.get_state(config)
         return state.values if state else None
+
+    def delete_thread(self, thread_id: str) -> bool:
+        """删除某会话的检查点（W2-4 会话过期清理用）。
+
+        Returns:
+            是否真正删除（后端不支持时 False，不抛错）。
+        """
+        from .checkpointer import delete_thread as _delete_thread
+
+        return _delete_thread(self._checkpointer, thread_id)

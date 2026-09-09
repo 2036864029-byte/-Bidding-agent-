@@ -2,11 +2,10 @@
 """deps（方案 Phase 2 / C-4）。
 
 - get_agent()：threading.Lock 保护的 AgentGraph 进程级懒加载单例。
-- checkpointer 后端读 env CHECKPOINTER_BACKEND（默认 memory）。
+- checkpointer 后端读 env CHECKPOINTER_BACKEND（缺省取 Settings，W2-4 起默认 sqlite）。
 
-限制（文档化）：MemorySaver 不跨进程共享——uvicorn 须 ``--workers 1``。
-多 worker 需先切 sqlite/postgres 后端（agent.checkpointer 已支持），否则每进程
-独立记忆、会话串扰不可见。
+W2-4：SQLite 后端下检查点落盘、跨进程共享，多 worker 不再串会话；
+同时把会话登记表的清理器接到 AgentGraph.delete_thread（TTL 到期删检查点）。
 """
 
 from __future__ import annotations
@@ -17,6 +16,8 @@ import threading
 from typing import Optional
 
 from agent import AgentGraph
+from core.config.settings import Settings
+from core.session import get_session_registry
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +31,17 @@ def get_agent() -> AgentGraph:
     if _agent is None:
         with _lock:
             if _agent is None:
-                backend = os.getenv("CHECKPOINTER_BACKEND", "memory")
+                settings = Settings()
+                backend = os.getenv(
+                    "CHECKPOINTER_BACKEND", settings.checkpointer_backend,
+                )
                 _agent = AgentGraph(checkpointer_backend=backend)
-                logger.info("api.deps: AgentGraph 就绪（checkpointer=%s）", backend)
+                # W2-4：会话过期 → 删除其检查点
+                get_session_registry().set_deleter(_agent.delete_thread)
+                logger.info(
+                    "api.deps: AgentGraph 就绪（checkpointer=%s，会话 TTL=%ds）",
+                    backend, settings.session_ttl_seconds,
+                )
     return _agent
 
 

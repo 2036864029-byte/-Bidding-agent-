@@ -9,8 +9,10 @@
 约定：
   - ``get_query_pool()``：只跑"整条查询"（外层，price 子图用）。
   - ``get_sql_pool()``：只跑"单条 SQL"（内层，带超时执行）。
+  - ``get_embedding_pool()``：批量向量化（入库侧，W2-5 集中）。
   - 任何一方都不得把任务提交进对方——否则重新引入同池嵌套。
-  - 池大小经 ``Settings.query_pool_max_workers`` / ``sql_pool_max_workers`` 配置。
+  - 池大小经 ``Settings.query_pool_max_workers`` / ``sql_pool_max_workers`` /
+    ``embedding_max_workers`` 配置。
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _query_pool: Optional[ThreadPoolExecutor] = None
 _sql_pool: Optional[ThreadPoolExecutor] = None
+_embedding_pool: Optional[ThreadPoolExecutor] = None
 
 
 def get_query_pool() -> ThreadPoolExecutor:
@@ -59,7 +62,22 @@ def get_sql_pool() -> ThreadPoolExecutor:
 
 def reset_pools() -> None:
     """清空池单例（测试用）。"""
-    global _query_pool, _sql_pool
+    global _query_pool, _sql_pool, _embedding_pool
     with _lock:
         _query_pool = None
         _sql_pool = None
+        _embedding_pool = None
+
+
+def get_embedding_pool() -> ThreadPoolExecutor:
+    """批量向量化池（入库侧；W2-5 自 milvus_client 内部池集中到此）。"""
+    global _embedding_pool
+    if _embedding_pool is None:
+        with _lock:
+            if _embedding_pool is None:
+                workers = max(1, Settings().embedding_max_workers)
+                _embedding_pool = ThreadPoolExecutor(
+                    max_workers=workers, thread_name_prefix="embedding"
+                )
+                logger.info("EMBEDDING_POOL 初始化: max_workers=%d", workers)
+    return _embedding_pool
