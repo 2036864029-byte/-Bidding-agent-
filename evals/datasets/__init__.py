@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .rag import (
+    COMPLEX,
     MULTI_HOP,
     SINGLE_HOP,
     EvalSample,
@@ -16,6 +17,7 @@ from .rag import (
 __all__ = [
     "SINGLE_HOP",
     "MULTI_HOP",
+    "COMPLEX",
     "EvalSample",
     "load_jsonl",
     "dump_jsonl",

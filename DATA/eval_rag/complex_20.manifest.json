@@ -1,0 +1,10 @@
+{
+  "source": "testset_1000_local.jsonl",
+  "seed": 42,
+  "min_chars": 300,
+  "requested": 20,
+  "produced": 20,
+  "avg_chars": 498.2,
+  "expected_route": "deep_agent",
+  "elapsed_seconds": 82.7
+}

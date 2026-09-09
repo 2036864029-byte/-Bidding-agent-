@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 SINGLE_HOP = "single_hop"
 MULTI_HOP = "multi_hop"
+COMPLEX = "complex"  # 长/复合/口语化的真实用户提问（≥300 字，需多步检索）
 
 
 class EvalSample(BaseModel):
@@ -31,11 +32,18 @@ class EvalSample(BaseModel):
         default_factory=list, description="金标块 id（对应 Milvus chunk_id，供确定性检索指标）"
     )
     ground_truth_text: List[str] = Field(default_factory=list, description="金标块原文")
-    query_type: str = Field(SINGLE_HOP, description="single_hop / multi_hop")
+    query_type: str = Field(SINGLE_HOP, description="single_hop / multi_hop / complex")
+    expected_route: str = Field(
+        "", description="期望路由能力 id（如 deep_agent）；空=不做路由断言"
+    )
 
     @property
     def is_multi_hop(self) -> bool:
         return self.query_type == MULTI_HOP
+
+    @property
+    def is_complex(self) -> bool:
+        return self.query_type == COMPLEX
 
 
 def load_jsonl(path: str | Path) -> List[EvalSample]:
@@ -132,6 +140,7 @@ def distribution(samples: Sequence[EvalSample]) -> dict[str, int]:
 __all__ = [
     "SINGLE_HOP",
     "MULTI_HOP",
+    "COMPLEX",
     "EvalSample",
     "load_jsonl",
     "dump_jsonl",
