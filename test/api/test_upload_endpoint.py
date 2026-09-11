@@ -43,6 +43,8 @@ def _put_file(
     markdown: str = "第一章 内容",
     session: str = "s1",
 ) -> None:
+    from core.observability.context import tenant_scoped
+
     file_store.put(
         file_store.FileRecord(
             file_id=file_id,
@@ -51,7 +53,7 @@ def _put_file(
             markdown=markdown,
             preview=markdown,
             chunk_count=1,
-            session_id=session,
+            session_id=tenant_scoped(session),  # W4-3：镜像上传端点的租户作用域
             created_at=file_store.time.time(),
         )
     )
@@ -196,8 +198,10 @@ def test_upload_returns_session_id_and_scopes_file(monkeypatch):
 
     sid = body["session_id"]
     assert sid and sid != "default"
-    assert file_store.get(body["file_id"], session_id=sid) is not None
-    assert file_store.get(body["file_id"], session_id="someone-else") is None
+    from core.observability.context import tenant_scoped
+
+    assert file_store.get(body["file_id"], session_id=tenant_scoped(sid)) is not None
+    assert file_store.get(body["file_id"], session_id=tenant_scoped("someone-else")) is None
 
 
 def test_chat_unknown_file_id_404():

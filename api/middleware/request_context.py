@@ -14,12 +14,19 @@ import time
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from core.observability.context import new_request_id, set_request_id, set_session_id
+from core.observability.context import (
+    get_tenant_id,
+    new_request_id,
+    set_request_id,
+    set_session_id,
+    set_tenant_id,
+)
 from core.observability.tracing import set_span_attrs, span
 
 logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
+TENANT_HEADER = "X-Tenant-ID"
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -29,6 +36,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get(REQUEST_ID_HEADER) or new_request_id()
         set_request_id(request_id)
         set_session_id(None)  # session 由端点解析后设置
+        set_tenant_id(request.headers.get(TENANT_HEADER))  # W4-3：租户身份（缺省 default）
 
         started = time.perf_counter()
         # 根 span：子 span（节点 / LLM / 检索）经 contextvars 自动挂到本 span 下。
@@ -38,6 +46,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                 "http.request.method": request.method,
                 "url.path": request.url.path,
                 "ztb.request_id": request_id,
+                "ztb.tenant_id": get_tenant_id(),
             },
         ) as _sp:
             try:

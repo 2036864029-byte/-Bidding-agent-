@@ -37,6 +37,24 @@ def test_token_bucket_refills_over_time():
     assert bucket.allow(now=1.0) is True
 
 
+def test_client_key_prefers_tenant():
+    """W4-3：限流键**租户优先**（配额按租户计）；无租户回退 IP。"""
+    from starlette.requests import Request
+
+    from api.middleware.rate_limit import RateLimitMiddleware
+
+    def _req(headers: dict) -> Request:
+        return Request({
+            "type": "http",
+            "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+            "client": ("1.2.3.4", 123),
+        })
+
+    assert RateLimitMiddleware.client_key(_req({"X-Tenant-ID": "acme"})) == "tenant:acme"
+    assert RateLimitMiddleware.client_key(_req({})) == "1.2.3.4"
+    assert RateLimitMiddleware.client_key(_req({"X-Forwarded-For": "9.9.9.9, 8.8.8.8"})) == "9.9.9.9"
+
+
 # ── 中间件 ───────────────────────────────────────────────────
 
 def test_rate_limit_blocks_after_burst(monkeypatch):

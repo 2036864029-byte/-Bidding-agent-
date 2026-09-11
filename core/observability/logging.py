@@ -19,7 +19,7 @@ import json
 import logging
 import os
 
-from .context import MISSING, get_request_id, get_session_id
+from .context import MISSING, get_request_id, get_session_id, get_tenant_id
 
 DEFAULT_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 DEFAULT_DATE_FORMAT = "%H:%M:%S"
@@ -43,11 +43,12 @@ def resolve_json(json_output: bool | None = None) -> bool:
 
 
 class RequestContextFilter(logging.Filter):
-    """把 request_id / session_id 注入 LogRecord（供 formatter 取用）。"""
+    """把 request_id / session_id / tenant_id 注入 LogRecord（供 formatter 取用）。"""
 
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = get_request_id() or MISSING
         record.session_id = get_session_id() or MISSING
+        record.tenant_id = get_tenant_id()
         return True
 
 
@@ -61,6 +62,7 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "request_id": getattr(record, "request_id", MISSING),
             "session_id": getattr(record, "session_id", MISSING),
+            "tenant_id": getattr(record, "tenant_id", MISSING),
             "msg": record.getMessage(),
         }
         if record.exc_info:

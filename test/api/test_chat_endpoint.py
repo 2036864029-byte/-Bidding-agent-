@@ -77,7 +77,7 @@ def test_chat_invoke_structure_and_session_mapping():
     assert body["citations"][0]["doc_name"] == "法A"
     assert isinstance(body["latency_ms"], int)
     assert body["session_id"] == "s1"
-    assert fake.last_thread == "s1"  # session_id → thread_id
+    assert fake.last_thread == "default::s1"  # W4-3：thread_id = 租户作用域(session_id)
 
 
 def test_chat_without_session_id_generates_isolated_session():
@@ -87,7 +87,28 @@ def test_chat_without_session_id_generates_isolated_session():
     assert r.status_code == 200
     sid = r.json()["session_id"]
     assert sid and sid != "default"
-    assert fake.last_thread == sid
+    assert fake.last_thread == f"default::{sid}"  # W4-3：租户作用域 thread_id
+
+
+def test_tenant_header_isolates_thread_id():
+    """W4-3：同一 session_id 在不同租户下 → 不同 thread_id（会话/检查点隔离）。"""
+    client, fake = _client()
+    r1 = client.post(
+        "/chat", json={"question": "q", "session_id": "s1"},
+        headers={"X-Tenant-ID": "tenantA"},
+    )
+    assert r1.status_code == 200
+    assert r1.json()["session_id"] == "s1"  # 回传客户端的是原始 id（不带租户前缀）
+    t_a = fake.last_thread
+
+    r2 = client.post(
+        "/chat", json={"question": "q", "session_id": "s1"},
+        headers={"X-Tenant-ID": "tenantB"},
+    )
+    t_b = fake.last_thread
+
+    assert t_a == "tenantA::s1" and t_b == "tenantB::s1"
+    assert t_a != t_b  # 同 session_id 跨租户互不可见
 
 
 def test_two_anonymous_requests_do_not_share_thread():

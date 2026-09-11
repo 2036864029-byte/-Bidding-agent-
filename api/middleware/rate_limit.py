@@ -72,6 +72,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def client_key(request: Request) -> str:
+        """限流键：**租户优先**（W4-3）——配额按租户计；未带租户时回退 IP。"""
+        tenant = (request.headers.get("X-Tenant-ID") or "").strip()
+        if tenant:
+            return f"tenant:{tenant}"
         forwarded = request.headers.get("X-Forwarded-For", "")
         if forwarded:
             return forwarded.split(",")[0].strip()

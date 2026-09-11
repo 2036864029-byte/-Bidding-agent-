@@ -32,7 +32,7 @@ from agent import AgentGraph
 from core.config.settings import Settings
 from core.errors.handlers import register_exception_handlers, unhandled_envelope
 from core.observability.audit import record_audit
-from core.observability.context import set_session_id
+from core.observability.context import set_session_id, tenant_scoped
 from core.observability.logging import setup_logging
 from core.observability.metrics import content_type, render_metrics
 from core.protocol.renderers.api import reply_to_response
@@ -82,18 +82,19 @@ def _resolve_context_docs(file_ids: list[str], session_id: str) -> list[tuple[st
 
 
 def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
-    session_id = _resolve_session_id(req.session_id)
+    session_id = _resolve_session_id(req.session_id)  # 客户端可见的原始会话 id
     set_session_id(session_id)  # W2-2：会话 id 进入日志上下文
+    session_scope = tenant_scoped(session_id)  # W4-3：内部隔离（检查点/会话/文件按租户命名空间）
     # E4：根 span 在中间件创建（此时 session 未知），这里给活跃的根 span 补会话关联
     from core.observability.tracing import session_attrs, tag_current_span
 
     tag_current_span(**session_attrs())
-    get_session_registry().touch(session_id)  # W2-4：登记会话（触发惰性过期清理）
+    get_session_registry().touch(session_scope)  # W2-4：登记会话（触发惰性过期清理）
     t0 = time.perf_counter()
     result = agent.invoke(
         req.question,
-        thread_id=session_id,
-        context_docs=_resolve_context_docs(req.file_ids, session_id),
+        thread_id=session_scope,
+        context_docs=_resolve_context_docs(req.file_ids, session_scope),
     )
     latency_ms = int((time.perf_counter() - t0) * 1000)
     fallback_biz = {"branch": "fallback", "answer": "", "data": None}
@@ -133,7 +134,7 @@ def _run_stream_worker(
     try:
         result = agent.invoke(
             req.question,
-            thread_id=session_id,
+            thread_id=tenant_scoped(session_id),  # W4-3：检查点按租户隔离
             context_docs=context_docs,
         )
     except Exception:  # 图级异常（节点内异常已被 _with_fallback 兜住，到不了这里）
@@ -327,7 +328,8 @@ def create_app(
         """
         session = _resolve_session_id(session_id)
         set_session_id(session)  # W2-2：会话 id 进入日志上下文
-        get_session_registry().touch(session)  # W2-4：登记会话
+        session_scope = tenant_scoped(session)  # W4-3：文件按租户命名空间隔离
+        get_session_registry().touch(session_scope)  # W2-4：登记会话
         name = file.filename or "upload"
         max_bytes, allowed_exts = _upload_limits()
         _validate_upload_name(name, allowed_exts)
@@ -346,7 +348,7 @@ def create_app(
             markdown=result.markdown,
             preview=result.preview,
             chunk_count=result.chunk_count,
-            session_id=session,
+            session_id=session_scope,
             created_at=time.time(),
         )
         file_store.put(record)
@@ -380,9 +382,10 @@ def create_app(
             return _invoke_response(agent, req)
         session_id = _resolve_session_id(req.session_id)
         set_session_id(session_id)  # W2-2：会话 id 进入日志上下文
-        get_session_registry().touch(session_id)  # W2-4：登记会话
+        session_scope = tenant_scoped(session_id)  # W4-3：内部隔离（检查点/会话/文件）
+        get_session_registry().touch(session_scope)  # W2-4：登记会话
         # 文件校验放在响应开始之前，失败返回正常 HTTP 404 而不是流中 error 事件
-        context_docs = _resolve_context_docs(req.file_ids, session_id)
+        context_docs = _resolve_context_docs(req.file_ids, session_scope)
         return StreamingResponse(
             _sse_stream(agent, req, session_id, context_docs),
             media_type="text/event-stream",

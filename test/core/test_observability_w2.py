@@ -44,12 +44,35 @@ def test_context_roundtrip():
     assert get_request_id() is None and get_session_id() is None
 
 
+def test_tenant_context_and_scoping():
+    """W4-3：租户上下文 + 会话作用域；未设置时回退 default（向后兼容）。"""
+    from core.observability.context import (
+        DEFAULT_TENANT,
+        get_tenant_id,
+        set_tenant_id,
+        tenant_scoped,
+    )
+
+    reset_context()
+    try:
+        assert get_tenant_id() == DEFAULT_TENANT
+        assert tenant_scoped("s1") == f"{DEFAULT_TENANT}::s1"
+        set_tenant_id("acme")
+        assert get_tenant_id() == "acme"
+        assert tenant_scoped("s1") == "acme::s1"   # 同 session 跨租户不串
+    finally:
+        reset_context()
+
+
 # ── 结构化日志 ───────────────────────────────────────────────
 
 def test_json_formatter_injects_request_id():
+    from core.observability.context import set_tenant_id
+
     reset_context()
     set_request_id("rid-1")
     set_session_id("sid-1")
+    set_tenant_id("acme")
     record = logging.LogRecord(
         name="t", level=logging.INFO, pathname=__file__, lineno=1,
         msg="hello %s", args=("world",), exc_info=None,
@@ -59,6 +82,7 @@ def test_json_formatter_injects_request_id():
     assert payload["msg"] == "hello world"
     assert payload["request_id"] == "rid-1"
     assert payload["session_id"] == "sid-1"
+    assert payload["tenant_id"] == "acme"
     reset_context()
 
 

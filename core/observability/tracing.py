@@ -115,6 +115,12 @@ def span(name: str, **attrs: Any) -> Iterator[Any]:
                 sp.set_attribute(key, value)
         for key, value in session_attrs().items():
             sp.set_attribute(key, value)
+        try:  # W4-3：租户标识（Langfuse 可按租户筛选）
+            from core.observability.context import get_tenant_id
+
+            sp.set_attribute("ztb.tenant_id", get_tenant_id())
+        except Exception:  # noqa: BLE001
+            pass
         try:
             yield sp
         except Exception as e:
