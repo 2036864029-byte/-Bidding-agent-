@@ -1,7 +1,22 @@
-"""evals.metrics — 评测指标计算（检索层确定性指标 / 路由层准确率）。"""
+"""evals.metrics — 评测指标计算（检索层 / 路由层 / 生成层 / Agent 轨迹层）。"""
 
 from __future__ import annotations
 
+from .agent_trace import (
+    aggregate_traces,
+    tool_selection,
+    trace_summary,
+)
+from .agent_trace import render_report as render_agent_trace_report
+from .generation import (
+    GENERATION_METRICS,
+    build_ragas_rows,
+    layer_valid,
+    render_report,
+    summarize,
+)
+from .system import parse_prometheus, summarize_system
+from .system import render_report as render_system_report
 from .retrieval import (
     RetrievedMap,
     RetrievedTextMap,
@@ -43,4 +58,16 @@ __all__ = [
     "build_rows",
     "evaluate_routing",
     "check_gates",
+    "GENERATION_METRICS",
+    "layer_valid",
+    "build_ragas_rows",
+    "summarize",
+    "render_report",
+    "trace_summary",
+    "tool_selection",
+    "aggregate_traces",
+    "render_agent_trace_report",
+    "parse_prometheus",
+    "summarize_system",
+    "render_system_report",
 ]
