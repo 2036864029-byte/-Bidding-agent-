@@ -31,6 +31,7 @@ __all__ = [
     "ClickHouseCfg", "load_ch_cfg", "fetch_root_traces", "fetch_trace_events",
     "extract_question", "extract_answer", "extract_branch", "observed_tools",
     "flag_root", "build_candidate", "sample_candidates", "merge_into_golden",
+    "quality_scores",
 ]
 
 FLAG_ERROR = "error"
@@ -224,6 +225,24 @@ def _propose_query_type(tools: Sequence[str]) -> str:
     if s == {PRICE_TOOL}:
         return "price"
     return "kb_multi_hop"
+
+
+def quality_scores(root: dict, events: Sequence[dict]) -> list[dict]:
+    """确定性质量信号（零额外 LLM），供回写 Langfuse Scores（E4-3b）。
+
+    返回 [{name, value, comment}]：
+      - answered              答案非空且非降级 = 1，否则 0
+      - single_branch_complex 多源问题仅走单分支 = 1（E5 路由关注点），否则 0
+    """
+    flags = flag_root(root, events)
+    answered = 0.0 if (FLAG_EMPTY in flags or FLAG_FALLBACK in flags) else 1.0
+    multi = FLAG_MULTI_ATOM in flags
+    return [
+        {"name": "answered", "value": answered,
+         "comment": f"flags={','.join(flags) or 'none'}"},
+        {"name": "single_branch_complex", "value": 1.0 if multi else 0.0,
+         "comment": "多源问题仅走单分支（E5 路由关注点）" if multi else ""},
+    ]
 
 
 def build_candidate(root: dict, events: Sequence[dict], flags: Sequence[str]) -> dict:

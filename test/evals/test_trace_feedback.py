@@ -12,6 +12,7 @@ from evals.trace_feedback import (
     flag_root,
     merge_into_golden,
     observed_tools,
+    quality_scores,
 )
 
 
@@ -131,3 +132,21 @@ def test_merge_no_change_writes_nothing(tmp_path):
     golden.write_text(original, encoding="utf-8")
     res = merge_into_golden([{"q": "x", "review_status": "pending"}], golden)
     assert res["added"] == 0 and golden.read_text(encoding="utf-8") == original
+
+
+def test_quality_scores():
+    """E4-3b：确定性质量信号（answered / single_branch_complex）。"""
+    ok = {s["name"]: s["value"] for s in quality_scores({"latency_ms": 100}, _kb_trace())}
+    assert ok == {"answered": 1.0, "single_branch_complex": 0.0}
+
+    fb = [_ev("node.node_fallback", input="x", output="抱歉，功能暂时无法使用", branch="fallback")]
+    s = {x["name"]: x["value"] for x in quality_scores({"latency_ms": 100}, fb)}
+    assert s["answered"] == 0.0
+
+    empty = [_ev("node.node_knowledge_qa", input="x", output="", branch="knowledge_qa")]
+    assert {x["name"]: x["value"] for x in quality_scores({"latency_ms": 100}, empty)}["answered"] == 0.0
+
+    q = "中标后不签合同会怎样？同时，被列入不良记录还能投标吗？请分别说明。"
+    multi = [_ev("node.node_knowledge_qa", input=q, output="答", branch="knowledge_qa")]
+    assert {x["name"]: x["value"] for x in quality_scores({"latency_ms": 100}, multi)}[
+        "single_branch_complex"] == 1.0
