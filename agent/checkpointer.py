@@ -109,4 +109,52 @@ def delete_thread(checkpointer: BaseCheckpointSaver, thread_id: str) -> bool:
         return False
 
 
-__all__ = ["create_checkpointer", "delete_thread"]
+def list_threads(checkpointer: BaseCheckpointSaver) -> dict:
+    """枚举全部 thread → 最近检查点时间戳（epoch 秒）。
+
+    从**检查点源头**读取，而非进程内会话登记表 → **多副本安全**
+    （W4-4：任一副本都能看到全部 thread，不依赖是谁处理的）。
+    """
+    from datetime import datetime
+
+    latest: dict = {}
+    try:
+        tuples = checkpointer.list(None)
+    except Exception as exc:  # noqa: BLE001  后端不支持枚举时返回空
+        logger.warning("枚举检查点线程失败: %s", exc)
+        return {}
+    for item in tuples:
+        try:
+            tid = item.config["configurable"]["thread_id"]
+            ts_raw = item.checkpoint.get("ts")
+            ts = datetime.fromisoformat(ts_raw).timestamp() if ts_raw else None
+        except Exception:  # noqa: BLE001  单条异常跳过
+            continue
+        if ts is not None and ts > latest.get(tid, 0):
+            latest[tid] = ts
+    return latest
+
+
+def sweep_expired_threads(
+    checkpointer: BaseCheckpointSaver, ttl_seconds: int, *, now: Optional[float] = None,
+) -> list:
+    """删除超过 TTL 未活动的 thread（多副本安全的过期清理）。
+
+    与进程内 `SessionRegistry` 的区别：本函数从检查点枚举线程，任何副本调用都能
+    覆盖全部会话（含其他副本处理的），适合多副本部署下的定时清理。
+    """
+    import time
+
+    if ttl_seconds <= 0:
+        return []
+    now = time.time() if now is None else now
+    expired = [tid for tid, ts in list_threads(checkpointer).items()
+               if now - ts > ttl_seconds]
+    for tid in expired:
+        delete_thread(checkpointer, tid)
+    if expired:
+        logger.info("检查点清理：删除 %d 个过期 thread", len(expired))
+    return expired
+
+
+__all__ = ["create_checkpointer", "delete_thread", "list_threads", "sweep_expired_threads"]
