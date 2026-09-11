@@ -1,0 +1,14 @@
+{
+  "_comment": "Langfuse 模型定价（E4-3）。unit=TOKENS；价格为**每 token 单价**，币种 CNY（DeepSeek 按人民币计费）。",
+  "_source": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/（2026-09 核）",
+  "_note": "deepseek-chat 为旧模型名，官方现由 DeepSeek-V4.1-Flash 按 Flash 价服务；此处取**闲时（基础）价**，高峰时段（工作日 9-12/14-18）价格翻倍。改价只需编辑本文件后重跑脚本。",
+  "models": [
+    {
+      "modelName": "deepseek-chat",
+      "matchPattern": "(?i)^(deepseek-chat|deepseek-v4-flash|deepseek-flash)$",
+      "unit": "TOKENS",
+      "inputPrice": 1e-6,
+      "outputPrice": 4e-6
+    }
+  ]
+}
