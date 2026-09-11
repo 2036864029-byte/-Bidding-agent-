@@ -1,6 +1,6 @@
 {
-  "description": "E1-4 agent 金标（初版，LLM 预标注 + 待人工复核）。每条含「问题 + 期望工具序列 + 关键实体」。expected_sequence 为 deep_agent 应执行的最小有序工具序列；expected_tools 为其集合版（E2-3 现契约）。E2-3 轨迹指标据此从规则派生升级为标注真值。词表={kb_search_tool, price_query}。来源：multi_hop 金标（真实法律多跳）、price 金标（真实数据查询）、constructed（多源组合，按记忆示例模式构造）。",
-  "review_status": "pre_annotated",
+  "description": "E1-4 agent 金标（初版，LLM 预标注 + 人工复核通过 2026-09-11）。每条含「问题 + 期望工具序列 + 关键实体」。expected_sequence 为 deep_agent 应执行的最小有序工具序列；expected_tools 为其集合版（E2-3 现契约）。E2-3 轨迹指标据此从规则派生升级为标注真值。词表={kb_search_tool, price_query}。来源：multi_hop 金标（真实法律多跳）、price 金标（真实数据查询）、constructed（多源组合，按记忆示例模式构造）。注：kb_multi_hop 题的底层法规多为知识库「法规全书」合集中的相邻法律（土地/国资/产权/碳交易等，均为真实入库文档）。",
+  "review_status": "reviewed",
   "annotated_at": "2026-09-11",
   "items": [
     {
