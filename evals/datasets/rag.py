@@ -32,6 +32,10 @@ class EvalSample(BaseModel):
         default_factory=list, description="金标块 id（对应 Milvus chunk_id，供确定性检索指标）"
     )
     ground_truth_text: List[str] = Field(default_factory=list, description="金标块原文")
+    ground_truth_chunk_uids: List[str] = Field(
+        default_factory=list,
+        description="金标块的内容派生 chunk_uid（E1-5 重映射回填；换集合不变，稳定口径）",
+    )
     query_type: str = Field(SINGLE_HOP, description="single_hop / multi_hop / complex")
     expected_route: str = Field(
         "", description="期望路由能力 id（如 deep_agent）；空=不做路由断言"

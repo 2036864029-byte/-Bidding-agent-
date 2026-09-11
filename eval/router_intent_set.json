@@ -1,5 +1,5 @@
 {
-  "description": "P4 L3 门禁：router 意图集（改动前 33 题）。expected 为人工粗标签，参考用；核心指标是改动前后逐题分类一致 + 准确率不降。",
+  "description": "P4 L3 门禁：router 意图集（E1-3 扩到 ≥50/启用意图，2026-09-11）。expected 为人工粗标签；核心指标是改动前后逐题分类一致 + 准确率不降。",
   "items": [
     {
       "q": "招标方式有哪几种？",
@@ -143,6 +143,1042 @@
     },
     {
       "q": "查一下某公司的中标记录，并结合法规说明中标后不签合同会有什么后果",
+      "expected": "deep_agent"
+    },
+    {
+      "q": "公开招标和邀请招标有啥区别？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某项目评标时专家人数不够怎么办？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "中标通知书发出后多久要签合同？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "招标文件里能不能要求某公司必须有本地业绩？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "联合体投标的话资质怎么算？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某公司中标后把活转包给别人算违法吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某项目评标的时候专家人数不够怎么办？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "政府采购项目必须走招标程序吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某公司想投诉招标结果，要走什么流程？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "XX公司资质不够能不能借用别家的？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "履约验收阶段甲方故意拖延不给验收怎么办？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "投标保证金一般什么时候退还给投标人？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某项目验收不合格，履约保证金能扣吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "履约验收不合格的话怎么处理？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "XX公司中标后把活儿转包出去合法吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某公司中标后能不能把项目转包给别人？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "流标之后还能重新招标吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "开标的时候投标人必须到场吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "中标通知书发出去之后还能反悔吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某公司中标后把项目转包给别人合法吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某项目评标时专家可以私下联系投标人吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "投标保证金一般什么时候退？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "政府采购里竞争性谈判适用哪些情况？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "投标文件密封没做好会不会直接废标？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某项目评标的时候专家可以私下联系投标人吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "履约验收阶段发现中标方偷工减料该怎么处理？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "招投标法规定中标通知书发出后多少天内要签合同？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某公司想参加某项目的投标，需要提前准备哪些材料？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "招标文件里能不能写要求本地业绩？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "履约验收阶段发现质量问题，甲方能扣钱吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "招投标法规定哪些项目必须公开招标？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某文件里要求的技术参数必须全部满足吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "政府采购和工程招标的适用法规是不是不一样？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "竞争性谈判和公开招标有啥区别？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "投标文件密封不合格会被废标吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "政府采购和招投标法到底适用哪个？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "招投标法规定的中标通知书什么时候发？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "电子招投标和传统纸质招标在法律效力上有区别吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "评标的时候报价最低就一定能中标吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "政府采购和工程招标有什么区别？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "投标保证金什么时候能退回来？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某公司中标后把活转包出去算违法吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "投标人少于三家还能继续开标吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "履约验收一般由谁来组织？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某项目评标专家人数不够可以补吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "履约验收不合格的话甲方能直接扣钱吗？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "招投标法里对投标保证金比例是怎么规定的？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "公开招标和邀请招标到底有啥区别？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "招投标法里规定的废标情形都有哪些？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "某项目中标后多久要签合同？",
+      "expected": "knowledge_qa"
+    },
+    {
+      "q": "帮我查下某公司的工商注册信息",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "想找几家做这个领域的供应商，有哪些公司比较合适？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司注册资本是多少",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "某公司之前中过哪些标",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司都中过哪些标？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司最近中标了什么项目？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司是什么时候成立的？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "帮我查下某公司有没有被列入黑名单",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司有没有被列入失信名单？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司有没有被列入经营异常名录？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司中过哪些标？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司现在是什么经营状态",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "想看看某项目最后是哪家中标的",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "帮我推荐几家做XX业务的公司",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "帮我查查XX公司的工商注册信息",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "查一下某项目的中标供应商是谁",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "某项目的中标金额是多少",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "某项目最后是哪家中标的？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司最近中标了哪些项目",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "某公司有没有行政处罚或者违法记录？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司最近有什么中标项目吗",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "想找几家做某类业务的公司，有推荐吗？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司现在还在正常经营吗？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "有没有哪些公司中标过某项目的采购？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "想找几家做这行的供应商，有哪些公司比较合适？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "查一下XX公司的资质和经营状态",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "最近XX公司有没有被行政处罚过？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司最近有啥中标项目吗？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司最近有没有被行政处罚？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "某项目最后是哪家公司中标了？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "想看看某公司的注册资本和成立时间",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司有没有失信或者涉诉方面的风险？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "某公司有没有被列入经营异常名录？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司现在是什么经营状态？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司之前中过哪些标？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司注册资本多少，经营状态正常吗？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "某项目最后是哪家公司中标了，中标金额多少？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司有没有被列入黑名单",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "某项目的中标供应商是谁",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "帮我找几家做这个领域的供应商公司",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司经营状态正常吗，有没有异常",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司之前中过标吗，金额大概多少？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "这家公司被行政处罚过没有？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "某项目中标金额是多少",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "XX公司最近有什么中标项目吗？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "某项目的采购中标金额是多少？",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "帮我找几家做这个行业的公司",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "帮我查下XX公司的注册资本和法人是谁",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "帮我查下XX公司的注册资本和成立时间",
+      "expected": "price_inquiry"
+    },
+    {
+      "q": "这个招投标智能助手都有哪些功能啊？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你好呀，你能帮我做些什么呢？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "嗨，在吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "在吗，我想先随便聊聊，看看你都能干啥。",
+      "expected": "general_chat"
+    },
+    {
+      "q": "嗨，随便聊聊，你平时都干嘛？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "嗨，随便聊聊，你平时都能干啥？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "嗨，随便聊聊，你平时都能回答什么问题？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你是谁呀，能简单介绍一下自己吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "第一次用，这个怎么操作啊？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你能帮我做点什么？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "这个助手怎么用啊",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你能处理投标文件相关的事情吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你除了招投标相关的事，还能陪我聊点别的吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你都能回答哪些方面的问题啊？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我想了解一下你能处理哪些问题",
+      "expected": "general_chat"
+    },
+    {
+      "q": "这东西怎么用啊，有没有说明书",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我不太会用这个系统，你能教教我怎么操作吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你是谁啊，是机器人还是真人？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "随便聊聊可以吗",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你好，你是谁呀？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你能帮我做什么类型的事情呢",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我想了解一下你都有哪些功能？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你能处理XX公司的投标问题吗",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我想问一下，你都能回答哪些问题？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你是机器人还是真人",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你能帮我做什么",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我想了解一下你的能力范围，能说说吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我是第一次来，你能给我介绍一下自己吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你都能回答什么样的问题？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "第一次用，从哪儿开始比较好",
+      "expected": "general_chat"
+    },
+    {
+      "q": "这个招投标助手到底怎么用啊？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你好，你是谁呀",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我想了解一下你的功能",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你能帮我做些什么呢？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "第一次用你，有什么功能是值得我了解一下的？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "刚来，不太熟悉，你能带我了解一下吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你能介绍一下你自己吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我不太会用这个系统，你能教教我吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你能帮我处理某项目相关的事情吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你都能帮我干点啥",
+      "expected": "general_chat"
+    },
+    {
+      "q": "这个助手到底有啥功能，能给我讲讲不？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "某项目的事情你能聊吗",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我想了解一下你的能力范围，可以介绍一下吗？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你好，你能帮我做些什么呢？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你能帮我处理XX公司那个项目的事吗，还是说你只管聊天？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我有个某文件不知道从哪下手，你能先给我讲讲你有啥本事不？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "这个系统怎么用啊？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你能帮我做些什么事情呢？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "你是机器人还是真人啊？",
+      "expected": "general_chat"
+    },
+    {
+      "q": "嗨，随便聊聊呗",
+      "expected": "general_chat"
+    },
+    {
+      "q": "两份某公司文件内容差不多，你帮我找出不同点",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这个PDF里的付款条件是怎么写的",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这份合同条款有什么风险点，帮我解读一下",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "帮我把这个文件里的资质要求提取出来",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这份合同里有哪些对我们不利的条款",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这两份投标文件的关键差异在哪",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "某公司这份投标文件跟另一家对比哪个更有优势",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "某项目的招标公告看不太懂，帮我分析下",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "我刚传了某公司的资质文件，帮我分析分析",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "某项目招标文件里的评分标准帮我提取一下",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这份合同有没有什么坑啊，帮我解读一下",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "帮我对比一下这两份标书的差异",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这个文件里哪些条款对某公司不利",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "帮我从这份合同里提取付款方式和时间节点",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "帮我看下这份某文件的付款条件是怎么约定的",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这份标书响应文件帮我核对一下有没有漏项",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这份招标文件主要讲了什么",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "我刚传的文档你帮我解读一下重点",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这个文档和之前上传的那份有什么区别",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "我发的这个文档你帮我解读一下",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "上传的这份文档主要讲了啥，帮我分析下",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "对比一下这两份标书，看看哪家更有优势",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "解读一下这份招标文件的核心要求",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "某公司这份合同有没有隐藏风险",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "帮我从这份某文件里提取所有时间节点",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这份XX文件帮我看看有没有问题",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这份标书帮我看看有没有问题",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "我刚传了某公司的合同，你帮我解读一下关键条款",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "帮我从这份文档里提取所有资质要求",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "上传的这份某文件主要讲了什么内容",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "我传了个附件，帮我总结一下里面的重点内容",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "看看这份XX文件里有没有废标风险",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "能不能对比一下这两份标书，看看差异在哪",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "上传的这份技术方案能不能帮我分析下重点在哪",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这份合同有什么风险点帮我看看",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "上传的合同里付款条款是怎么写的",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "上传了某项目的技术标，帮我看看有没有偏离要求",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "某项目这个招标文件里对业绩要求是怎么写的",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "某项目的投标文件我看不太懂，帮我分析一下",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "我传的这个文件里报价部分在哪，帮我找一下",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "帮我对比一下这两份投标文件",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这个某项目的招标文件里有哪些资质要求，帮我提取出来",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "解读一下这份合同的关键条款",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "某项目的技术方案里有没有遗漏",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这个某项目的招标文件解读一下",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "刚传的这份文档主要讲了什么",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "把这份文件里的关键信息提取出来",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "我刚上传了这份招标文件，帮我看看里面有什么关键要求",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "这两份文件内容差别大吗，帮我对比一下",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "我发的这个文件你帮我总结一下核心条款呗",
+      "expected": "doc_qa"
+    },
+    {
+      "q": "最近有什么好看的电影推荐",
+      "expected": "fallback"
+    },
+    {
+      "q": "现在几点了",
+      "expected": "fallback"
+    },
+    {
+      "q": "推荐一部最近好看的电影",
+      "expected": "fallback"
+    },
+    {
+      "q": "我心情不太好，能陪我聊聊天吗",
+      "expected": "general_chat"
+    },
+    {
+      "q": "推荐几部最近好看的电影",
+      "expected": "fallback"
+    },
+    {
+      "q": "感觉工作压力好大，想找人聊聊",
+      "expected": "fallback"
+    },
+    {
+      "q": "如何提高睡眠质量",
+      "expected": "fallback"
+    },
+    {
+      "q": "怎么才能坚持早起锻炼身体",
+      "expected": "fallback"
+    },
+    {
+      "q": "明天北京会下雨吗",
+      "expected": "fallback"
+    },
+    {
+      "q": "周杰伦最火的歌是哪首",
+      "expected": "fallback"
+    },
+    {
+      "q": "周末去哪里玩比较好",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我算一下23乘以47等于多少",
+      "expected": "fallback"
+    },
+    {
+      "q": "周末去XX公园玩需要门票吗",
+      "expected": "fallback"
+    },
+    {
+      "q": "推荐一部好看的电影吧",
+      "expected": "fallback"
+    },
+    {
+      "q": "我最近心情特别差，想找人聊聊",
+      "expected": "fallback"
+    },
+    {
+      "q": "明天股市会涨吗",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我写一首关于秋天的诗",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我算一下35乘以12等于多少",
+      "expected": "fallback"
+    },
+    {
+      "q": "我心情不好，想找人说说话",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我最近心情不好，想找人说说话",
+      "expected": "general_chat"
+    },
+    {
+      "q": "推荐几部适合周末看的电影",
+      "expected": "fallback"
+    },
+    {
+      "q": "明天会下雨吗",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我算一下345乘以78等于多少",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我算一下128乘以37等于多少",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我写一份生日祝福语发给朋友",
+      "expected": "fallback"
+    },
+    {
+      "q": "推荐几部好看的科幻电影",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我算一下158乘以37等于多少",
+      "expected": "fallback"
+    },
+    {
+      "q": "我最近老是失眠怎么办",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我算一下 256 乘以 37 等于多少",
+      "expected": "fallback"
+    },
+    {
+      "q": "给我讲个笑话吧",
+      "expected": "general_chat"
+    },
+    {
+      "q": "我最近总是失眠怎么办",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我算一下从某地到某地开车要多久",
+      "expected": "fallback"
+    },
+    {
+      "q": "最近有什么热门新闻吗",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我写一首关于春天的诗",
+      "expected": "fallback"
+    },
+    {
+      "q": "我最近心情不好，怎么调节",
+      "expected": "fallback"
+    },
+    {
+      "q": "的平方是多少",
+      "expected": "fallback"
+    },
+    {
+      "q": "北京到上海的高铁要坐多久",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我算一下 128 乘以 37 等于多少",
+      "expected": "fallback"
+    },
+    {
+      "q": "最近有什么好看的电影推荐吗",
+      "expected": "fallback"
+    },
+    {
+      "q": "给我写一首关于秋天的诗",
+      "expected": "fallback"
+    },
+    {
+      "q": "写一首关于秋天的诗",
+      "expected": "fallback"
+    },
+    {
+      "q": "红烧肉怎么做才好吃",
+      "expected": "fallback"
+    },
+    {
+      "q": "推荐一款适合跑步的耳机",
+      "expected": "fallback"
+    },
+    {
+      "q": "周末去爬山需要注意什么",
+      "expected": "fallback"
+    },
+    {
+      "q": "的平方加4的平方等于多少",
+      "expected": "fallback"
+    },
+    {
+      "q": "我心情不好，能陪我聊聊天吗",
+      "expected": "general_chat"
+    },
+    {
+      "q": "晚饭吃什么比较好",
+      "expected": "fallback"
+    },
+    {
+      "q": "周末去爬山需要准备什么",
+      "expected": "fallback"
+    },
+    {
+      "q": "最近有什么热门新闻",
+      "expected": "fallback"
+    },
+    {
+      "q": "帮我算一下 238 乘以 47 等于多少",
+      "expected": "fallback"
+    },
+    {
+      "q": "其一，某公司被列入失信名单后还能不能参加政府采购？其二，如果它已经中标了，合同还有效吗？",
+      "expected": "deep_agent"
+    },
+    {
+      "q": "某项目采购进口设备要走哪些审批流程？假如供应商在过程中有违法行为，又该按什么规定处罚？",
+      "expected": "deep_agent"
+    },
+    {
+      "q": "某文件要求投标人同时具备两项资质，但某公司只满足其中一项，它能通过资格审查吗？另外，联合体投标的话资质又怎么算？",
+      "expected": "deep_agent"
+    },
+    {
+      "q": "某项目中标结果公示后有人提出异议，招标人应当怎么处理？此外，如果异议涉及评标专家回避问题，又该由谁负责答复？",
+      "expected": "deep_agent"
+    },
+    {
+      "q": "这个项目要求投标人提供业绩证明和财务状况报告，那这两项材料分别由谁出具、各自在什么时间提交？",
+      "expected": "deep_agent"
+    },
+    {
+      "q": "先帮我查一下XX公司近三年的中标情况，再结合法规说说它要是中标后不签合同得承担什么责任。",
+      "expected": "deep_agent"
+    },
+    {
+      "q": "我们想同时了解两件事：一是某项目流标后能不能重新招标，二是重新招标时原投标人还能不能参与？",
+      "expected": "deep_agent"
+    },
+    {
+      "q": "某公司中标后放弃签约会怎么处理？另外，如果它之前就被列入过不良记录名单，还能不能继续参加投标？",
+      "expected": "deep_agent"
+    },
+    {
+      "q": "XX项目评标时专家人数不够怎么办？还有，招标文件里没写清楚评分细则，投标人能不能质疑？",
+      "expected": "deep_agent"
+    },
+    {
+      "q": "查一下某公司近三年的中标情况，再结合规定说说它被暂停投标资格期间还能不能接新项目。",
       "expected": "deep_agent"
     }
   ]

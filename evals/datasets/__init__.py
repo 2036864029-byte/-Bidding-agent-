@@ -13,6 +13,7 @@ from .rag import (
     split_holdout,
     stratified_sample,
 )
+from .remap import build_index, match_passage, remap_samples
 
 __all__ = [
     "SINGLE_HOP",
@@ -24,4 +25,7 @@ __all__ = [
     "stratified_sample",
     "split_holdout",
     "distribution",
+    "build_index",
+    "match_passage",
+    "remap_samples",
 ]
