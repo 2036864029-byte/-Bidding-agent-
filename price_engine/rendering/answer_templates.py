@@ -375,6 +375,21 @@ def render_answer(
         自然语言回答文本
     """
     template = _resolve_template(query_type)
+    if query_type == "mixed" and template is not None:
+        # mixed 模板的 single_template 用 {record_text}（供逐条字段拼装），
+        # 走 _render_multi/_render_single 会因 ctx 无 record_text 而 KeyError。
+        # 强制走 record_text 渲染路径（与原"未知类型回退 mixed"一致）。
+        if not records:
+            return template.empty_template.format(entity=entity or "该查询")
+        parts = []
+        for i, rec in enumerate(records[:10], 1):
+            ctx = _build_record_context(rec, template)
+            parts.append(
+                f"【{i}】" + " | ".join(
+                    f"{k}: {v}" for k, v in ctx.items() if v and v != "未提供"
+                )
+            )
+        return template.single_template.format(record_text="\n".join(parts))
     if template is None:
         # 回退到 mixed 模板
         template = _resolve_template("mixed")

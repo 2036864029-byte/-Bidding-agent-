@@ -22,6 +22,7 @@ from .recall import _execute_sql_with_timeout, _get_settings
 from .models import SearchIntent
 from .sql_builders import (
     _build_candidate_sql,
+    _build_exact_constraint_sql,
     _build_full_scan_sql,
     _build_like_fallback_sql,
 )
@@ -199,8 +200,18 @@ def build_recall_stages(
     intent: SearchIntent,
     stats: Dict[str, Any],
 ) -> List[RecallStage]:
-    """构造 price 5 级召回链的 RecallStage 序列（full_scan 默认 is_scan 禁入）。"""
+    """构造 price 5 级召回链的 RecallStage 序列（full_scan 默认 is_scan 禁入）。
+
+    前置 exact_constraint（stage 0）：有代码类精确 ID（project_number/credit_code）
+    时纯约束直查，命中即短路——修复"项目编号存在却按编号查不到"的假阴性
+    （语义阶段在采购人/投标人列搜编号必然 0）。
+    """
     return [
+        _SqlRecallStage(
+            name="exact_constraint", stage_no=0,
+            table_name=table_name, classification=classification, intent=intent,
+            build_sql=_build_exact_constraint_sql, stats=stats,
+        ),
         _SqlRecallStage(
             name="fulltext_or", stage_no=1,
             table_name=table_name, classification=classification, intent=intent,

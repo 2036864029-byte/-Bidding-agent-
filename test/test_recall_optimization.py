@@ -256,11 +256,66 @@ def test_split_overlong_keyword():
 # ────────────────────────────────────────────────
 def test_rag_params_relaxed():
     settings = Settings()
-    assert settings.retrieval_top_k == 5
+    assert settings.retrieval_top_k == 11
     assert settings.similarity_threshold == 0.45
     assert settings.hybrid_dense_limit == 30
     assert settings.hybrid_sparse_limit == 30
     assert settings.hybrid_fusion_limit == 30
+
+
+# ────────────────────────────────────────────────
+# project_detail 精确召回（E1-3 修复）：参数顺序 + 精确约束前置阶段
+# ────────────────────────────────────────────────
+def test_candidate_sql_param_order_project_number():
+    """project_number 约束必须绑定编号值，不得被全文搜索串错位顶替（回归）。
+
+    旧实现 params=[*hard_params, st, st] 与 SQL 文本 %s 顺序错位 → project_number
+    绑成整句搜索串 → 按编号查询恒 0 行。
+    """
+    from price_engine.sql_builders import _build_candidate_sql
+
+    intent = SearchIntent(
+        hard_filters=HardFilters(project_number="2024AFAHZ03028"),
+        semantic_keywords=["2024AFAHZ03028的中标详情"],
+        exact_tokens=["2024AFAHZ03028"],
+        query_type="project_detail", sub_route="bidding_query",
+    )
+    sql_tuple = _build_candidate_sql("bid_project", _HARDCODED_SCHEMA["bid_project"], intent)
+    assert sql_tuple is not None
+    sql, params = sql_tuple
+    # 参数顺序 [SELECT 评分 search_term, hard_params..., WHERE 全文 search_term]
+    assert params[0] == "2024AFAHZ03028的中标详情 2024AFAHZ03028"
+    assert params[1] == "2024AFAHZ03028"          # project_number 绑在约束位
+    assert "project_number" in sql.split("WHERE", 1)[1]
+
+
+def test_exact_constraint_sql_has_id_and_score():
+    """精确约束直查 SQL 须带 _id_/_score_ 别名，否则 _merge_result_record 静默丢行。"""
+    from price_engine.sql_builders import _build_exact_constraint_sql
+
+    intent = SearchIntent(
+        hard_filters=HardFilters(project_number="2024AFAHZ03028"),
+        query_type="project_detail", sub_route="bidding_query",
+    )
+    sql_tuple = _build_exact_constraint_sql("bid_project", _HARDCODED_SCHEMA["bid_project"], intent)
+    assert sql_tuple is not None
+    sql, params = sql_tuple
+    assert "`id` AS `_id_`" in sql and "0 AS `_score_`" in sql
+    assert "project_number" in sql and "2024AFAHZ03028" in params
+    assert "AGAINST" not in sql and "LIKE" not in sql   # 纯约束，无全文/LIKE
+
+
+def test_exact_constraint_sql_none_without_code_id():
+    """无代码类精确 ID → 不产出精确约束 SQL（避免干扰普通查询）。"""
+    from price_engine.sql_builders import _build_exact_constraint_sql
+
+    intent = SearchIntent(
+        hard_filters=HardFilters(company_name="安徽海纳信息科技有限公司"),
+        sub_route="company_query",
+    )
+    assert _build_exact_constraint_sql(
+        "company_info", _HARDCODED_SCHEMA["company_info"], intent
+    ) is None
 
 
 if __name__ == "__main__":

@@ -58,8 +58,8 @@ def test_stage_order_and_scan_flag():
     stages = build_recall_stages(
         "company_info", _HARDCODED_SCHEMA["company_info"], _intent(), stats,
     )
-    assert [s.name for s in stages] == ["fulltext_or", "like_fallback", "split_keyword", "full_scan"]
-    assert [s.is_scan for s in stages] == [False, False, False, True]
+    assert [s.name for s in stages] == ["exact_constraint", "fulltext_or", "like_fallback", "split_keyword", "full_scan"]
+    assert [s.is_scan for s in stages] == [False, False, False, False, True]
 
 
 def test_default_scan_disabled_miss_returns_empty(monkeypatch):

@@ -161,6 +161,33 @@ class TestValidQueryEntity(unittest.TestCase):
         # _looks_like_code 返回 False → _has_valid_query_entity 返回 False
         self.assertFalse(_has_valid_query_entity(intent))
 
+    def test_supplier_recommend_industry_valid(self):
+        """supplier_recommend 带行业：行业是合法实体（WHERE industry=… 过滤查询）。"""
+        intent = SearchIntent(
+            hard_filters=HardFilters(industry="农业"),
+            sub_route="company_query",
+            query_type="supplier_recommend",
+        )
+        self.assertTrue(_has_valid_query_entity(intent))
+
+    def test_supplier_recommend_without_industry_refused(self):
+        """supplier_recommend 无行业（裸"推荐几家企业"）= 无实体，应拒绝（防全表扫）。"""
+        intent = SearchIntent(
+            hard_filters=HardFilters(),
+            sub_route="company_query",
+            query_type="supplier_recommend",
+        )
+        self.assertFalse(_has_valid_query_entity(intent))
+
+    def test_industry_alone_not_valid_for_other_routes(self):
+        """行业仅对 supplier_recommend 算实体；其他路由行业不算（避免误放行）。"""
+        intent = SearchIntent(
+            hard_filters=HardFilters(industry="农业"),
+            sub_route="company_query",
+            query_type="company_detail",
+        )
+        self.assertFalse(_has_valid_query_entity(intent))
+
 
 # ═════════════════════════════════════════════════════════
 # 3. 中台湾控 — bid_project 检索词白名单过滤

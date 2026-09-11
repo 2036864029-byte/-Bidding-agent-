@@ -80,6 +80,13 @@ def _query_company_data(intent: SearchIntent) -> dict[str, Any]:
     tables = ["company_info"]
     result = _query_tables(tables, intent)
 
+    # ── supplier_recommend：按 top_n 截断（"推荐几家"），兜底 LIMIT 200 ──
+    # 意图已提取 top_n（钳制 [1,20]）；无显式数量时给合理默认（推荐语义）。
+    if intent.query_type == "supplier_recommend" and result.get("records"):
+        n = intent.top_n or 10
+        result["records"] = result["records"][:n]
+        result["total_found"] = len(result["records"])
+
     # ── P0-1b：penalty_check 精确匹配过滤 ──
     # 当直接查 company_penalty 无结果时，降级到 company_info 路径。
     # 但语义召回可能返回无关企业，必须过滤保留目标企业。
@@ -148,6 +155,10 @@ def _query_company_data(intent: SearchIntent) -> dict[str, Any]:
 
                 result["records"] = merged_records
                 result["queried_tables"].append(f"{_CLEAN_DB}.company_penalty")
+            else:
+                # 企业存在但无任何处罚记录 → 返回空（走"暂无不良记录"路径）。
+                # 否则会用处罚模板渲染无处罚字段的 company_info 行 → KeyError 崩溃。
+                result["records"] = []
 
     return result
 

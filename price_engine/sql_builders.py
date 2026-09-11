@@ -318,6 +318,35 @@ def _build_order_clause(intent: SearchIntent) -> str:
     else:
         return "ORDER BY `_score_` DESC"
 
+def _build_exact_constraint_sql(
+    table: str,
+    classification: dict[str, list[str]],
+    intent: SearchIntent,
+) -> Optional[tuple[str, tuple[Any, ...]]]:
+    """精确约束直查（召回链前置阶段）：有代码类精确 ID 时返回纯约束查询。
+
+    背景：project_detail 按编号查询时，语义阶段（FULLTEXT/LIKE 在采购人/投标人列
+    搜编号）必然 0 命中，导致"项目编号存在却查不到"（假阴性）。
+    本查询用 `WHERE project_number = …`（或 credit_code）精确命中，命中即短路，
+    不依赖语义阶段。仅当存在代码类精确 ID 才返回 SQL。
+    """
+    hf = intent.hard_filters
+    has_code_id = bool(
+        (hf.project_number and _looks_like_code(hf.project_number))
+        or (hf.credit_code and _looks_like_code(hf.credit_code))
+    )
+    if not has_code_id:
+        return None
+    conds, params = _build_constraint_conditions(table, classification, intent)
+    if not conds:
+        return None
+    id_col = classification.get("id", ["id"])[0]
+    return (
+        f"SELECT *, `{id_col}` AS `_id_`, 0 AS `_score_` "
+        f"FROM `{table}` WHERE {' AND '.join(conds)} LIMIT 200",
+        tuple(params),
+    )
+
 def _build_candidate_sql(
     table: str,
     classification: dict[str, list[str]],
@@ -345,7 +374,6 @@ def _build_candidate_sql(
     # 选择返回字段：SELECT * 全字段回表（修复 P0-1 缺列缺陷）+ 计算列
     select_fields = ["*", f"`{id_col}` AS `_id_`"]
 
-    params: list[Any] = list(hard_params)
     order_by = _build_order_clause(intent)
 
     if search_term:
@@ -353,9 +381,12 @@ def _build_candidate_sql(
         fulltext_cond = f"{fulltext_expr} AGAINST (%s IN BOOLEAN MODE)"
         select_fields.append(f"{fulltext_expr} AGAINST (%s IN BOOLEAN MODE) AS `_score_`")
         hard_conds.append(fulltext_cond)
-        params.extend([search_term, search_term])
+        # 参数须与 SQL 文本 %s 顺序一致：SELECT 评分 → 硬过滤 → WHERE 全文。
+        # 旧实现 [*hard_params, st, st] 使 project_number 等硬过滤绑定到搜索串 → 恒 0 行。
+        params = [search_term] + list(hard_params) + [search_term]
     else:
         select_fields.append("0 AS `_score_`")
+        params = list(hard_params)
 
     if not hard_conds and not allow_empty_search:
         logger.warning("[SQL_BUILD] db=%s table=%s 无任何过滤条件，跳过", _CLEAN_DB, table)

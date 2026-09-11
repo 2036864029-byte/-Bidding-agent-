@@ -28,8 +28,9 @@ logger = logging.getLogger(__name__)
 QUERY_INTENT_KEYWORDS = re.compile(
     r"查|问|是?什么|哪些|哪个|如何|怎么|多少|有无|有没有|"
     r"查询|了解|看看|帮忙|请问|推荐|帮我|"
-    r"中标|招标|采购|投标|发包|工商|不良|处罚|违法|"
+    r"中标|招标|采购|投标|发包|工商|不良|处罚|违法|黑名单|拉黑|"
     r"详情|记录|历史|介绍|信息|情况|"
+    r"谁|法定代表人|注册资本|股东|经营范围|"
     r"中标情况|中标历史|不良记录|工商信息|经营范围"
 )
 
@@ -39,6 +40,8 @@ def has_valid_query_entity(intent: SearchIntent) -> bool:
 
     合法实体：project_number（含字母+数字）或通过工商主体名称格式校验的
     company_name / purchaser / successful_bidder。未通过校验的实体名视为无效。
+    supplier_recommend 例外：行业（hard_filters.industry）按行业过滤查询，
+    是合法实体（非全表扫）；其余路由行业不算实体。
     """
     hf = intent.hard_filters
     if hf.project_number and _looks_like_code(hf.project_number):
@@ -48,6 +51,12 @@ def has_valid_query_entity(intent: SearchIntent) -> bool:
     if hf.purchaser and _is_valid_company_name(hf.purchaser):
         return True
     if hf.successful_bidder and _is_valid_company_name(hf.successful_bidder):
+        return True
+    # supplier_recommend：行业是合法实体（WHERE industry=… 过滤查询，非全表扫）
+    if intent.query_type == "supplier_recommend" and hf.industry:
+        return True
+    # aggregation：有界聚合（ORDER BY + LIMIT），无实体也合法（非全表扫）
+    if intent.query_type == "aggregation" and intent.aggregation:
         return True
     return False
 
