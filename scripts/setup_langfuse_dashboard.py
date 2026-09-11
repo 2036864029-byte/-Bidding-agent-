@@ -125,7 +125,10 @@ def main() -> None:
         print(r.text[:400])
         return
     print(f"  id={r.json().get('id')}")
-    print(f"  打开: {host}/dashboards")
+    # 看板 URL 在**项目作用域**下（顶层 /dashboards 是 404）
+    projects = requests.get(f"{host}/api/public/projects", auth=auth, timeout=20).json().get("data", [])
+    pid = projects[0]["id"] if projects else "<projectId>"
+    print(f"  打开: {host}/project/{pid}/dashboards")
 
 
 if __name__ == "__main__":
