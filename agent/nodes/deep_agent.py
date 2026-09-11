@@ -48,11 +48,15 @@ DEEP_AGENT_SYSTEM_PROMPT = (
 )
 
 PLAN_PROMPT = """你是招投标智能助手的深度规划 agent。把用户问题拆成可独立执行的检索步骤。
+可用工具（每行「工具名：用途」，**必须按问题类型选对工具**）：
+{tools}
+
 要求：
 1. 输出 **JSON 数组**，每项含 objective（目标说明）、tool（工具名）、query（给工具的自然语言查询）。
 2. 简单问题只输出 1 步；需要「先查数据、再查法规」等多源组合的复杂问题拆 2~4 步。
-3. 只输出 JSON，不要其他文字。
-可用工具：{tools}
+3. 选工具看问题要什么：问企业/工商/处罚/不良记录/中标等**结构化事实** → price_query；
+   问法律/法规/制度/条文/原则 → kb_search_tool；两者都要 → 都排进计划。
+4. 只输出 JSON，不要其他文字。
 用户问题：{question}
 """
 
@@ -110,14 +114,31 @@ def _extract_json(text: str) -> Any:
     return json.loads(text)
 
 
+def _tool_lines(tools: Sequence[Any]) -> str:
+    """工具名 + 描述（规划器据此区分 kb_search_tool 与 price_query）。
+
+    兼容 str（仅名字，无描述）与 BaseTool / 鸭子类型工具（取 .name/.description）。
+    """
+    lines = []
+    for t in tools:
+        name = getattr(t, "name", None) or str(t)
+        desc = (getattr(t, "description", "") or "").strip()
+        lines.append(f"- {name}：{desc}" if desc else f"- {name}")
+    return "\n".join(lines)
+
+
 def _plan_question(
     question: str,
     llm: BaseChatModel,
-    tool_names: Sequence[str],
+    tools: Sequence[Any],
     max_steps: int = DEFAULT_MAX_STEPS,
 ) -> List[PlanStep]:
-    """规划：LLM 输出 JSON 步骤；解析失败/非法 → 单步直查兜底（不阻断本轮）。"""
-    prompt = PLAN_PROMPT.format(question=question, tools="、".join(tool_names))
+    """规划：LLM 输出 JSON 步骤；解析失败/非法 → 单步直查兜底（不阻断本轮）。
+
+    `tools` 可为 BaseTool/鸭子类型工具（含 .name/.description）或纯工具名字符串。
+    """
+    tool_names = [getattr(t, "name", None) or str(t) for t in tools]
+    prompt = PLAN_PROMPT.format(question=question, tools=_tool_lines(tools))
     try:
         resp = llm.invoke([SystemMessage(content=prompt)])
         raw = _extract_json(str(resp.content or ""))
@@ -311,11 +332,10 @@ def run_deep_agent(
          "draft_answer": str}。
     """
     tool_map = _tool_map(tools)
-    tool_names = list(tool_map)
     persona = system_prompt or DEEP_AGENT_SYSTEM_PROMPT
 
-    # 1. PLAN
-    plan = _plan_question(question, llm, tool_names, max_steps)
+    # 1. PLAN（把工具名+描述给规划器，避免只凭名字误选）
+    plan = _plan_question(question, llm, tools, max_steps)
 
     # 2. EXECUTE（并发执行，轨迹按 step_id 排序；每步观察限长落轨迹）
     steps = _execute_steps(plan, tool_map)

@@ -281,3 +281,53 @@ def test_deep_agent_enabled_registry_wires_without_graph_edits():
 
     compiled = build_graph(llm=object(), registry=reg)
     assert "deep_agent" in compiled.get_graph().nodes.keys()
+
+
+# ── PLAN 提示词注入工具描述（修复：只凭名字会误选，price_query 被 kb 顶掉）──
+
+
+class _DescTool:
+    """带描述的最小鸭子类型工具。"""
+
+    def __init__(self, name, description):
+        self.name = name
+        self.description = description
+
+
+class _PromptCaptureLLM:
+    """捕获规划 prompt 的 fake LLM（返回空计划 → 走单步兜底）。"""
+
+    def __init__(self, plan_json="[]"):
+        self._plan_json = plan_json
+        self.prompts = []
+
+    def invoke(self, messages):
+        self.prompts.append(messages[0].content)
+        return AIMessage(content=self._plan_json)
+
+
+def test_plan_prompt_includes_tool_descriptions():
+    from agent.nodes.deep_agent import _plan_question
+
+    llm = _PromptCaptureLLM()
+    tools = [
+        _DescTool("kb_search_tool", "检索招投标公共知识库（法规/招标知识）"),
+        _DescTool("price_query", "结构化业务数据查询：企业工商信息、不良记录、中标情报"),
+    ]
+    _plan_question("安徽海纳信息科技有限公司的工商信息有哪些？", llm, tools)
+
+    prompt = llm.prompts[0]
+    assert "price_query" in prompt and "kb_search_tool" in prompt
+    assert "结构化业务数据查询" in prompt      # price_query 描述
+    assert "检索招投标公共知识库" in prompt      # kb 描述
+
+
+def test_plan_accepts_plain_tool_names_and_fallback():
+    """兼容纯工具名字符串（diag 脚本用法）；空计划 → 单步兜底用第一个工具。"""
+    from agent.nodes.deep_agent import _plan_question
+
+    llm = _PromptCaptureLLM()
+    plan = _plan_question("问题", llm, ["kb_search_tool"])
+    assert "kb_search_tool" in llm.prompts[0]
+    assert plan[0].tool == "kb_search_tool"      # 空 JSON → 兜底 tool_names[0]
+
