@@ -401,7 +401,43 @@ def _enrich_rows_full_columns(
             table_name, e,
         )
 
+def _intent_cache_key(tables: list[str], intent: SearchIntent) -> str:
+    """price 查询缓存 key：表列表 + intent（**排除 original_question**）。
+
+    SQL 完全由 tables + intent 决定，与原始问句措辞无关，故排除问句以提升合法命中。
+    """
+    import dataclasses
+    import json
+
+    d = dataclasses.asdict(intent)
+    d.pop("original_question", None)
+    return json.dumps({"tables": list(tables), "intent": d},
+                      sort_keys=True, ensure_ascii=False, default=str)
+
+
 def _query_tables(tables: list[str], intent: SearchIntent) -> dict[str, Any]:
+    """遍历指定表列表执行检索（通用查询引擎）—— 带 W4-2 结果缓存。
+
+    调用方（queries.py）会**原地裁剪** records/total_found，故缓存与返回用深拷贝隔离，
+    避免缓存被调用方改写污染后续请求。
+    """
+    import copy
+
+    from core.cache import MISSING, get_cache
+
+    cache = get_cache("price")
+    if cache is None:
+        return _query_tables_uncached(tables, intent)
+    key = cache.key(_intent_cache_key(tables, intent))
+    cached = cache.get(key)
+    if cached is not MISSING:
+        return copy.deepcopy(cached)
+    result = _query_tables_uncached(tables, intent)
+    cache.set(key, copy.deepcopy(result))  # 存私有副本，调用方可自由改写返回的原对象
+    return result
+
+
+def _query_tables_uncached(tables: list[str], intent: SearchIntent) -> dict[str, Any]:
     """遍历指定表列表执行检索（通用查询引擎）。"""
     record_map: dict[tuple[str, str], dict[str, Any]] = {}
     queried_tables: list[str] = []

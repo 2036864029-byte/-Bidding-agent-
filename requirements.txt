@@ -34,6 +34,7 @@ lxml>=5.0,<7.0                     # 数据修复 A3-4d：pandas.read_html 解�
 # ── 环境与工具 ──
 python-dotenv>=1.0.0,<2.0.0
 setuptools>=65,<70                       # pymilvus 2.4.x 依赖 pkg_resources（setuptools>=70 已移除）
+cachetools>=5.0                          # W4-2 检索结果缓存（版本化 TTL）
 
 # ── Phase 2: FastAPI 服务层（api/）──
 fastapi>=0.110,<1.0

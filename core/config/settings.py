@@ -444,6 +444,30 @@ class Settings:
     )
 
     # ============================================================
+    # 检索结果缓存（W4-2）— 版本化 TTL 缓存
+    # ============================================================
+    # 只缓存"事实层"（KB 检索结果 / price 查询记录），不缓存 LLM 最终答案。
+    # 版本化失效：`cache_corpus_version` 为空时用 MILVUS_COLLECTION 名当语料版本
+    # （重建换集合名 → 旧缓存自动失效）；price 数据版本用 `cache_price_version`
+    # 手动 bump（无天然版本信号），并以较短 TTL 兜底。
+    cache_enabled: bool = field(
+        default_factory=lambda: os.getenv("CACHE_ENABLED", "true").lower() in {"1", "true", "yes"}
+    )
+    cache_maxsize: int = field(default_factory=lambda: int(os.getenv("CACHE_MAXSIZE", "512")))
+    cache_kb_ttl_seconds: int = field(
+        default_factory=lambda: int(os.getenv("CACHE_KB_TTL_SECONDS", "3600"))
+    )
+    cache_price_ttl_seconds: int = field(
+        default_factory=lambda: int(os.getenv("CACHE_PRICE_TTL_SECONDS", "300"))
+    )
+    cache_corpus_version: str = field(
+        default_factory=lambda: os.getenv("CACHE_CORPUS_VERSION", "")
+    )
+    cache_price_version: str = field(
+        default_factory=lambda: os.getenv("CACHE_PRICE_VERSION", "v1")
+    )
+
+    # ============================================================
     # 全局总超时（任务4）— 单次业务节点最大允许执行时间
     # ============================================================
     node_total_timeout: int = field(

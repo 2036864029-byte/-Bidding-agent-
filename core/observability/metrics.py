@@ -51,6 +51,14 @@ _LLM_TOKENS_TOTAL = Counter(
 _LLM_ERRORS_TOTAL = Counter(
     "llm_errors_total", "LLM 调用失败次数", ["slot", "model"],
 )
+_CACHE_ACCESS_TOTAL = Counter(
+    "retrieval_cache_access_total", "检索缓存访问次数", ["cache", "result"],
+)
+
+
+def record_cache_access(cache: str, *, hit: bool) -> None:
+    """检索缓存命中/未命中计数（W4-2）。"""
+    _CACHE_ACCESS_TOTAL.labels(cache=cache or "unknown", result="hit" if hit else "miss").inc()
 
 
 def record_branch_latency(branch: str, latency_ms: float) -> None:
@@ -131,6 +139,7 @@ def reset() -> None:
 __all__ = [
     "content_type",
     "record_branch_latency",
+    "record_cache_access",
     "record_guardrail_fail",
     "record_llm_error",
     "record_llm_latency",

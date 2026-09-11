@@ -66,10 +66,25 @@ class HybridRetriever:
         self._has_sparse_cache: Optional[bool] = None
 
     def retrieve(self, raw_question: str) -> RetrievalResult:
-        """检索入口：结果后统一补父块上下文（hybrid 与 dense 降级路径都覆盖）。"""
+        """检索入口：结果后统一补父块上下文（hybrid 与 dense 降级路径都覆盖）。
+
+        W4-2：结果缓存（版本化 TTL）。多轮追问经 rewrite 节点改写为自包含问题后
+        才到这里，故 key 天然是归一化问题——同一规范问题命中同一条缓存。
+        """
+        from core.cache import MISSING, get_cache, normalize_key
+
+        cache = get_cache("kb")
+        cache_key = cache.key(normalize_key(raw_question)) if cache is not None else None
+        if cache is not None:
+            cached = cache.get(cache_key)
+            if cached is not MISSING:
+                return cached
+
         started = time.perf_counter()
-        result = self._retrieve_impl(raw_question)
-        return self._attach_parent_context(result, started)
+        result = self._attach_parent_context(self._retrieve_impl(raw_question), started)
+        if cache is not None:
+            cache.set(cache_key, result)
+        return result
 
     def _retrieve_impl(self, raw_question: str) -> RetrievalResult:
         """稠密 COSINE + 服务端 BM25 → RRF → 可选 Reranker。"""
