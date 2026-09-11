@@ -12,6 +12,8 @@ from typing import Any, Optional
 import pymysql
 
 from core.concurrency.pools import get_sql_pool
+from core.observability.tracing import set_span_attrs
+from core.observability.tracing import span as _span
 from core.rdb.mysql_pool import (
     _CLEAN_DB,
     _get_connection,
@@ -181,18 +183,37 @@ def _execute_sql_with_timeout(
     if timeout is None:
         timeout = float(settings.sql_query_timeout)
 
-    future = get_sql_pool().submit(_execute_sql_fetch_rows, conn, sql, params)
-    try:
-        rows, elapsed = future.result(timeout=timeout)
-        return rows, elapsed
-    except FutureTimeoutError:
-        logger.warning(
-            "[SQL_TIMEOUT] 查询超时(%ds): table=%s stage=%s sql=%s",
-            timeout, table, stage, re.sub(r"\s+", " ", sql)[:200],
-        )
-        future.cancel()
-        discard_connection(conn)
-        return [], 0.0
+    with _span(
+        "db.sql",
+        **{
+            "db.system": "mysql",
+            "db.name": _CLEAN_DB,
+            "ztb.db.table": table,
+            "ztb.db.stage": stage,
+            "ztb.db.timeout_s": float(timeout),
+        },
+    ) as _sp:
+        future = get_sql_pool().submit(_execute_sql_fetch_rows, conn, sql, params)
+        try:
+            rows, elapsed = future.result(timeout=timeout)
+            set_span_attrs(
+                _sp,
+                **{
+                    "ztb.db.status": "ok",
+                    "ztb.db.rows": len(rows or []),
+                    "ztb.db.elapsed_ms": round(elapsed * 1000, 2),
+                },
+            )
+            return rows, elapsed
+        except FutureTimeoutError:
+            set_span_attrs(_sp, **{"ztb.db.status": "timeout"})
+            logger.warning(
+                "[SQL_TIMEOUT] 查询超时(%ds): table=%s stage=%s sql=%s",
+                timeout, table, stage, re.sub(r"\s+", " ", sql)[:200],
+            )
+            future.cancel()
+            discard_connection(conn)
+            return [], 0.0
 
 def _execute_recall_chain_core(
     conn: pymysql.Connection,
@@ -220,7 +241,7 @@ def _execute_recall_chain_core(
         deadline_ms=settings.price_recall_deadline_ms,
         allow_scan=settings.price_allow_full_scan,
     )
-    outcome = pipeline.run({"conn": conn})
+    outcome = pipeline.run({"conn": conn, "table": table_name})
     return outcome.rows, stats["sql_count"], stats["sql_time"]
 
 def _log_recall_funnel(

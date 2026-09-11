@@ -16,6 +16,9 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, Sequence
 
+from core.observability.tracing import set_span_attrs
+from core.observability.tracing import span as _span
+
 from .base import RecallOutcome, RecallStage
 
 logger = logging.getLogger(__name__)
@@ -45,41 +48,78 @@ class RecallPipeline:
         trace: List[str] = []
         outcome = RecallOutcome(ok=False)
 
-        for stage in self._stages:
-            elapsed = int((time.perf_counter() - t0) * 1000)
-            remaining = self._deadline_ms - elapsed
+        with _span(
+            "retrieval.recall_pipeline",
+            **{
+                "ztb.recall.table": str(ctx.get("table", "")),
+                "ztb.recall.stages": len(self._stages),
+                "ztb.recall.deadline_ms": self._deadline_ms,
+                "ztb.recall.allow_scan": self._allow_scan,
+            },
+        ) as _pipe_sp:
+            for stage in self._stages:
+                elapsed = int((time.perf_counter() - t0) * 1000)
+                remaining = self._deadline_ms - elapsed
 
-            # 扫描类阶段仅在显式放行时执行
-            if getattr(stage, "is_scan", False) and not self._allow_scan:
-                trace.append(f"{stage.name}:skip(full_scan_disabled)")
-                continue
+                # 扫描类阶段仅在显式放行时执行
+                if getattr(stage, "is_scan", False) and not self._allow_scan:
+                    trace.append(f"{stage.name}:skip(full_scan_disabled)")
+                    continue
 
-            if remaining <= 0:
-                trace.append(f"{stage.name}:deadline_exceeded")
-                break
+                if remaining <= 0:
+                    trace.append(f"{stage.name}:deadline_exceeded")
+                    break
 
-            try:
-                hit, rows = stage.run(ctx, deadline_ms=remaining)
-            except TimeoutError:
-                # 阶段超时 → 熔断，不再尝试后续（防扫描长尾）
-                trace.append(f"{stage.name}:timeout")
-                logger.warning("recall stage %s timeout → 熔断", stage.name)
-                break
-            except Exception as exc:  # 阶段自身异常按失败处理，继续下一阶段
-                trace.append(f"{stage.name}:error:{type(exc).__name__}")
-                logger.warning("recall stage %s error: %s", stage.name, exc)
-                continue
+                with _span(
+                    f"recall.{stage.name}",
+                    **{
+                        "ztb.recall.stage": stage.name,
+                        "ztb.recall.is_scan": bool(getattr(stage, "is_scan", False)),
+                    },
+                ) as _stage_sp:
+                    try:
+                        hit, rows = stage.run(ctx, deadline_ms=remaining)
+                    except TimeoutError:
+                        set_span_attrs(_stage_sp, **{"ztb.recall.status": "timeout"})
+                        trace.append(f"{stage.name}:timeout")
+                        logger.warning("recall stage %s timeout → 熔断", stage.name)
+                        break
+                    except Exception as exc:  # 阶段自身异常按失败处理，继续下一阶段
+                        set_span_attrs(
+                            _stage_sp,
+                            **{"ztb.recall.status": f"error:{type(exc).__name__}"},
+                        )
+                        trace.append(f"{stage.name}:error:{type(exc).__name__}")
+                        logger.warning("recall stage %s error: %s", stage.name, exc)
+                        continue
+                    set_span_attrs(
+                        _stage_sp,
+                        **{
+                            "ztb.recall.status": "ok",
+                            "ztb.recall.hit": bool(hit),
+                            "ztb.recall.rows": len(rows or []),
+                        },
+                    )
 
-            trace.append(f"{stage.name}:hit={bool(hit)} rows={len(rows or [])}")
-            if hit and rows:
-                outcome.ok = True
-                outcome.rows = rows
-                break
+                trace.append(f"{stage.name}:hit={bool(hit)} rows={len(rows or [])}")
+                if hit and rows:
+                    outcome.ok = True
+                    outcome.rows = rows
+                    break
 
-        outcome.stage_trace = trace
-        outcome.elapsed_ms = int((time.perf_counter() - t0) * 1000)
-        if not outcome.ok:
-            outcome.reason = ";".join(trace) or "no_stage"
+            outcome.stage_trace = trace
+            outcome.elapsed_ms = int((time.perf_counter() - t0) * 1000)
+            if not outcome.ok:
+                outcome.reason = ";".join(trace) or "no_stage"
+            set_span_attrs(
+                _pipe_sp,
+                **{
+                    "ztb.recall.ok": outcome.ok,
+                    "ztb.recall.elapsed_ms": outcome.elapsed_ms,
+                    "ztb.recall.hits": len(outcome.rows or []),
+                    "ztb.recall.reason": outcome.reason or "",
+                },
+            )
         logger.info(
             "RecallPipeline: ok=%s elapsed=%dms trace=%s",
             outcome.ok, outcome.elapsed_ms, trace,

@@ -102,7 +102,10 @@ def get_tracer(name: str = "ztb"):
 
 @contextmanager
 def span(name: str, **attrs: Any) -> Iterator[Any]:
-    """开启一个 span（未启用时为 no-op）。异常自动 record_exception 并向上抛。"""
+    """开启一个 span（未启用时为 no-op）。异常自动 record_exception 并向上抛。
+
+    自动附带当前会话属性（`langfuse.session.id`），使同一会话的全部 span 可关联。
+    """
     from opentelemetry.trace import Status, StatusCode
 
     tracer = get_tracer()
@@ -110,12 +113,28 @@ def span(name: str, **attrs: Any) -> Iterator[Any]:
         for key, value in attrs.items():
             if value is not None:
                 sp.set_attribute(key, value)
+        for key, value in session_attrs().items():
+            sp.set_attribute(key, value)
         try:
             yield sp
         except Exception as e:
             sp.record_exception(e)
             sp.set_status(Status(StatusCode.ERROR, str(e)[:200]))
             raise
+
+
+def tag_current_span(**attrs: Any) -> None:
+    """给当前活跃 span 写属性（无活跃 span 时静默）。
+
+    用于根 span：会话 id 在端点内才解析出来，而根 span 在其之前创建。
+    """
+    from opentelemetry import trace
+
+    sp = trace.get_current_span()
+    if sp is not None and sp.is_recording():
+        for key, value in attrs.items():
+            if value is not None:
+                sp.set_attribute(key, value)
 
 
 def set_span_attrs(sp: Optional[Any], **attrs: Any) -> None:
@@ -148,6 +167,20 @@ def observation_io(
     return attrs
 
 
+def session_attrs() -> dict:
+    """当前会话的 Langfuse 关联属性（session 未设置时为空 dict）。
+
+    把同一会话的多条 trace 关联起来（Langfuse Sessions 视图）。
+    """
+    try:
+        from core.observability.context import get_session_id
+
+        sid = get_session_id()
+    except Exception:  # noqa: BLE001  上下文缺失不影响主流程
+        sid = None
+    return {"langfuse.session.id": sid} if sid else {}
+
+
 def shutdown_tracing() -> None:
     """冲刷并关闭 provider（进程退出前调用，保证 span 送达）。"""
     global _ENABLED, _PROVIDER
@@ -166,6 +199,8 @@ __all__ = [
     "get_tracer",
     "span",
     "set_span_attrs",
+    "tag_current_span",
     "observation_io",
+    "session_attrs",
     "shutdown_tracing",
 ]

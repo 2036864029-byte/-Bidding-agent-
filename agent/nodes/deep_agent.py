@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import threading
@@ -238,9 +239,14 @@ def _execute_steps(
     """并发执行计划步骤（步间无数据依赖，工具调用 I/O 主导）。
 
     S4（Layer 2）：EXECUTE 顺序→并行压缩耗时；轨迹按 step_id 排序保持稳定契约。
+    E4：逐条提交并显式带入上下文（线程池不复制），否则工具 span 脱离请求 trace。
     """
     with ThreadPoolExecutor(max_workers=min(max(1, len(plan)), 4)) as ex:
-        records = list(ex.map(lambda st: _execute_step(st, tool_map), plan))
+        futures = [
+            ex.submit(contextvars.copy_context().run, _execute_step, st, tool_map)
+            for st in plan
+        ]
+        records = [f.result() for f in futures]
     return sorted(records, key=lambda r: r.step_id)
 
 

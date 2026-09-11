@@ -70,7 +70,7 @@ class LLMMetricsCallback(BaseCallbackHandler):
     ) -> None:
         """输出 LLM span（gen_ai 语义约定）；追踪未启用时为零开销 no-op。"""
         try:
-            from .tracing import get_tracer
+            from .tracing import get_tracer, session_attrs
 
             attrs = {
                 "gen_ai.system": "deepseek",
@@ -79,6 +79,7 @@ class LLMMetricsCallback(BaseCallbackHandler):
                 "gen_ai.usage.output_tokens": completion,
                 "ztb.slot": self._slot,
             }
+            attrs.update(session_attrs())  # E4：LLM span 同样关联会话
             if latency is not None:
                 attrs["ztb.latency_ms"] = round(latency * 1000, 2)
             if error is not None:

@@ -110,9 +110,10 @@ def with_fallback(
                 latency = (time.perf_counter() - _t0) * 1000
                 record_branch_latency("fallback", latency)
                 set_span_attrs(
-                    _sp, **{"ztb.branch": "fallback", "ztb.latency_ms": round(latency, 2)}
+                    _sp,
+                    **{"ztb.branch": "fallback", "ztb.latency_ms": round(latency, 2)},
+                    **observation_io(_question, error_msg),
                 )
-                set_span_attrs(_sp, **observation_io(_question, error_msg))
                 return {
                     "business_result": {
                         "branch": "fallback",
@@ -129,11 +130,12 @@ def with_fallback(
 
             branch = (result.get("business_result") or {}).get("branch", "?")
             latency = (time.perf_counter() - _t0) * 1000
-            set_span_attrs(
-                _sp, **{"ztb.branch": branch, "ztb.latency_ms": round(latency, 2)}
-            )
             answer = (result.get("business_result") or {}).get("answer", "")
-            set_span_attrs(_sp, **observation_io(_question, answer))
+            set_span_attrs(
+                _sp,
+                **{"ztb.branch": branch, "ztb.latency_ms": round(latency, 2)},
+                **observation_io(_question, answer),
+            )
         record_branch_latency(branch, latency)
         return result
 

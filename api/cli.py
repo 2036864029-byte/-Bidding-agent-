@@ -62,7 +62,12 @@ def run_single(agent: AgentGraph, question: str) -> None:
     _safe_print(f" 问题: {question}\n")
     print(" 思考中...\n")
     try:
-        result = agent.invoke(question)
+        from core.observability.tracing import observation_io, set_span_attrs, span
+
+        with span("cli.chat", **{"ztb.entry": "cli"}) as _sp:
+            result = agent.invoke(question)
+            answer = (result.get("business_result") or {}).get("answer", "")
+            set_span_attrs(_sp, **observation_io(question, answer))
         _print_reply("回答", result)
     except Exception as e:
         _safe_print(f"[FAIL] 错误: {e}")
@@ -130,9 +135,16 @@ def main(argv: Optional[list[str]] = None) -> None:
     args = parser.parse_args(argv)
 
     setup_logging(args.verbose)
+    # E0-3/E4：CLI 同样开启追踪（此前仅 api.server 开启，CLI 路径无 trace）
+    from core.observability.context import set_session_id
+    from core.observability.tracing import setup_tracing, shutdown_tracing
+
+    setup_tracing()
+    set_session_id("cli")  # CLI 会话标识（trace 分组用）
 
     if not args.question and not args.interactive:
         parser.print_help()
+        shutdown_tracing()
         return
 
     print("正在初始化招投标智能助手...")
@@ -141,12 +153,16 @@ def main(argv: Optional[list[str]] = None) -> None:
         _safe_print("[OK] 助手就绪！\n")
     except Exception as e:
         _safe_print(f"[FAIL] 初始化失败: {e}")
+        shutdown_tracing()
         sys.exit(1)
 
-    if args.interactive:
-        run_interactive(agent)
-    elif args.question:
-        run_single(agent, args.question)
+    try:
+        if args.interactive:
+            run_interactive(agent)
+        elif args.question:
+            run_single(agent, args.question)
+    finally:
+        shutdown_tracing()  # 进程退出前冲刷 span，保证送达
 
 
 if __name__ == "__main__":

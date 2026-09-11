@@ -89,3 +89,53 @@ def test_deadline_exceeded_stops():
     out = RecallPipeline([stage], deadline_ms=0).run()
     assert out.ok is False
     assert any("deadline_exceeded" in t for t in out.stage_trace)
+
+
+# ── E4：全链路 span（检索层可见性）────────────────────────────
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture
+def exporter(monkeypatch):
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    import core.observability.tracing as tracing
+
+    exp = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exp))
+    monkeypatch.setattr(tracing, "get_tracer", lambda name="ztb": provider.get_tracer(name))
+    return exp
+
+
+def _spans(exp):
+    return {s.name: s for s in exp.get_finished_spans()}
+
+
+def test_pipeline_emits_pipeline_and_stage_spans(exporter):
+    stages = [FakeStage("exact", _miss),
+              FakeStage("fulltext", lambda *a, **k: _hit([{"id": 1}]))]
+    out = RecallPipeline(stages, deadline_ms=1000).run({"table": "bid_project"})
+    assert out.ok
+    sp = _spans(exporter)
+    assert "retrieval.recall_pipeline" in sp
+    assert "recall.exact" in sp and "recall.fulltext" in sp
+    pipe = sp["retrieval.recall_pipeline"]
+    assert pipe.attributes["ztb.recall.table"] == "bid_project"
+    assert pipe.attributes["ztb.recall.ok"] is True
+    assert pipe.attributes["ztb.recall.hits"] == 1
+    ft = sp["recall.fulltext"]
+    assert ft.attributes["ztb.recall.stage"] == "fulltext"
+    assert ft.attributes["ztb.recall.hit"] is True
+    assert ft.attributes["ztb.recall.rows"] == 1
+    assert sp["recall.exact"].attributes["ztb.recall.hit"] is False
+
+
+def test_skipped_scan_stage_emits_no_span(exporter):
+    scan = FakeStage("scan", lambda *a, **k: _hit([{"id": 9}]), is_scan=True)
+    RecallPipeline([scan], deadline_ms=1000).run()  # 默认禁入 → skip
+    assert "recall.scan" not in _spans(exporter)

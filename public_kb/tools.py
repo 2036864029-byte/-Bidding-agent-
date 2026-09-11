@@ -316,48 +316,66 @@ def kb_search_expanded(
     """
     from .guardrails.citations_build import build_citations
 
-    outcome = _get_retriever().retrieve(question)
-    trace = getattr(outcome.diagnostics, "to_dict", lambda: {})() or {}
-    docs: List[Tuple[Document, float]] = list(outcome.docs[:top_k])
+    with _span(
+        "retrieval.kb_search_expanded",
+        **{
+            "ztb.retrieval.top_k": top_k,
+            "ztb.retrieval.max_chunks": max_chunks,
+            "ztb.retrieval.sub_top_k": sub_top_k,
+        },
+    ) as _sp:
+        outcome = _get_retriever().retrieve(question)
+        trace = getattr(outcome.diagnostics, "to_dict", lambda: {})() or {}
+        docs: List[Tuple[Document, float]] = list(outcome.docs[:top_k])
 
-    clauses = _split_clauses(question, min_clause_len)
-    if clauses and len(docs) < max_chunks:
-        base_seen = {_norm_key(doc.page_content) for doc, _ in docs}
-        pool: List[Tuple[Document, float]] = []
-        pool_seen: set = set()
-        for clause in clauses:
-            sub = _get_retriever().retrieve(clause)
-            for doc, score in sub.docs[:sub_top_k]:
-                key = _norm_key(doc.page_content)
-                if key in base_seen or key in pool_seen:
-                    continue
-                pool_seen.add(key)
-                pool.append((doc, score))
-        pool.sort(key=lambda item: item[1], reverse=True)
-        for doc, score in pool:
-            if len(docs) >= max_chunks:
-                break
-            docs.append((doc, score))
+        clauses = _split_clauses(question, min_clause_len)
+        if clauses and len(docs) < max_chunks:
+            base_seen = {_norm_key(doc.page_content) for doc, _ in docs}
+            pool: List[Tuple[Document, float]] = []
+            pool_seen: set = set()
+            for clause in clauses:
+                sub = _get_retriever().retrieve(clause)
+                for doc, score in sub.docs[:sub_top_k]:
+                    key = _norm_key(doc.page_content)
+                    if key in base_seen or key in pool_seen:
+                        continue
+                    pool_seen.add(key)
+                    pool.append((doc, score))
+            pool.sort(key=lambda item: item[1], reverse=True)
+            for doc, score in pool:
+                if len(docs) >= max_chunks:
+                    break
+                docs.append((doc, score))
 
-    if not docs:
-        logger.info("kb_search_expanded: 检索为空（question=%s）", question[:60])
-        return RetrievalResult(recall_trace=trace)
+        set_span_attrs(
+            _sp,
+            **{
+                "ztb.retrieval.clauses": len(clauses),
+                "ztb.retrieval.docs": len(docs),
+                "ztb.retrieval.mode": str(trace.get("retrieval_mode", "")),
+                "ztb.retrieval.reranker": str(trace.get("reranker_status", "")),
+            },
+        )
 
-    citations = build_citations(docs)
-    return RetrievalResult(
-        chunks=[
-            _project_chunk(
-                _to_chunk(doc, score),
-                summary=summary,
-                include_fields=include_fields,
-                summary_max_chars=summary_max_chars,
-            )
-            for doc, score in docs
-        ],
-        citations_meta=citations,
-        rendered_context="" if summary else format_docs(docs),
-        recall_trace=trace,
-    )
+        if not docs:
+            logger.info("kb_search_expanded: 检索为空（question=%s）", question[:60])
+            return RetrievalResult(recall_trace=trace)
+
+        citations = build_citations(docs)
+        return RetrievalResult(
+            chunks=[
+                _project_chunk(
+                    _to_chunk(doc, score),
+                    summary=summary,
+                    include_fields=include_fields,
+                    summary_max_chars=summary_max_chars,
+                )
+                for doc, score in docs
+            ],
+            citations_meta=citations,
+            rendered_context="" if summary else format_docs(docs),
+            recall_trace=trace,
+        )
 
 
 def kb_search_as_tool():

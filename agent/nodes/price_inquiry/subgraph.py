@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import time
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -316,6 +317,16 @@ def _guard_entity_node(state: PriceSubgraphState) -> dict:
     return {"pg_intent": intent}
 
 
+def _bind_context(fn):
+    """把当前上下文绑定到 fn —— ThreadPoolExecutor 不复制上下文（OTel span / 会话）。
+
+    在**提交线程**捕获上下文，工作线程执行时恢复，保证价格链节点内的检索/SQL span
+    仍挂在请求 trace 下（否则断链成独立 trace）。
+    """
+    ctx = contextvars.copy_context()
+    return lambda *args, **kwargs: ctx.run(fn, *args, **kwargs)
+
+
 def _run_query_node(state: PriceSubgraphState) -> dict:
     """③ 二级路由分发：线程池执行 SQL（带剩余预算超时保护）。"""
     settings = _get_settings()
@@ -329,8 +340,10 @@ def _run_query_node(state: PriceSubgraphState) -> dict:
     remaining_timeout = max(5, total_timeout - llm_elapsed)
     query_start = time.perf_counter()
 
-    # 使用线程池实现跨平台超时控制（W0-1：与单条 SQL 池分离，避免同池嵌套）
-    query_future = get_query_pool().submit(query_fn, intent)
+    # 使用线程池实现跨平台超时控制（W0-1：与单条 SQL 池分离，避免同池嵌套）。
+    # E4：线程池不复制上下文，提交前绑定当前上下文——否则价格链的检索/SQL span
+    # 会脱离请求 trace（断链成独立 trace）。
+    query_future = get_query_pool().submit(_bind_context(query_fn), intent)
     try:
         query_result = query_future.result(timeout=remaining_timeout)
         query_elapsed = time.perf_counter() - query_start

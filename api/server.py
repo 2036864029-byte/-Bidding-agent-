@@ -84,6 +84,10 @@ def _resolve_context_docs(file_ids: list[str], session_id: str) -> list[tuple[st
 def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
     session_id = _resolve_session_id(req.session_id)
     set_session_id(session_id)  # W2-2：会话 id 进入日志上下文
+    # E4：根 span 在中间件创建（此时 session 未知），这里给活跃的根 span 补会话关联
+    from core.observability.tracing import session_attrs, tag_current_span
+
+    tag_current_span(**session_attrs())
     get_session_registry().touch(session_id)  # W2-4：登记会话（触发惰性过期清理）
     t0 = time.perf_counter()
     result = agent.invoke(

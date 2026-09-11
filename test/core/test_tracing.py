@@ -202,3 +202,68 @@ def test_kb_search_emits_retrieval_span(exporter, monkeypatch):
     sp = _names(exporter)["retrieval.kb_search"]
     assert sp.attributes["ztb.retrieval.docs"] == 1
     assert sp.attributes["ztb.retrieval.mode"] == "hybrid_rerank"
+
+
+# ── E4：会话关联 + 检索默认路径 span ────────────────────────────
+
+
+def test_session_attrs_reflects_contextvar():
+    from core.observability.context import reset_context, set_session_id
+    from core.observability.tracing import session_attrs
+
+    reset_context()
+    assert session_attrs() == {}
+    set_session_id("s1")
+    assert session_attrs() == {"langfuse.session.id": "s1"}
+    reset_context()
+
+
+def test_span_auto_tags_session(exporter):
+    from core.observability.context import reset_context, set_session_id
+    from core.observability.tracing import span
+
+    reset_context()
+    set_session_id("sess-9")
+    try:
+        with span("x"):
+            pass
+    finally:
+        reset_context()
+    assert _names(exporter)["x"].attributes["langfuse.session.id"] == "sess-9"
+
+
+def test_tag_current_span_sets_attr(exporter):
+    from core.observability.tracing import span, tag_current_span
+
+    with span("root"):
+        tag_current_span(ztb_tagged=1)
+    assert _names(exporter)["root"].attributes["ztb_tagged"] == 1
+
+
+def test_tag_current_span_noop_without_span():
+    from core.observability.tracing import tag_current_span
+
+    tag_current_span(ztb_x=1)  # 无活跃 span → 静默
+
+
+def test_kb_search_expanded_emits_retrieval_span(exporter, monkeypatch):
+    from types import SimpleNamespace
+
+    from langchain_core.documents import Document
+
+    import public_kb.tools as tools_mod
+
+    docs = [(Document(page_content="内容", metadata={"doc_name": "法", "chapter": "章", "chunk_id": 1}), 0.9)]
+    fake = SimpleNamespace(
+        retrieve=lambda q: SimpleNamespace(
+            docs=docs, diagnostics=SimpleNamespace(to_dict=lambda: {"retrieval_mode": "hybrid_rerank"})
+        )
+    )
+    monkeypatch.setattr(tools_mod, "_get_retriever", lambda: fake)
+
+    tools_mod.kb_search_expanded("测试一句。再测试一句。")
+
+    sp = _names(exporter)["retrieval.kb_search_expanded"]
+    assert sp.attributes["ztb.retrieval.top_k"] == 11
+    assert sp.attributes["ztb.retrieval.max_chunks"] == 20
+    assert sp.attributes["ztb.retrieval.docs"] == 1
