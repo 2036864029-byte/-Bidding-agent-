@@ -7,9 +7,10 @@
   reflection: {verdict(adequate/revised/gap), notes, revised_answer} | None
   rounds: int
 
-gold（可选，**弱标注**）：样本可带 `expected_tools`——**期望调用的工具集合**（非精确
-序列）。这是唯一需要标注的字段，且可由规则派生（见 `evals.runners.agent_trace`），
-约 30 条即可，**不是前置门槛**：不带 gold 也能得到全部客观轨迹指标。
+gold（可选）：样本可带 `expected_tools`（期望工具**集合**）与 `expected_sequence`
+（期望**有序工具序列**，E1-4 金标真值）。集合版可由规则派生（弱标注，见
+`evals.runners.agent_trace`）；序列版来自 `eval/agent_golden_set.json`（人工复核金标）。
+都不是前置门槛：不带 gold 也能得到全部客观轨迹指标。
 """
 
 from __future__ import annotations
@@ -40,8 +41,31 @@ def tool_selection(trace: dict, expected_tools: Sequence[str]) -> dict:
     }
 
 
-def trace_summary(trace: dict, *, expected_tools: Optional[Sequence[str]] = None) -> dict:
-    """单条轨迹的客观统计（零 gold）；带 expected_tools 时附工具选择。"""
+def _is_ordered_subsequence(needle: Sequence[str], haystack: Sequence[str]) -> bool:
+    """needle 是否按原序出现在 haystack 中（允许多余步）。"""
+    it = iter(haystack)
+    return all(x in it for x in needle)
+
+
+def tool_sequence(trace: dict, expected_sequence: Sequence[str]) -> dict:
+    """序列级工具选择指标（E1-4 金标真值）。
+
+    expected_sequence 是最小有序期望序列；允许 agent 多加步骤（有序子序列匹配），
+    同时报告严格等序（got == expected，不含额外步骤）。
+    """
+    exp = [t for t in (expected_sequence or []) if t]
+    got = [s.get("tool") for s in (trace.get("steps") or []) if s.get("tool")]
+    return {
+        "expected": exp,
+        "got": got,
+        "ordered_coverage": bool(exp) and _is_ordered_subsequence(exp, got),
+        "exact_sequence": bool(exp) and list(got) == exp,
+    }
+
+
+def trace_summary(trace: dict, *, expected_tools: Optional[Sequence[str]] = None,
+                  expected_sequence: Optional[Sequence[str]] = None) -> dict:
+    """单条轨迹的客观统计（零 gold）；带 expected_tools / expected_sequence 时附工具选择。"""
     trace = trace or {}
     plan = trace.get("plan") or []
     steps = trace.get("steps") or []
@@ -68,6 +92,8 @@ def trace_summary(trace: dict, *, expected_tools: Optional[Sequence[str]] = None
     }
     if expected_tools:
         out["tool_selection"] = tool_selection(trace, expected_tools)
+    if expected_sequence:
+        out["tool_sequence"] = tool_sequence(trace, expected_sequence)
     return out
 
 
@@ -83,10 +109,14 @@ def aggregate_traces(rows: Sequence[dict]) -> dict:
     """批量汇总。
 
     Args:
-        rows: [{question, trace, latency_ms?, expected_tools?}]——expected_tools 可选。
+        rows: [{question, trace, latency_ms?, expected_tools?, expected_sequence?}]——
+            gold 字段可选。
     """
-    summaries = [trace_summary(r.get("trace") or {}, expected_tools=r.get("expected_tools"))
-                 for r in rows]
+    summaries = [
+        trace_summary(r.get("trace") or {}, expected_tools=r.get("expected_tools"),
+                      expected_sequence=r.get("expected_sequence"))
+        for r in rows
+    ]
     n = len(summaries)
     if n == 0:
         return {"n": 0}
@@ -132,6 +162,17 @@ def aggregate_traces(rows: Sequence[dict]) -> dict:
             "full_coverage_rate": round(
                 sum(1 for g in golds if g["full_coverage"]) / len(golds), 4),
         }
+
+    # 工具序列（仅对带 expected_sequence 的样本，E1-4 金标真值）
+    seqs = [s["tool_sequence"] for s in summaries if "tool_sequence" in s]
+    if seqs:
+        summary["tool_sequence"] = {
+            "n_gold": len(seqs),
+            "ordered_coverage_rate": round(
+                sum(1 for x in seqs if x["ordered_coverage"]) / len(seqs), 4),
+            "exact_sequence_rate": round(
+                sum(1 for x in seqs if x["exact_sequence"]) / len(seqs), 4),
+        }
     return summary
 
 
@@ -171,7 +212,19 @@ def render_report(summary: dict) -> str:
         ]
     else:
         lines += ["（未提供 expected_tools → 仅客观轨迹指标，零人工标注）", ""]
+
+    tq = summary.get("tool_sequence")
+    if tq:
+        lines += [
+            "## 工具序列（对照 expected_sequence，E1-4 金标真值）",
+            "",
+            f"- 标注样本: {tq['n_gold']}",
+            f"- 有序覆盖（期望序列按序出现在轨迹中）: {tq['ordered_coverage_rate']:.1%}",
+            f"- 严格等序（轨迹工具序列与期望完全一致）: {tq['exact_sequence_rate']:.1%}",
+            "",
+        ]
     return "\n".join(lines)
 
 
-__all__ = ["trace_summary", "tool_selection", "aggregate_traces", "render_report"]
+__all__ = ["trace_summary", "tool_selection", "tool_sequence", "aggregate_traces",
+           "render_report"]

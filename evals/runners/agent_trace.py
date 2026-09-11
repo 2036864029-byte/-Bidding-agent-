@@ -3,10 +3,10 @@
 对样本逐条跑 `run_deep_agent`（真实规划/执行/反思），收集 `data.trace`，
 用 `evals.metrics.agent_trace` 汇总。并发（`workers`，主为 I/O）。
 
-`expected_tools`（可选**弱标注**，期望调用的工具集合）来源三层，人工只在最后一层：
-  ① 样本自带 `expected_tools`；
-  ② `derive_expected=True` 时按关键词规则派生（零人工，近似值）；
-  ③ 人工标注（勾选式）。
+`expected_tools` / `expected_sequence`（gold，标注真值或弱标注）来源三层，人工只在最后一层：
+  ① 样本自带（`expected_tools` / `expected_sequence`）；
+  ② `derive_expected=True` 时按关键词规则派生 `expected_tools`（零人工，近似值）；
+  ③ 人工标注（`eval/agent_golden_set.json`，E1-4 金标真值，含有序序列）。
 不带 gold 也能得到全部客观轨迹指标（步数/工具频次/状态/反思/延迟）。
 
 并发注意：deep_agent 的工具链会调 SiliconFlow reranker，`workers` 过大会触发 429
@@ -23,7 +23,7 @@ from typing import Sequence
 
 from evals.metrics.agent_trace import aggregate_traces, render_report, trace_summary
 
-__all__ = ["derive_expected_tools", "run_agent_trace"]
+__all__ = ["derive_expected_tools", "load_agent_golden", "run_agent_trace"]
 
 KB_TOOL = "kb_search_tool"
 PRICE_TOOL = "price_query"
@@ -33,6 +33,25 @@ _PRICE_HINTS = (
     "价格", "报价", "中标价", "中标金额", "预算", "成交", "采购金额",
     "多少钱", "单价", "总价", "费用",
 )
+
+
+def load_agent_golden(path: Path | str) -> list[dict]:
+    """装载 E1-4 agent 金标（eval/agent_golden_set.json）→ 评测样本列表。
+
+    每条转成 {question, query_type, expected_tools, expected_sequence}；金标里
+    `expected_tools` 即为 `expected_sequence` 的集合版，评测时优先于规则派生。
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    items = data.get("items") if isinstance(data, dict) else data
+    return [
+        {
+            "question": it["q"],
+            "query_type": it.get("query_type", ""),
+            "expected_tools": it["expected_tools"],
+            "expected_sequence": it["expected_sequence"],
+        }
+        for it in items
+    ]
 
 
 def derive_expected_tools(question: str, query_type: str = "") -> list[str]:
@@ -62,6 +81,7 @@ def _run_one(case: dict) -> dict:
             "trace": result.get("trace") or {},
             "latency_ms": int((time.monotonic() - t0) * 1000),
             "expected_tools": case.get("expected_tools"),
+            "expected_sequence": case.get("expected_sequence"),
             "error": None,
         }
     except Exception as e:  # noqa: BLE001  单题失败降级
@@ -70,6 +90,7 @@ def _run_one(case: dict) -> dict:
             "query_type": case.get("query_type", ""),
             "trace": {}, "latency_ms": None,
             "expected_tools": case.get("expected_tools"),
+            "expected_sequence": case.get("expected_sequence"),
             "error": f"{type(e).__name__}: {e}",
         }
 
@@ -84,7 +105,7 @@ def run_agent_trace(
     """跑 deep_agent → 汇总轨迹指标，产物写 out_dir。
 
     Args:
-        cases: [{question, query_type?, expected_tools?}]。
+        cases: [{question, query_type?, expected_tools?, expected_sequence?}]。
         workers: 并发（deep_agent 工具链打 SiliconFlow，过大触发 429）。
         derive_expected: 样本无 expected_tools 时按规则派生（弱标注）。
         out_dir: 产物目录（per_sample.jsonl / summary.json / report.md）。
@@ -108,7 +129,8 @@ def run_agent_trace(
 
     per_sample = [
         {"question": r["question"], "error": r["error"], "latency_ms": r["latency_ms"],
-         "summary": trace_summary(r["trace"], expected_tools=r["expected_tools"])}
+         "summary": trace_summary(r["trace"], expected_tools=r["expected_tools"],
+                                  expected_sequence=r["expected_sequence"])}
         for r in rows
     ]
     (out_dir / "per_sample.jsonl").write_text(

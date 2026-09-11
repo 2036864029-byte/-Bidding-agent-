@@ -1,0 +1,277 @@
+{
+  "description": "E1-4 agent 金标（初版，LLM 预标注 + 待人工复核）。每条含「问题 + 期望工具序列 + 关键实体」。expected_sequence 为 deep_agent 应执行的最小有序工具序列；expected_tools 为其集合版（E2-3 现契约）。E2-3 轨迹指标据此从规则派生升级为标注真值。词表={kb_search_tool, price_query}。来源：multi_hop 金标（真实法律多跳）、price 金标（真实数据查询）、constructed（多源组合，按记忆示例模式构造）。",
+  "review_status": "pre_annotated",
+  "annotated_at": "2026-09-11",
+  "items": [
+    {
+      "q": "某市财政局在审核下属单位提交的采购计划时，发现其中一项采购属于政府采购工程且需要招标投标，另一项采购则属于该市集中采购目录内的项目。请问：这两项采购分别应适用什么法律或采购方式？请结合相关法规说明理由。",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["政府采购工程", "集中采购目录", "招标投标"],
+      "rationale": "纯法规知识问题，两条子问都在知识库内，单次 kb_search 即可命中多个相关块（多跳在召回层完成）。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "某国有资本运营公司拟通过产权交易机构对其下属企业实施增资扩股，以引入战略投资者并募集资金用于新项目建设。在制定增资方案和披露信息时，该公司需要遵循哪些程序性要求？请结合相关法规条文，说明增资方案应包含的核心要素，以及信息披露的最短时限和内容范围。",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["国有资本运营公司", "增资扩股", "信息披露"],
+      "rationale": "纯法规知识问题（产权交易/增资扩股程序），kb_search 一次调用即可，无结构化数据成分。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "某村拟利用财政资金修建一座公共文化设施，镇政府要求该村集体经济组织承担部分配套资金。同时，该村一位早年因进城务工而长期不在村内生产生活的村民，主张自己仍应享有对村集体资产经营管理的表决权。请问：镇政府的做法是否合法？该村民的主张能否成立？请结合相关法律规定分别说明理由。",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["财政资金", "公共文化设施", "村集体经济组织", "集体资产表决权"],
+      "rationale": "纯法规知识问题（财政资金/村集体资产管理），kb_search 一次调用，无需 price_query。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "某股份合作制企业拟设立股东名册，但尚未确定记载内容。若该企业同时需要依据《企业法》第二十一条处理某事项，而该事项的具体规定在资料中缺失，且第二十七条要求股东名册记载特定事项。请问：仅凭现有资料，该企业能否完整确定股东名册的记载内容？若不能，还缺少哪些必要信息？请结合资料1和资料2综合分析。",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["股份合作制企业", "股东名册", "企业法"],
+      "rationale": "纯法规知识问题（企业法/股东名册），kb_search 一次调用。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "某依法必须招标的项目，招标人已向中标人发出中标通知书，但随后因自身原因改变中标结果，未与中标人签订合同。同时，招标人尚未退还任何投标保证金。请问：招标人改变中标结果应承担什么法律后果？其退还投标保证金的最迟时限应如何起算？请结合相关法律规定说明。",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["中标通知书", "改变中标结果", "投标保证金", "中标人"],
+      "rationale": "纯法规知识问题（招标投标法/中标与保证金），kb_search 一次调用。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "某市住建局在组织一项工程施工招标时，有投标人质疑招标过程存在不透明行为。请问，依据相关规章，该招标活动应遵循哪些基本原则？这些原则的法规依据是什么？请结合规章的制定目的进行说明。",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["工程施工招标", "招标投标基本原则", "住建局"],
+      "rationale": "纯法规知识问题（施工招标基本原则），kb_search 一次调用。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "某招标项目在开标时，招标人发现投标人甲的投标文件未按招标文件要求密封，同时投标人乙的投标文件递交时间晚于招标文件规定的截止时间。请问：根据相关规定，招标人应如何处理这两份投标文件？开标时间和地点应满足什么条件？",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["投标文件密封", "递交截止时间", "开标时间与地点"],
+      "rationale": "纯法规知识问题（开标/废标情形），kb_search 一次调用。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "某国家出资企业计划转让其一家子公司的部分产权，该子公司主业涉及关键领域且承担重大专项任务。同时，该子公司由两家国有股东共同持股，持股比例相同。在履行批准程序时，应由哪家股东负责？此外，在产权转让事项经批准后，转让方在委托审计方面应遵循哪些规定？请结合相关法规条文说明。",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["国家出资企业", "产权转让", "批准程序", "委托审计"],
+      "rationale": "纯法规知识问题（企业国有资产交易），kb_search 一次调用。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "某国有资金占控股地位的企业拟投资建设一个大型基础设施项目，该项目既涉及工程勘察、设计、施工，又需采购一批与工程建设有关的重要设备。在项目启动前，该企业负责人对招标范围存在疑问：该项目是否必须进行招标？若必须招标，其招标投标活动应遵循哪些基本法律原则？此外，若该项目在招标过程中出现违法行为，相关责任人可能承担何种法律责任？请结合相关法律规定，从招标范围、法律原则及法律责任三个层面综合分析。",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["国有资金占控股地位", "必须招标范围", "招标投标法律原则", "法律责任"],
+      "rationale": "纯法规知识问题（必须招标的工程项目/原则/责任），kb_search 一次调用；三个层面同一法律域。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "假设某村村民因土地承包经营发生纠纷，双方先经村委会调解并达成了协议，但事后一方反悔，另一方欲申请仲裁。请问：该调解协议在何种条件下生效？若双方最终选择仲裁途径，则受理该纠纷的仲裁委员会应如何设立，其日常工作由谁承担？请结合相关法律规定作答。",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["土地承包经营纠纷", "调解协议", "仲裁委员会"],
+      "rationale": "纯法规知识问题（土地纠纷调解/仲裁），kb_search 一次调用。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "某市拟设立公共资源拍卖中心（公拍中心），其经费来源与主要职能分别是什么？请结合该中心「经费来源」与「主要职能」的规定，说明其运作模式如何体现「行业自筹、政府支持」与「服务各方、维护秩序」之间的关系。",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["公共资源拍卖中心", "经费来源", "主要职能"],
+      "rationale": "纯法规知识问题（公拍中心设立），kb_search 一次调用。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "在房地产交易中，若某房屋所有权人先与承租人签订了租赁合同，随后又打算将该房屋抵押给银行，请问这两项行为分别涉及哪些法律概念？它们各自成立或生效的前提条件是什么？请结合相关法律规定进行说明。",
+      "query_type": "kb_multi_hop",
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["租赁合同", "抵押", "房屋所有权人"],
+      "rationale": "纯法规知识问题（租赁/抵押生效要件），kb_search 一次调用。",
+      "source": "multi_hop_golden"
+    },
+    {
+      "q": "安徽海纳信息科技有限公司的工商信息有哪些？",
+      "query_type": "price",
+      "expected_sequence": ["price_query"],
+      "expected_tools": ["price_query"],
+      "key_entities": ["安徽海纳信息科技有限公司"],
+      "rationale": "纯结构化数据查询（工商信息），price_query 一次调用即可，无法规成分。",
+      "source": "price_golden"
+    },
+    {
+      "q": "深圳市宏安智能科技有限公司被列入黑名单了吗？",
+      "query_type": "price",
+      "expected_sequence": ["price_query"],
+      "expected_tools": ["price_query"],
+      "key_entities": ["深圳市宏安智能科技有限公司", "黑名单"],
+      "rationale": "纯结构化数据查询（黑名单状态），price_query 一次调用。",
+      "source": "price_golden"
+    },
+    {
+      "q": "中建三局集团有限公司的详细信息和中标记录",
+      "query_type": "price",
+      "expected_sequence": ["price_query"],
+      "expected_tools": ["price_query"],
+      "key_entities": ["中建三局集团有限公司", "中标记录"],
+      "rationale": "纯结构化数据查询（企业详情+中标记录），price_query 一次调用。",
+      "source": "price_golden"
+    },
+    {
+      "q": "[350001]FJGGZY[GK]2024013 这个项目的中标情况",
+      "query_type": "price",
+      "expected_sequence": ["price_query"],
+      "expected_tools": ["price_query"],
+      "key_entities": ["350001FJGGZYGK2024013"],
+      "rationale": "纯结构化数据查询（按项目编号查中标），price_query 一次调用。",
+      "source": "price_golden"
+    },
+    {
+      "q": "中标金额TOP10的项目",
+      "query_type": "price",
+      "expected_sequence": ["price_query"],
+      "expected_tools": ["price_query"],
+      "key_entities": ["中标金额"],
+      "rationale": "纯结构化数据查询（金额排序），price_query 一次调用，无法规成分。",
+      "source": "price_golden"
+    },
+    {
+      "q": "安徽诺平家具有限公司中标过什么项目？",
+      "query_type": "price",
+      "expected_sequence": ["price_query"],
+      "expected_tools": ["price_query"],
+      "key_entities": ["安徽诺平家具有限公司"],
+      "rationale": "纯结构化数据查询（公司中标项目），price_query 一次调用。",
+      "source": "price_golden"
+    },
+    {
+      "q": "上海大学采购过哪些项目？",
+      "query_type": "price",
+      "expected_sequence": ["price_query"],
+      "expected_tools": ["price_query"],
+      "key_entities": ["上海大学"],
+      "rationale": "纯结构化数据查询（采购人采购记录），price_query 一次调用。",
+      "source": "price_golden"
+    },
+    {
+      "q": "请帮我查一下软件和信息技术服务行业有哪些存续企业",
+      "query_type": "price",
+      "expected_sequence": ["price_query"],
+      "expected_tools": ["price_query"],
+      "key_entities": ["软件和信息技术服务业"],
+      "rationale": "纯结构化数据查询（行业企业名单），price_query 一次调用。",
+      "source": "price_golden"
+    },
+    {
+      "q": "查一下安徽海纳信息科技有限公司的法定代表人",
+      "query_type": "price",
+      "expected_sequence": ["price_query"],
+      "expected_tools": ["price_query"],
+      "key_entities": ["安徽海纳信息科技有限公司", "法定代表人"],
+      "rationale": "纯结构化数据查询（法定代表人字段），price_query 一次调用。",
+      "source": "price_golden"
+    },
+    {
+      "q": "查一下深圳市宏安智能科技有限公司被列入黑名单没有？如果被列入黑名单，依据法规会被禁止参加政府采购多久？",
+      "query_type": "mixed",
+      "expected_sequence": ["price_query", "kb_search_tool"],
+      "expected_tools": ["kb_search_tool", "price_query"],
+      "key_entities": ["深圳市宏安智能科技有限公司", "黑名单", "禁止参加政府采购"],
+      "rationale": "多源组合：先查公司黑名单状态（结构化），再查黑名单法律后果（法规）。数据先行、法规解释在后。",
+      "source": "constructed"
+    },
+    {
+      "q": "中建三局集团有限公司中标了哪些项目？结合法规说明中标通知书发出后多长时间内应签订合同。",
+      "query_type": "mixed",
+      "expected_sequence": ["price_query", "kb_search_tool"],
+      "expected_tools": ["kb_search_tool", "price_query"],
+      "key_entities": ["中建三局集团有限公司", "中标通知书", "签订合同期限"],
+      "rationale": "多源组合：先查中标记录（结构化），再查中标后签约时限（法规）。",
+      "source": "constructed"
+    },
+    {
+      "q": "中标金额最大的项目是哪个？中标后招标人无正当理由不签合同，投标人应如何维权？",
+      "query_type": "mixed",
+      "expected_sequence": ["price_query", "kb_search_tool"],
+      "expected_tools": ["kb_search_tool", "price_query"],
+      "key_entities": ["中标金额", "招标人不签合同", "投标人维权"],
+      "rationale": "多源组合：先查金额最大项目（结构化），再查招标人违约维权（法规）。",
+      "source": "constructed"
+    },
+    {
+      "q": "推荐几家做办公家具的企业，并说明联合体投标的资格要求。",
+      "query_type": "mixed",
+      "expected_sequence": ["price_query", "kb_search_tool"],
+      "expected_tools": ["kb_search_tool", "price_query"],
+      "key_entities": ["办公家具", "联合体投标"],
+      "rationale": "多源组合：先查行业企业（结构化），再查联合体投标资格（法规）。",
+      "source": "constructed"
+    },
+    {
+      "q": "上海大学采购过哪些项目？这些采购项目依法应当公开哪些信息？",
+      "query_type": "mixed",
+      "expected_sequence": ["price_query", "kb_search_tool"],
+      "expected_tools": ["kb_search_tool", "price_query"],
+      "key_entities": ["上海大学", "采购信息公开"],
+      "rationale": "多源组合：先查采购记录（结构化），再查信息公开义务（法规）。",
+      "source": "constructed"
+    },
+    {
+      "q": "安徽海纳信息科技有限公司的注册资本是多少？注册资本认缴制下股东出资不足会有什么后果？",
+      "query_type": "mixed",
+      "expected_sequence": ["price_query", "kb_search_tool"],
+      "expected_tools": ["kb_search_tool", "price_query"],
+      "key_entities": ["安徽海纳信息科技有限公司", "注册资本", "认缴制"],
+      "rationale": "多源组合：先查注册资本字段（结构化），再查认缴制责任（法规）。",
+      "source": "constructed"
+    },
+    {
+      "q": "政府采购中供应商有不良记录还能参与投标吗？顺便查一下安徽诺平家具有限公司有没有不良记录。",
+      "query_type": "mixed",
+      "expected_sequence": ["kb_search_tool", "price_query"],
+      "expected_tools": ["kb_search_tool", "price_query"],
+      "key_entities": ["不良记录", "投标资格", "安徽诺平家具有限公司"],
+      "rationale": "多源组合：主问题是法规资格门槛（先查法规），顺带查公司记录（后查数据）。法规先行、数据佐证在后。",
+      "source": "constructed"
+    },
+    {
+      "q": "某医院要采购一套进口医疗设备，查一下该医院中标过的设备采购项目，并说明进口产品采购的审批要求。",
+      "query_type": "mixed",
+      "expected_sequence": ["price_query", "kb_search_tool"],
+      "expected_tools": ["kb_search_tool", "price_query"],
+      "key_entities": ["医院", "进口医疗设备", "设备采购项目", "进口产品审批"],
+      "rationale": "多源组合：先查该医院设备采购记录（结构化），再查进口产品采购审批（法规）。",
+      "source": "constructed"
+    },
+    {
+      "q": "某市人民医院改扩建项目的中标结果是什么？中标人确定后依法应公示哪些内容？",
+      "query_type": "mixed",
+      "expected_sequence": ["price_query", "kb_search_tool"],
+      "expected_tools": ["kb_search_tool", "price_query"],
+      "key_entities": ["市人民医院改扩建项目", "中标结果", "中标公示"],
+      "rationale": "多源组合：先查项目中标结果（结构化），再查中标公示内容要求（法规）。",
+      "source": "constructed"
+    }
+  ]
+}

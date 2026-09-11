@@ -1,4 +1,4 @@
-"""evals.metrics.agent_trace — Agent 轨迹指标离线测试（E2-3）。"""
+"""evals.metrics.agent_trace — Agent 轨迹指标离线测试（E2-3 / E1-4）。"""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from evals.metrics.agent_trace import (
     aggregate_traces,
     render_report,
     tool_selection,
+    tool_sequence,
     trace_summary,
 )
 
@@ -89,3 +90,66 @@ def test_render_report_smoke():
     text = render_report(aggregate_traces(rows))
     assert "Agent 轨迹评测" in text and "规划步数" in text
     assert "未提供 expected_tools" in text   # 无 gold 时明确标注
+
+
+# ── E1-4 序列级指标 ─────────────────────────────────────────
+
+
+def test_tool_sequence_ordered_subsequence():
+    # 期望序列按序出现在轨迹中（允许多余步骤）
+    t = _trace(["price_query", "kb_search_tool", "kb_search_tool"],
+               [("price_query", "p", "ok", 1), ("kb_search_tool", "q", "ok", 1),
+                ("kb_search_tool", "q2", "ok", 1)])
+    s = tool_sequence(t, ["price_query", "kb_search_tool"])
+    assert s["ordered_coverage"] is True
+    assert s["exact_sequence"] is False          # 多了第二步 kb
+
+
+def test_tool_sequence_exact_match():
+    t = _trace(["kb_search_tool"], [("kb_search_tool", "q", "ok", 1)])
+    s = tool_sequence(t, ["kb_search_tool"])
+    assert s["ordered_coverage"] is True and s["exact_sequence"] is True
+
+
+def test_tool_sequence_wrong_order_fails():
+    # 顺序反了：期望 price→kb，轨迹是 kb→price
+    t = _trace(["kb_search_tool", "price_query"],
+               [("kb_search_tool", "q", "ok", 1), ("price_query", "p", "ok", 1)])
+    s = tool_sequence(t, ["price_query", "kb_search_tool"])
+    assert s["ordered_coverage"] is False and s["exact_sequence"] is False
+
+
+def test_tool_sequence_missing_tool_fails():
+    t = _trace(["kb_search_tool"], [("kb_search_tool", "q", "ok", 1)])
+    s = tool_sequence(t, ["price_query", "kb_search_tool"])
+    assert s["ordered_coverage"] is False
+
+
+def test_trace_summary_with_expected_sequence():
+    t = _trace(["price_query", "kb_search_tool"],
+               [("price_query", "p", "ok", 1), ("kb_search_tool", "q", "ok", 1)])
+    s = trace_summary(t, expected_sequence=["price_query", "kb_search_tool"])
+    assert s["tool_sequence"]["ordered_coverage"] is True
+    assert "tool_sequence" not in trace_summary(t)  # 未给序列时不出现
+
+
+def test_aggregate_traces_tool_sequence():
+    rows = [
+        {"question": "a", "expected_sequence": ["price_query", "kb_search_tool"],
+         "trace": _trace(["price_query", "kb_search_tool"],
+                         [("price_query", "p", "ok", 1), ("kb_search_tool", "q", "ok", 1)])},
+        {"question": "b", "expected_sequence": ["kb_search_tool"],
+         "trace": _trace(["price_query"], [("price_query", "p", "ok", 1)])},  # 覆盖失败
+    ]
+    s = aggregate_traces(rows)
+    tq = s["tool_sequence"]
+    assert tq["n_gold"] == 2
+    assert tq["ordered_coverage_rate"] == 0.5
+    assert tq["exact_sequence_rate"] == 0.5
+
+
+def test_render_report_sequence_section():
+    rows = [{"question": "a", "expected_sequence": ["kb_search_tool"],
+             "trace": _trace(["kb_search_tool"], [("kb_search_tool", "q", "ok", 1)])}]
+    text = render_report(aggregate_traces(rows))
+    assert "工具序列" in text and "E1-4 金标真值" in text

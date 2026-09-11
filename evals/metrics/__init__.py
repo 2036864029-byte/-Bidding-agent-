@@ -5,6 +5,7 @@ from __future__ import annotations
 from .agent_trace import (
     aggregate_traces,
     tool_selection,
+    tool_sequence,
     trace_summary,
 )
 from .agent_trace import render_report as render_agent_trace_report
@@ -65,6 +66,7 @@ __all__ = [
     "render_report",
     "trace_summary",
     "tool_selection",
+    "tool_sequence",
     "aggregate_traces",
     "render_agent_trace_report",
     "parse_prometheus",
