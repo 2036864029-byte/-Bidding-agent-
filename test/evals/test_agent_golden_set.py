@@ -15,7 +15,7 @@ GOLDEN = Path(__file__).resolve().parent.parent.parent / "eval" / "agent_golden_
 # deep_agent 实际工具词表（public_kb.tools.kb_search_as_tool / price_engine.tools）
 TOOL_VOCAB = {"kb_search_tool", "price_query"}
 QUERY_TYPES = {"kb_multi_hop", "price", "mixed"}
-SOURCES = {"multi_hop_golden", "price_golden", "constructed"}
+SOURCES = {"multi_hop_golden", "price_golden", "constructed", "trace_feedback"}
 
 
 def _load_golden() -> list[dict]:

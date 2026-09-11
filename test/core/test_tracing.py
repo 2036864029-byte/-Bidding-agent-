@@ -138,6 +138,32 @@ def test_node_span_marks_fallback_on_error(exporter):
     assert _names(exporter)["node.boom"].attributes["ztb.branch"] == "fallback"
 
 
+def test_observation_io_truncates_and_skips_empty():
+    from core.observability.tracing import observation_io
+
+    attrs = observation_io("问题", "答案", limit=10)
+    assert attrs["langfuse.observation.input"] == "问题"
+    assert attrs["langfuse.observation.output"] == "答案"
+    assert observation_io("", None) == {}
+    assert len(observation_io("x" * 100, None, limit=7)["langfuse.observation.input"]) == 7
+
+
+def test_node_span_carries_observation_io(exporter):
+    """E4-1：节点 span 带上问题(input)/答案(output)，使 trace 可回灌。"""
+    from langchain_core.messages import HumanMessage
+
+    from core.errors.fallback import with_fallback
+
+    def my_node(state, config=None):
+        return {"business_result": {"branch": "knowledge_qa", "answer": "分为公开招标和邀请招标"}}
+
+    with_fallback(my_node)({"messages": [HumanMessage(content="招标方式有哪些？")]})
+
+    sp = _names(exporter)["node.my_node"]
+    assert sp.attributes["langfuse.observation.input"] == "招标方式有哪些？"
+    assert sp.attributes["langfuse.observation.output"] == "分为公开招标和邀请招标"
+
+
 def test_llm_callback_emits_span(exporter):
     from core.observability.callbacks import LLMMetricsCallback
 

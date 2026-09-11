@@ -127,6 +127,27 @@ def set_span_attrs(sp: Optional[Any], **attrs: Any) -> None:
             sp.set_attribute(key, value)
 
 
+#: observation input/output 截断上限（防超长问题/答案撑爆 span）
+OBSERVATION_IO_LIMIT = 2000
+
+
+def observation_io(
+    input_text: Optional[str], output_text: Optional[str], *,
+    limit: int = OBSERVATION_IO_LIMIT,
+) -> dict:
+    """Langfuse observation 的 input/output 属性（E4-1）。
+
+    Langfuse v4（OTLP）读取 `langfuse.observation.input` / `.output` 作为观测的
+    输入/输出；节点 span 借此带入问题与答案，使 trace 可被采样回灌金标。
+    """
+    attrs: dict = {}
+    if input_text:
+        attrs["langfuse.observation.input"] = str(input_text)[:limit]
+    if output_text:
+        attrs["langfuse.observation.output"] = str(output_text)[:limit]
+    return attrs
+
+
 def shutdown_tracing() -> None:
     """冲刷并关闭 provider（进程退出前调用，保证 span 送达）。"""
     global _ENABLED, _PROVIDER
@@ -145,5 +166,6 @@ __all__ = [
     "get_tracer",
     "span",
     "set_span_attrs",
+    "observation_io",
     "shutdown_tracing",
 ]

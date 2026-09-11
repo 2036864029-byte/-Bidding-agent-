@@ -23,7 +23,7 @@ from typing import Callable, Dict, Optional
 from langchain_core.messages import AIMessage
 
 from core.observability.metrics import record_branch_latency
-from core.observability.tracing import set_span_attrs
+from core.observability.tracing import observation_io, set_span_attrs
 from core.observability.tracing import span as _span
 
 from .codes import ErrorCode
@@ -64,6 +64,16 @@ def accepts_config(node_fn: Callable) -> bool:
     return has_var or positional >= 2
 
 
+def _last_user_text(state: dict) -> str:
+    """取会话中最后一条用户消息文本（E4-1 节点 span 的 input）。"""
+    for m in reversed(list(state.get("messages") or [])):
+        if type(m).__name__ == "HumanMessage" or getattr(m, "type", "") == "human":
+            content = getattr(m, "content", "")
+            if isinstance(content, str) and content.strip():
+                return content
+    return ""
+
+
 def with_fallback(
     node_fn: Callable,
     *,
@@ -84,6 +94,7 @@ def with_fallback(
     def wrapped(state: dict, config: Optional[Dict] = None) -> dict:
         _t0 = time.perf_counter()
         node_name = getattr(node_fn, "__name__", "unknown")
+        _question = _last_user_text(state)  # E4-1：节点 span 的 input
         # E0-3：节点 span（所有业务节点都经本包装器，单点覆盖全链路）
         with _span(f"node.{node_name}", **{"ztb.node": node_name}) as _sp:
             try:
@@ -101,6 +112,7 @@ def with_fallback(
                 set_span_attrs(
                     _sp, **{"ztb.branch": "fallback", "ztb.latency_ms": round(latency, 2)}
                 )
+                set_span_attrs(_sp, **observation_io(_question, error_msg))
                 return {
                     "business_result": {
                         "branch": "fallback",
@@ -120,6 +132,8 @@ def with_fallback(
             set_span_attrs(
                 _sp, **{"ztb.branch": branch, "ztb.latency_ms": round(latency, 2)}
             )
+            answer = (result.get("business_result") or {}).get("answer", "")
+            set_span_attrs(_sp, **observation_io(_question, answer))
         record_branch_latency(branch, latency)
         return result
 
