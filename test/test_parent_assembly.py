@@ -137,7 +137,7 @@ def test_rerank_candidate_k_expands_when_grouping_on():
     assert _retriever(
         retrieval_group_by_parent=True, retrieval_group_size=2, retrieval_top_k=5
     )._rerank_candidate_k() == 10
-    assert _retriever(retrieval_group_by_parent=False)._rerank_candidate_k() == 5
+    assert _retriever(retrieval_group_by_parent=False)._rerank_candidate_k() == 11
 
 
 def test_duplicate_parent_dedup_keeps_first_child():

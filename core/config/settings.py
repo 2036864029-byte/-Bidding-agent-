@@ -348,7 +348,7 @@ class Settings:
     # ============================================================
     # 检索参数（P1-3：扩大候选池并放宽阈值，降低长尾问题漏召）
     # ============================================================
-    retrieval_top_k: int = 5
+    retrieval_top_k: int = 11  # E5/多跳决策：5→11，多跳第二块进窗口（对照 A 双段全中 +5.7pp、MRR 不降）
     similarity_threshold: float = 0.45  # 降级路径阈值（低于此值直接拒答），主路径使用自适应阈值
 
     # ── 混合检索参数 ──
@@ -363,6 +363,7 @@ class Settings:
     retrieval_group_size: int = 2            # 每组保留子块数（进 rerank 条数 ≈ hybrid_fusion_limit × 本值）
     retrieval_parent_assembly: bool = True   # 命中子块拼回完整父块，写入 metadata["context_text"]
     retrieval_parent_max_chars: int = 6000   # 父块拼接长度熔断上限
+    kb_light_decompose: bool = True          # Layer 1：knowledge_qa 统一轻量补检（基线 top-11 + 每子句 top-5 并集，max_chunks=20）。S1 已验生成侧不稀释，2026-09-10 默认开启；置 False 一键回退
     retrieval_context_warn_chars: int = 20000  # 单轮检索上下文总长告警阈值（只告警不截断）
     reranker_model: str = "BAAI/bge-reranker-v2-m3"  # Cross-Encoder 重排序模型
     rerank_high_confidence_score: float = field(

@@ -563,6 +563,7 @@ def test_node_knowledge_qa_passes_citations(monkeypatch):
     )
 
     monkeypatch.setattr(kqa_subgraph, "kb_search", lambda q: retrieval)
+    monkeypatch.setattr(kqa_subgraph, "kb_search_expanded", lambda q: retrieval)
     monkeypatch.setattr(
         kqa_subgraph, "_get_llm",
         lambda: RunnableLambda(lambda _pv: AIMessage(content="答案【来源1】")),

@@ -50,8 +50,12 @@ def _llm_like(content: str):
 
 
 def _patch_tool_path(monkeypatch, *, retrieval, answer):
-    """打桩子图共享符号：kb_search / _get_llm。"""
+    """打桩子图共享符号：kb_search / kb_search_expanded / _get_llm。
+
+    kb_light_decompose 默认 True 后子图走 kb_search_expanded，两个入口都要打桩。
+    """
     monkeypatch.setattr(subgraph_mod, "kb_search", lambda q: retrieval)
+    monkeypatch.setattr(subgraph_mod, "kb_search_expanded", lambda q: retrieval)
     monkeypatch.setattr(subgraph_mod, "_get_llm", lambda: _llm_like(answer))
 
 
@@ -118,6 +122,7 @@ def test_subgraph_retrieval_runtime_error_friendly(monkeypatch):
         raise RuntimeError("milvus down")
 
     monkeypatch.setattr(subgraph_mod, "kb_search", boom)
+    monkeypatch.setattr(subgraph_mod, "kb_search_expanded", boom)
     sub = build_knowledge_qa_subgraph()
     state_out = sub.invoke({"messages": [HumanMessage(content="招标方式有哪些？")]})
 
@@ -147,6 +152,7 @@ _PASS_ANSWER = "根据【来源1】，招标方式分为公开招标和邀请招
 
 def _patch_retrieval(monkeypatch):
     monkeypatch.setattr(subgraph_mod, "kb_search", lambda q: _triple(1))
+    monkeypatch.setattr(subgraph_mod, "kb_search_expanded", lambda q: _triple(1))
 
 
 def _patch_llm_sequence(monkeypatch, answers):

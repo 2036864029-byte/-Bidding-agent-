@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from langchain_core.documents import Document
 from pydantic import BaseModel, Field
@@ -212,7 +212,7 @@ def _project_chunk(
 def kb_search(
     question: str,
     *,
-    top_k: int = 8,
+    top_k: int = 11,  # E5/多跳决策：与 settings.retrieval_top_k(11) 对齐，默认透出全窗口
     offset: int = 0,
     summary: bool = False,
     include_fields: Optional[Iterable[str]] = None,
@@ -277,6 +277,87 @@ def kb_search(
             rendered_context="" if summary else format_docs(docs_with_scores),
             recall_trace=trace,
         )
+
+
+def _split_clauses(question: str, min_len: int = 8) -> List[str]:
+    """按标点切子句，过滤过短片段（纯连接词/介词短语检索无意义）。"""
+    import re
+
+    parts = [p.strip() for p in re.split(r"[？?。；;，,\n]", question)]
+    return [p for p in parts if len(p) >= min_len]
+
+
+def _norm_key(text: str) -> str:
+    """去重键：去除全部空白（子块/父块排版差异）。"""
+    import re
+
+    return re.sub(r"\s+", "", text or "")
+
+
+def kb_search_expanded(
+    question: str,
+    *,
+    top_k: int = 11,
+    max_chunks: int = 20,
+    sub_top_k: int = 5,
+    min_clause_len: int = 8,
+    summary: bool = False,
+    include_fields: Optional[Iterable[str]] = None,
+    summary_max_chars: int = _SUMMARY_MAX_CHARS,
+) -> RetrievalResult:
+    """统一轻量补检（Layer 1）：基线 top_k + 子句检索并集，基线原序保持。
+
+    与 kb_search 同契约。基线块保持原序（→ MRR 不摊薄，区别于子句无序并集）；
+    子句补检**每个子句只取高分块 top_k（默认 5）再合并**——若取子句全部 docs，
+    会按子句顺序保留低相关度的首遇版本（如第八条在子句 A 排第 7、子句 B 排第 0，
+    先遇 A 则以低分入池被截断）；合并后按 score 全局降序追加，总块数封顶
+    max_chunks（默认 20：S3 实测 16 仅双段全中 0.4857，20 才复现 S2 的 0.6286）。
+    开关 `settings.kb_light_decompose` 由调用方决定是否走本函数。
+    """
+    from .guardrails.citations_build import build_citations
+
+    outcome = _get_retriever().retrieve(question)
+    trace = getattr(outcome.diagnostics, "to_dict", lambda: {})() or {}
+    docs: List[Tuple[Document, float]] = list(outcome.docs[:top_k])
+
+    clauses = _split_clauses(question, min_clause_len)
+    if clauses and len(docs) < max_chunks:
+        base_seen = {_norm_key(doc.page_content) for doc, _ in docs}
+        pool: List[Tuple[Document, float]] = []
+        pool_seen: set = set()
+        for clause in clauses:
+            sub = _get_retriever().retrieve(clause)
+            for doc, score in sub.docs[:sub_top_k]:
+                key = _norm_key(doc.page_content)
+                if key in base_seen or key in pool_seen:
+                    continue
+                pool_seen.add(key)
+                pool.append((doc, score))
+        pool.sort(key=lambda item: item[1], reverse=True)
+        for doc, score in pool:
+            if len(docs) >= max_chunks:
+                break
+            docs.append((doc, score))
+
+    if not docs:
+        logger.info("kb_search_expanded: 检索为空（question=%s）", question[:60])
+        return RetrievalResult(recall_trace=trace)
+
+    citations = build_citations(docs)
+    return RetrievalResult(
+        chunks=[
+            _project_chunk(
+                _to_chunk(doc, score),
+                summary=summary,
+                include_fields=include_fields,
+                summary_max_chars=summary_max_chars,
+            )
+            for doc, score in docs
+        ],
+        citations_meta=citations,
+        rendered_context="" if summary else format_docs(docs),
+        recall_trace=trace,
+    )
 
 
 def kb_search_as_tool():

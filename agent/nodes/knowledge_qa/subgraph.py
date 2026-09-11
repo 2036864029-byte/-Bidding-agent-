@@ -29,7 +29,7 @@ from core.llm.registry import create_llm_for_slot
 from core.observability.metrics import record_guardrail_fail
 from core.streaming.sink import emit_token
 from public_kb.guardrails.citations_validate import CitationValidator
-from public_kb.tools import Chunk, RetrievalResult, kb_search
+from public_kb.tools import Chunk, RetrievalResult, kb_search, kb_search_expanded
 
 from .prompts import build_prompt, build_retry_prompt
 
@@ -158,7 +158,11 @@ def _retrieve_node(state: KnowledgeQaState) -> dict:
 
     question = str(messages[-1].content)
     try:
-        retrieval = kb_search(question)
+        # Layer 1（S3）：开关开启时走统一轻量补检（基线 + 子句并集），否则原链路
+        if _get_settings().kb_light_decompose:
+            retrieval = kb_search_expanded(question)
+        else:
+            retrieval = kb_search(question)
     except KnowledgeBaseContractError as e:
         # B9：空白/非法问题由 validate_question 抛 ValueError 子类；旧实现只捕
         # RuntimeError，异常冒泡到图级 _with_fallback → 用户看到"功能暂不可用"。

@@ -20,6 +20,7 @@ import json
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from langchain_core.language_models import BaseChatModel
@@ -210,6 +211,18 @@ def _execute_step(step: PlanStep, tool_map: Dict[str, BaseTool]) -> StepRecord:
     )
 
 
+def _execute_steps(
+    plan: Sequence[PlanStep], tool_map: Dict[str, BaseTool]
+) -> List[StepRecord]:
+    """并发执行计划步骤（步间无数据依赖，工具调用 I/O 主导）。
+
+    S4（Layer 2）：EXECUTE 顺序→并行压缩耗时；轨迹按 step_id 排序保持稳定契约。
+    """
+    with ThreadPoolExecutor(max_workers=min(max(1, len(plan)), 4)) as ex:
+        records = list(ex.map(lambda st: _execute_step(st, tool_map), plan))
+    return sorted(records, key=lambda r: r.step_id)
+
+
 def _observations_text(steps: List[StepRecord]) -> str:
     lines = []
     for s in steps:
@@ -304,8 +317,8 @@ def run_deep_agent(
     # 1. PLAN
     plan = _plan_question(question, llm, tool_names, max_steps)
 
-    # 2. EXECUTE（每步观察限长落轨迹）
-    steps = [_execute_step(st, tool_map) for st in plan]
+    # 2. EXECUTE（并发执行，轨迹按 step_id 排序；每步观察限长落轨迹）
+    steps = _execute_steps(plan, tool_map)
 
     # 3. SYNTHESIZE（流式草稿）
     draft = _synthesize(question, steps, llm, persona)
