@@ -37,6 +37,11 @@ def unhandled_envelope() -> dict:
     }
 
 
+def error_envelope(exc: AppError) -> dict:
+    """把 AppError 渲染为统一信封（SSE 等非 JSONResponse 场景复用）。"""
+    return exc.to_envelope(get_request_id())
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """注册全局异常处理器（在 create_app 内调用一次）。"""
 
@@ -49,6 +54,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.http_status,
             content=exc.to_envelope(get_request_id()),
+            headers=exc.headers or None,
         )
 
     @app.exception_handler(Exception)
@@ -57,4 +63,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(status_code=500, content=unhandled_envelope())
 
 
-__all__ = ["register_exception_handlers", "unhandled_envelope", "UNHANDLED_MESSAGE"]
+__all__ = [
+    "register_exception_handlers",
+    "unhandled_envelope",
+    "error_envelope",
+    "UNHANDLED_MESSAGE",
+]

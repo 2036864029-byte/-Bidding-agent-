@@ -29,8 +29,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from agent import AgentGraph
+from core.concurrency.limits import InflightGate, get_inflight_gate
 from core.config.settings import Settings
-from core.errors.handlers import register_exception_handlers, unhandled_envelope
+from core.errors.exceptions import ServiceBusyError
+from core.errors.handlers import (
+    error_envelope,
+    register_exception_handlers,
+    unhandled_envelope,
+)
 from core.observability.audit import record_audit
 from core.observability.context import set_session_id, tenant_scoped
 from core.observability.logging import setup_logging
@@ -91,11 +97,18 @@ def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
     tag_current_span(**session_attrs())
     get_session_registry().touch(session_scope)  # W2-4：登记会话（触发惰性过期清理）
     t0 = time.perf_counter()
-    result = agent.invoke(
-        req.question,
-        thread_id=session_scope,
-        context_docs=_resolve_context_docs(req.file_ids, session_scope),
-    )
+    gate = get_inflight_gate()
+    if not gate.acquire():
+        logger.warning("在飞闸门打满，快速失败: limit=%d", gate.limit)
+        raise ServiceBusyError(retry_after=max(1, int(gate.wait_timeout)))
+    try:
+        result = agent.invoke(
+            req.question,
+            thread_id=session_scope,
+            context_docs=_resolve_context_docs(req.file_ids, session_scope),
+        )
+    finally:
+        gate.release()
     latency_ms = int((time.perf_counter() - t0) * 1000)
     fallback_biz = {"branch": "fallback", "answer": "", "data": None}
     business_result = result.get("business_result") or fallback_biz
@@ -121,6 +134,7 @@ def _run_stream_worker(
     session_id: str,
     context_docs: list[tuple[str, str]],
     sink: StreamSink,
+    gate: Optional[InflightGate] = None,
 ) -> None:
     """SSE 工作线程：完整跑一次 ``agent.invoke``，token 由生成节点实时写入 sink。
 
@@ -129,6 +143,9 @@ def _run_stream_worker(
     不自动拷贝 contextvars），生成节点的 ``emit_token`` 经 contextvar 命中 sink；
     端点侧从 sink 队列逐帧转发，互不阻塞。终态/异常也写 sink，供端点发
     ``result`` / ``error`` / ``done`` 事件。
+
+    C1：``gate`` 由端点在建线程**前**取得，本函数负责在图执行完（含异常）后
+    释放——否则过载时线程会先被创建再排队，等于没限住。
     """
     t0 = time.perf_counter()
     try:
@@ -146,6 +163,9 @@ def _run_stream_worker(
         sink.put_event("error", unhandled_envelope())
         sink.put_event("done", None)
         return
+    finally:
+        if gate is not None:
+            gate.release()
 
     latency_ms = int((time.perf_counter() - t0) * 1000)
     fallback_biz = {"branch": "fallback", "answer": "", "data": None}
@@ -191,13 +211,25 @@ async def _sse_stream(
         {"session_id": session_id}, ensure_ascii=False
     ) + "\n\n"
 
+    # C1/C3：**先取闸门再建线程**——否则 100 并发会先开出 100 个线程再排队，
+    # 线程本身就把资源吃光了。取不到即快速失败（error + done 收尾）。
+    gate = get_inflight_gate()
+    if not gate.acquire():
+        logger.warning("在飞闸门打满，SSE 快速失败: limit=%d", gate.limit)
+        busy = ServiceBusyError(retry_after=max(1, int(gate.wait_timeout)))
+        yield "event: error\ndata: " + json.dumps(
+            error_envelope(busy), ensure_ascii=False
+        ) + "\n\n"
+        yield "event: done\ndata: {}\n\n"
+        return
+
     # threading.Thread 在此 Python 环境**不拷贝**调用方 contextvars（实测），
     # 而生成节点的 emit_token / 审计的 request_id 都依赖 contextvar —— 显式用
     # copy_context().run() 把当前上下文（含 sink、request_id、session_id）带入图线程。
     ctx = contextvars.copy_context()
     worker = threading.Thread(
         target=lambda: ctx.run(
-            _run_stream_worker, agent, req, session_id, context_docs, sink,
+            _run_stream_worker, agent, req, session_id, context_docs, sink, gate,
         ),
         daemon=True,
         name=f"sse-{session_id[:8]}",

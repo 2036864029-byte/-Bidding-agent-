@@ -17,3 +17,13 @@ def _reset_retrieval_cache():
     reset_caches()
     yield
     reset_caches()
+
+
+@pytest.fixture(autouse=True)
+def _reset_inflight_gate():
+    """C1：在飞闸门是进程级单例，跨用例会残留计数与配置 → 每个用例前后重置。"""
+    from core.concurrency.limits import reset_inflight_gate
+
+    reset_inflight_gate()
+    yield
+    reset_inflight_gate()

@@ -30,6 +30,7 @@ class ErrorCode(str, Enum):
     NODE_FAILED = "sys_2001"
     ROUTE_FAILED = "sys_2002"
     RATE_LIMITED = "sys_2003"
+    SERVICE_BUSY = "sys_2004"   # 全局在飞并发达上限（过载保护，非单客户端限流）
     INTERNAL = "sys_2500"
 
     # ── 模型错误 ──

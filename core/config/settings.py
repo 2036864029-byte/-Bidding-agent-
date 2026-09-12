@@ -434,6 +434,20 @@ class Settings:
     )
 
     # ============================================================
+    # 全局并发闸门（C1）— 保护上游 LLM/检索，防并发打爆
+    # ============================================================
+    # 进程级「在飞请求」上限；超限等待 wait_timeout 后快速失败（503 + Retry-After），
+    # 不无限排队。0 = 关闭（便于灰度/回退）。多 worker 下总上限 ≈ workers × 本值。
+    # 与入口限流（rate_limit_per_minute，按客户端）互补：本项管**全局容量**。
+    # 建议值按上游速率上限实测标定（见 scripts/load_test_chat.py）。
+    max_inflight_requests: int = field(
+        default_factory=lambda: int(os.getenv("MAX_INFLIGHT_REQUESTS", "32"))
+    )
+    inflight_wait_timeout_seconds: float = field(
+        default_factory=lambda: float(os.getenv("INFLIGHT_WAIT_TIMEOUT_SECONDS", "5"))
+    )
+
+    # ============================================================
     # price 召回链熔断（P3 D-6）— 全局 deadline 与全表扫描放行开关
     # ============================================================
     # RecallPipeline 全局召回预算：到点未命中即熔断返回空（不再裸进全表扫描）。

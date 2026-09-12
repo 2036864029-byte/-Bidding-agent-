@@ -20,6 +20,8 @@ class AppError(Exception):
     http_status: int = 500
     #: 对外文案（None 时用实例 message）
     public_message: Optional[str] = None
+    #: 附加响应头（如 Retry-After）；None = 不加
+    headers: Optional[Dict[str, str]] = None
 
     def __init__(self, message: str = "", *, detail: Optional[Dict[str, Any]] = None) -> None:
         super().__init__(message or self.code.value)
@@ -74,6 +76,22 @@ class DependencyUnavailableError(AppError):
     public_message = "依赖服务暂时不可用，请稍后重试。"
 
 
+class ServiceBusyError(AppError):
+    """服务在飞请求已达全局上限（过载保护）→ 503 + Retry-After。
+
+    与 `RATE_LIMITED`(429) 的区别：后者是**单客户端太快**；本错误是
+    **服务器整体在飞数打满**，与是谁无关，客户端应按 Retry-After 退避重试。
+    """
+
+    code = ErrorCode.SERVICE_BUSY
+    http_status = 503
+    public_message = "服务当前请求过多，请稍后重试。"
+
+    def __init__(self, message: str = "", *, retry_after: int = 5) -> None:
+        super().__init__(message)
+        self.headers = {"Retry-After": str(max(1, int(retry_after)))}
+
+
 class ConfigInvalidError(AppError):
     """配置与运行环境不一致（如 embedding 与集合约定不符）→ 500。"""
 
@@ -88,5 +106,6 @@ __all__ = [
     "DependencyUnavailableError",
     "InvalidRequestError",
     "ModelInvocationError",
+    "ServiceBusyError",
     "UnsupportedCapabilityError",
 ]
