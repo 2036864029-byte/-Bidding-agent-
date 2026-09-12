@@ -44,6 +44,9 @@ def _hermetic_backends(monkeypatch):
     """
     monkeypatch.setenv("CACHE_BACKEND", "memory")
     monkeypatch.setenv("RATE_LIMIT_BACKEND", "memory")
+    # 检查点同理：默认 memory（不落盘、不依赖 PG）。需要真后端的用例显式构造
+    # （见 test/core/test_checkpointer_postgres.py）。
+    monkeypatch.setenv("CHECKPOINTER_BACKEND", "memory")
     from core.cache import reset_caches
 
     reset_caches()

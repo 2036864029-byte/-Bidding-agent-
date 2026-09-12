@@ -643,6 +643,12 @@ class Settings:
             os.path.join(_PROJECT_ROOT, "DATA", "checkpoints.db"),
         )
     )
+    # 跨机共享检查点（C6）：`CHECKPOINTER_BACKEND=postgres` 时必填。
+    # 例：postgresql://ztb:ztb_dev_pw@127.0.0.1:5433/ztb_checkpoints
+    # 本地起库：docker compose -f docker/infra/docker-compose.yml up -d
+    checkpointer_postgres_url: str = field(
+        default_factory=lambda: os.getenv("CHECKPOINTER_POSTGRES_URL", "")
+    )
     # 会话空闲过期（秒）：超时清理其检查点；0 = 不过期。
     session_ttl_seconds: int = field(
         default_factory=lambda: int(os.getenv("SESSION_TTL_SECONDS", "86400"))

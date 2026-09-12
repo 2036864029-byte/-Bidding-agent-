@@ -193,6 +193,7 @@ class AgentGraph:
         *,
         llm: Optional[BaseChatModel] = None,
         checkpointer_backend: str = "memory",
+        checkpointer_conn: Optional[str] = None,
         registry: Optional[CapabilityRegistry] = None,
         mode: Optional[str] = None,
     ) -> None:
@@ -201,6 +202,8 @@ class AgentGraph:
         Args:
             llm: 对话模型。None 则自动创建 ChatOpenAI(deepseek-chat)。
             checkpointer_backend: 记忆后端，可选 "memory" | "sqlite" | "postgres" | "redis"
+            checkpointer_conn: 后端连接串。postgres **必填**（C6）；
+                sqlite 留空则取 `Settings.checkpointer_sqlite_path`。
             registry: 能力注册表（默认进程级默认注册表）。
             mode: 主图模式 "single" | "supervisor"。None 时读环境变量 AGENT_MODE
                 （9.3 Track C 起默认 supervisor = 多 Agent 主图 orchestration/；
@@ -214,7 +217,9 @@ class AgentGraph:
         self._mode = mode
         self._llm = llm
         self._registry = registry
-        self._checkpointer = create_checkpointer(checkpointer_backend)
+        self._checkpointer = create_checkpointer(
+            checkpointer_backend, connection_string=checkpointer_conn,
+        )
         self._graph = build_agent_graph(
             mode=mode, llm=self._llm, checkpointer=self._checkpointer,
             registry=self._registry,

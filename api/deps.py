@@ -35,7 +35,18 @@ def get_agent() -> AgentGraph:
                 backend = os.getenv(
                     "CHECKPOINTER_BACKEND", settings.checkpointer_backend,
                 )
-                _agent = AgentGraph(checkpointer_backend=backend)
+                # C6：postgres 后端需连接串（跨机共享检查点）；其余后端留空走各自默认
+                conn = (
+                    os.getenv(
+                        "CHECKPOINTER_POSTGRES_URL",
+                        settings.checkpointer_postgres_url,
+                    )
+                    if backend == "postgres"
+                    else None
+                )
+                _agent = AgentGraph(
+                    checkpointer_backend=backend, checkpointer_conn=conn,
+                )
                 # W2-4：会话过期 → 删除其检查点
                 get_session_registry().set_deleter(_agent.delete_thread)
                 logger.info(

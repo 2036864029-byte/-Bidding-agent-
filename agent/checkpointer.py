@@ -67,15 +67,39 @@ def create_checkpointer(
 
     if backend == "postgres":
         try:
+            import psycopg.rows
             from langgraph.checkpoint.postgres import PostgresSaver
-        except ImportError:
+            from psycopg_pool import ConnectionPool
+        except ImportError as exc:
             raise NotImplementedError(
-                "PostgresSaver 尚未安装，请执行: pip install langgraph-checkpoint-postgres"
-            )
+                "PostgresSaver 不可用 —— 缺 langgraph-checkpoint-postgres，或缺 psycopg 的 "
+                "libpq 实现（Windows 上需 `uv add \"psycopg[binary]\"`，否则报 "
+                f"'no pq wrapper available'）。原始错误: {exc}"
+            ) from exc
         if not connection_string:
-            raise ValueError("PostgreSQL 模式需要提供 connection_string")
-        logger.info("Checkpointer: 使用 PostgresSaver")
-        return PostgresSaver.from_conn_string(connection_string)
+            raise ValueError(
+                "PostgreSQL 模式需要提供 connection_string"
+                "（Settings.checkpointer_postgres_url / CHECKPOINTER_POSTGRES_URL）"
+            )
+        # 不用 PostgresSaver.from_conn_string：与 sqlite 分支同因——它返回**上下文
+        # 管理器**（Iterator），直接返回会让图拿到 generator。改用连接池自建：
+        # uvicorn 线程池中多线程并发访问，单连接不安全，池才是生产形态。
+        # autocommit=True + prepare_threshold=0 是 PostgresSaver 的硬性要求。
+        pool = ConnectionPool(
+            conninfo=connection_string,
+            min_size=1,
+            max_size=10,
+            open=True,
+            kwargs={
+                "autocommit": True,
+                "prepare_threshold": 0,
+                "row_factory": psycopg.rows.dict_row,
+            },
+        )
+        saver = PostgresSaver(pool)
+        saver.setup()  # 建表（幂等，重复调用安全）
+        logger.info("Checkpointer: 使用 PostgresSaver（连接池）")
+        return saver
 
     if backend == "redis":
         try:
