@@ -1,0 +1,52 @@
+# Docker 构建上下文瘦身 —— 决定 `docker build` 传给 daemon 的内容。
+#
+# ⚠️ 不忽略会非常严重：本仓库 DATA/ ~6.8GB、.venv ~700MB，构建上下文会到几 GB，
+# 构建慢且吃内存。运行时真正需要的只有业务代码 + pyproject/uv.lock。
+
+# 依赖与虚拟环境
+.venv/
+venv/
+
+# 大体积数据与产物（运行时用卷挂载，不进镜像）
+DATA/
+test_report/
+analysis_out/
+raw_pdfs/
+milvus/
+
+# 开发/评测/部署辅助（运行时包不得 import eval*，守卫见
+# test/core/test_dependency_isolation.py）
+archive/
+docs/
+eval/
+evals/
+scripts/
+test/
+deploy/
+docker/
+
+# 版本控制与缓存
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pre-commit-config.yaml
+
+# 密钥与备份：绝不进镜像
+.env
+.env.*
+*.bak*
+.claude/
+
+# 编辑器/系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 根目录的归档与临时产物
+*.zip
+chunking-optimization-plan.html

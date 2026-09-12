@@ -1,0 +1,63 @@
+# ============================================================
+# ztb 主程序（业务应用）— Docker Compose
+# ============================================================
+# 用途：把业务代码容器化。**不含模型**——embedding/rerank/MinerU 是独立服务。
+#
+# 构建运行（仓库根目录）：
+#   docker compose -f deploy/api/docker-compose.yml up -d --build
+#   看日志： docker compose -f deploy/api/docker-compose.yml logs -f
+#   停：     docker compose -f deploy/api/docker-compose.yml down
+#
+# ⚠️ 关键：**容器里的 127.0.0.1 是容器自己，不是宿主机**
+#   本机依赖的服务（Milvus/MySQL/Redis/PG/隧道）都在宿主上，必须走 host.docker.internal。
+#   下面是「本地验证」的取值；**上服务器时**改为（应用与模型同机）：
+#     EMBEDDING_BASE_URL: http://ztb-models:8000/v1     （同 docker 网络，见 networks）
+#     PDF_PARSE_BASE_URL: http://ztb-mineru-api:8000
+#     MILVUS_HOST / MYSQL_HOST / CACHE_REDIS_URL / CHECKPOINTER_POSTGRES_URL → 各云上组件
+# ============================================================
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/api/Dockerfile
+      args:
+        # 服务器 Docker Hub 直连不通 → 传 docker.m.daocloud.io/library/python:3.11-slim
+        BASE_IMAGE: ${API_BASE_IMAGE:-python:3.11-slim}
+    image: ztb-api:latest
+    container_name: ztb-api
+    restart: unless-stopped
+
+    # .env 提供密钥与业务配置；下面的 environment 覆盖其中指向宿主地址的项
+    env_file:
+      - ../../.env
+    environment:
+      API_HOST: "0.0.0.0"          # 容器内必须监听 0.0.0.0 才能被宿主映射到
+      API_PORT: "8000"
+      # —— 以下覆盖 .env 里指向 127.0.0.1 的地址（容器内那是指自己）——
+      MILVUS_HOST: "host.docker.internal"
+      MYSQL_HOST: "host.docker.internal"
+      CACHE_REDIS_URL: "redis://host.docker.internal:6380/0"
+      CHECKPOINTER_POSTGRES_URL: "postgresql://ztb:ztb_dev_pw@host.docker.internal:5433/ztb_checkpoints"
+      EMBEDDING_BASE_URL: "http://host.docker.internal:18003/v1"   # SSH 隧道 → 云上模型服务
+      PDF_PARSE_BASE_URL: "http://host.docker.internal:18002"      # SSH 隧道 → 云上 MinerU
+      LANGFUSE_HOST: "http://host.docker.internal:3000"
+
+    # Linux 上 host.docker.internal 需显式映射（Docker Desktop 自带，无需）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    ports:
+      - "${API_PUBLISH_PORT:-8000}:8000"
+
+    volumes:
+      # 检查点/缓存/manifest 等运行时数据 → 卷挂载，不进镜像
+      - ../../DATA:/app/DATA
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
