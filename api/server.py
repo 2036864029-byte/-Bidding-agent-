@@ -541,8 +541,36 @@ def create_app(
 app = create_app()
 
 
+def _worker_app() -> FastAPI:
+    """多 worker 模式的应用工厂（uvicorn ``factory=True`` 调用）。
+
+    为什么需要它：uvicorn 在 ``workers > 1`` 时**必须传 import string**（每个 worker
+    进程会重新导入应用），此时 ``main()`` 不在 worker 里执行 → 日志与追踪的初始化
+    不会生效。改用工厂后，**每个 worker 各自跑一次**初始化。
+    """
+    setup_logging()
+    from core.observability.tracing import setup_tracing
+
+    setup_tracing()
+    return create_app()
+
+
 def main() -> None:
     import uvicorn
+
+    host = os.getenv("API_HOST", "127.0.0.1")
+    port = int(os.getenv("API_PORT", "8000"))
+    # C7：多 worker / 多副本前的单机横向扩展。配合 Redis 限流/缓存 + Postgres 检查点
+    # 才能保证多进程间「配额/缓存/会话」一致（否则每 worker 各算一套，会话还会串）。
+    workers = max(1, int(os.getenv("API_WORKERS", "1")))
+
+    if workers > 1:
+        logger.info("启动 %d 个 uvicorn worker（每进程独立图实例）", workers)
+        uvicorn.run(
+            "api.server:_worker_app", factory=True,
+            host=host, port=port, log_config=None, workers=workers,
+        )
+        return
 
     # W0-7：先配置根 logger，再让 uvicorn 不接管日志（log_config=None），
     # 保证应用侧 INFO 埋点（分支耗时 / SQL profile / 检索埋点）在服务态落盘。
@@ -551,8 +579,6 @@ def main() -> None:
     from core.observability.tracing import setup_tracing
 
     setup_tracing()
-    host = os.getenv("API_HOST", "127.0.0.1")
-    port = int(os.getenv("API_PORT", "8000"))
     uvicorn.run(app, host=host, port=port, log_config=None)
 
 
