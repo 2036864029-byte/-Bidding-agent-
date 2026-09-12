@@ -1,0 +1,61 @@
+# ztb 模型服务 — embedding(bge-m3) + rerank(bge-reranker-v2-m3)，GPU 推理
+#
+# 用法（服务器侧）：
+#   cd ~/group_7/models
+#   cp .env.example .env        # 可选：设置 MODELS_API_KEY / 端口
+#   docker compose -p ztb-models up -d --build
+#
+# 暴露：POST /v1/embeddings、POST /v1/rerank、GET /health
+# 客户端切换（本地 .env）：
+#   EMBEDDING_BASE_URL=http://<服务器>:8003/v1
+#   EMBEDDING_API_KEY=<MODELS_API_KEY 同值>
+#   （reranker 复用 embedding 的 base_url/api_key，无需单独配置）
+#
+# 显存：两个模型 fp16 合计约 2.5GB。
+services:
+  models:
+    build:
+      context: .
+    image: ztb-models:latest
+    container_name: ztb-models
+    restart: unless-stopped
+
+    # GPU 透传
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    environment:
+      MODELS_API_KEY: ${MODELS_API_KEY:-}
+      EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-m3}
+      RERANK_MODEL: ${RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
+      # huggingface.co 在服务器不可达 → 走镜像
+      HF_ENDPOINT: https://hf-mirror.com
+      HF_HOME: /root/.cache/huggingface
+      TOKENIZERS_PARALLELISM: "false"
+
+    ports:
+      - "${MODELS_PORT:-8003}:8000"
+
+    volumes:
+      # 模型权重（首次下载约 4.6GB，之后复用）
+      - ztb_models_hf:/root/.cache/huggingface
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # 首次启动要下 ~4.6GB 模型，给足预热时间
+      start_period: 900s
+
+    # 与同机其他服务共处，限制资源占用
+    mem_limit: 24g
+
+volumes:
+  ztb_models_hf:
+    name: ztb_models_hf

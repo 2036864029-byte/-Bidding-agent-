@@ -24,12 +24,15 @@ pymysql>=1.1.0
 openai>=2.45,<4
 tiktoken>=0.7.0,<0.9.0
 
-# ── 重排序模型（Cross-Encoder，via SiliconFlow）──
-sentence-transformers>=3.0
+# ── 重排序模型 ──
+# 已移除 sentence-transformers（连带 torch ~491MB + transformers ~53MB，P6）：
+# reranker 走远端 HTTP（原 SiliconFlow、现自建 ztb-models 服务，见 deploy/models/），
+# 应用侧不做本地推理。全库 grep 零 import，删除不影响任何代码路径。
 
 # ── 文档处理 ──
 markdown>=3.6,<4.0
 lxml>=5.0,<7.0                     # 数据修复 A3-4d：pandas.read_html 解析业务网页表格所需（table_extract.py html_engine）
+pymupdf>=1.24,<2.0                 # PDF 主链路（23 个文件用；1.24+ 模块名为 pymupdf）。P6 清理时发现原先漏声明
 
 # ── 环境与工具 ──
 python-dotenv>=1.0.0,<2.0.0

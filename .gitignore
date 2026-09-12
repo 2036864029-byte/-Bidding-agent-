@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+.env.bak*                          # .env 的备份（含真实密钥，勿提交）
 *.pem
 *.key
 *.secret

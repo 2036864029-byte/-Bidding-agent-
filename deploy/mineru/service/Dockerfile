@@ -12,7 +12,12 @@
 #
 # 自定义基础镜像时：
 #   docker build --build-arg BASE_IMAGE=your-registry/pytorch:tag -t ztb-mineru-api:latest .
-ARG BASE_IMAGE=docker.m.daocloud.io/pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel
+#
+# 2026-09-12（新服务器）：改为 **runtime** 变体——runtime 层已在本地缓存
+# （ztb-models 用过同一 tag），devel 变体要重新拉 ~7GB（镜像源约 2.7MB/s，约 40 分钟）。
+# 纯推理不需要编译器：magic-pdf[full] 与 pycocotools 在 cp310 均有预编译 wheel。
+# 若 pycocotools 安装报编译错误，改回 -devel 即可。
+ARG BASE_IMAGE=docker.m.daocloud.io/pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
 
 FROM ${BASE_IMAGE}
 

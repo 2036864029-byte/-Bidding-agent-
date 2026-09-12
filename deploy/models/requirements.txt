@@ -1,0 +1,15 @@
+# ztb 模型服务运行期依赖（torch 由基础镜像提供，此处不重复安装）
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+
+# bge-m3 / bge-reranker-v2-m3 的标准加载方式。
+#
+# ⚠️ 版本上限是**踩坑钉的**（2026-09-12）：不加约束时 pip 会装
+# sentence-transformers 6.0.1 + transformers 5.17.0，后者在
+# transformers/integrations/accelerate.py:65 处 `NameError: name 'nn' is not defined`
+# （模块级类型注解引用了未导入的 torch.nn）→ 任何 sentence_transformers 导入即崩。
+#
+# transformers<4.52 另有一个原因（与 deploy/mineru 同）：>=4.52 的 torch.load
+# 安全检查（CVE-2025-32434）在 torch<2.6 时会拒绝加载 .bin 权重。
+sentence-transformers>=3.0,<4.0
+transformers>=4.41,<4.52
