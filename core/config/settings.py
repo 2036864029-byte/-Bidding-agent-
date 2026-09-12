@@ -595,8 +595,16 @@ class Settings:
     )
     # 扩展名白名单：与 public_kb.ingestion.router._EXT_TO_FORMAT 对齐；
     # 未命中直接 400，避免任意二进制走"嗅探失败 → 默认 text"的宽松路径。
+    # 图片类型（W4-3 图片 OCR）：走 RapidOCR 本地识别，数据不出服务端。
     allowed_upload_exts: tuple[str, ...] = (
         ".pdf", ".csv", ".txt", ".md", ".markdown",
+        ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp",
+    )
+
+    # 图片 OCR（W4-3）：RapidOCR 本地推理；关闭时上传图片降级返回（不产出乱码）。
+    image_ocr_enabled: bool = field(
+        default_factory=lambda: os.getenv("IMAGE_OCR_ENABLED", "true").lower()
+        in {"1", "true", "yes"}
     )
 
     # ============================================================

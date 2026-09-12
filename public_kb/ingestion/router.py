@@ -23,6 +23,14 @@ _EXT_TO_FORMAT: dict[str, SourceFormat] = {
     ".txt": "text",
     ".md": "text",
     ".markdown": "text",
+    # 图片（W4-3：图片 OCR）——扩展名优先，嗅探兜底
+    ".png": "image",
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".bmp": "image",
+    ".tif": "image",
+    ".tiff": "image",
+    ".webp": "image",
 }
 
 # 内容嗅探：无扩展名或扩展名不可信时的兜底
@@ -30,13 +38,18 @@ _SNIFF_SAMPLE_BYTES = 2048
 
 
 def _sniff_format(path: Path) -> Optional[SourceFormat]:
-    """读文件头部嗅探格式（优先级 pdf > csv > text）。"""
+    """读文件头部嗅探格式（优先级 pdf > image > csv > text）。"""
     try:
         head = path.read_bytes()[:_SNIFF_SAMPLE_BYTES]
     except OSError:
         return None
     if head.startswith(b"%PDF"):
         return "pdf"
+    # 图片 magic bytes（W4-3）：PNG / JPEG / BMP / TIFF(LE/BE) / WebP
+    if (head.startswith(b"\x89PNG") or head.startswith(b"\xff\xd8\xff")
+            or head.startswith(b"BM") or head.startswith(b"II*\x00")
+            or head.startswith(b"MM\x00*") or head.startswith(b"RIFF")):
+        return "image"
     # CSV 判据：头部含逗号分隔的多列（保守：至少 1 个逗号且非纯 JSON/二进制）
     try:
         head_text = head.decode("utf-8", errors="ignore")

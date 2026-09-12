@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Literal
 
-SourceFormat = Literal["text", "csv", "pdf"]
+SourceFormat = Literal["text", "csv", "pdf", "image"]
 IrFormat = Literal["markdown", "table"]
 
 # 统一换行（与 chunk_ids.normalize_chunk_text 口径一致，保证哈希稳定）
