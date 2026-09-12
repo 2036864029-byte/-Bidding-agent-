@@ -27,3 +27,25 @@ def _reset_inflight_gate():
     reset_inflight_gate()
     yield
     reset_inflight_gate()
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_backends(monkeypatch):
+    """C4：把缓存/限流后端钉在进程内，让测试与开发机的 .env 解耦。
+
+    为什么必须钉：若开发者把 .env 切成 `CACHE_BACKEND=redis` / `RATE_LIMIT_BACKEND=redis`，
+    测试会连带产生两个问题：
+      1. **依赖外部 Redis**（CI/他人机器上没有 → 大面积失败）；
+      2. **跨用例污染** —— `reset_caches()` 只清进程内注册表，**不清 Redis**，
+         上一轮（甚至上一次运行）的缓存条目会短路本用例的预期路径；
+         且 Redis 后端每次反序列化 → 返回**新对象**，断言 `is` 身份的用例会失败。
+
+    需要真实 Redis 的用例自行显式构造（见 test/core/test_ratelimit.py 的集成段）。
+    """
+    monkeypatch.setenv("CACHE_BACKEND", "memory")
+    monkeypatch.setenv("RATE_LIMIT_BACKEND", "memory")
+    from core.cache import reset_caches
+
+    reset_caches()
+    yield
+    reset_caches()

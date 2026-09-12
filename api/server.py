@@ -323,6 +323,11 @@ def create_app(
         RateLimitMiddleware,
         per_minute=settings.rate_limit_per_minute,
         burst=settings.rate_limit_burst,
+        global_per_minute=settings.rate_limit_global_per_minute,
+        global_burst=settings.rate_limit_global_burst,
+        # C4：redis 后端下多副本共享同一配额（memory 后端各副本各算一套）
+        backend=settings.rate_limit_backend,
+        redis_url=settings.cache_redis_url,   # 与检索缓存复用同一 Redis 实例
     )
     app.add_middleware(
         ApiKeyAuthMiddleware,

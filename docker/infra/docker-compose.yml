@@ -1,0 +1,59 @@
+# ============================================================
+# ztb 多进程基础设施 — Redis + PostgreSQL
+# 用途：为「多进程/多副本」能力提供共享状态（方案 C4/C5/C6）
+#   - Redis     → 共享检索缓存（C5）+ 分布式限流（C4）
+#   - PostgreSQL→ 跨机共享检查点（C6），替代默认的 sqlite
+# ============================================================
+# 使用方式：
+#   启动:  docker compose -f docker/infra/docker-compose.yml up -d
+#   停止:  docker compose -f docker/infra/docker-compose.yml down
+#   清空:  docker compose -f docker/infra/docker-compose.yml down -v && rm -rf docker/infra/*_data
+#
+# ⚠️ 端口刻意避开 Langfuse 占用的 6379 / 5432（本机 Langfuse 栈在跑）。
+# ============================================================
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ztb_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      - ./redis_data:/data
+    # appendonly：进程重启后缓存/限流状态不丢（AOF 每秒刷盘）
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ztb_network
+
+  postgres:
+    image: postgres:17
+    container_name: ztb_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-ztb}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-ztb_dev_pw}
+      POSTGRES_DB: ${PG_DB:-ztb_checkpoints}
+    ports:
+      - "${PG_PORT:-5433}:5432"
+    volumes:
+      - ./pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-ztb} -d ${PG_DB:-ztb_checkpoints}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - ztb_network
+
+networks:
+  ztb_network:
+    name: ztb_network
+    driver: bridge

@@ -653,13 +653,28 @@ class Settings:
     )
 
     # ============================================================
-    # 入口限流（W2-5）— 进程内令牌桶；0 = 关闭
+    # 入口限流（W2-5 / C4）— 令牌桶；0 = 关闭
     # ============================================================
+    # 客户端级（配额按租户/客户端计，W4-3）
     rate_limit_per_minute: int = field(
         default_factory=lambda: int(os.getenv("RATE_LIMIT_PER_MINUTE", "60"))
     )
     rate_limit_burst: int = field(
         default_factory=lambda: int(os.getenv("RATE_LIMIT_BURST", "20"))
+    )
+    # 全局级（整个服务端的请求速率上限，成本保护）；0 = 关闭
+    rate_limit_global_per_minute: int = field(
+        default_factory=lambda: int(os.getenv("RATE_LIMIT_GLOBAL_PER_MINUTE", "0"))
+    )
+    rate_limit_global_burst: int = field(
+        default_factory=lambda: int(
+            os.getenv("RATE_LIMIT_GLOBAL_BURST",
+                      os.getenv("RATE_LIMIT_GLOBAL_PER_MINUTE", "0"))
+        )
+    )
+    # 限流后端：memory（进程内，单副本）| redis（跨进程共享，**多副本必备**）
+    rate_limit_backend: str = field(
+        default_factory=lambda: os.getenv("RATE_LIMIT_BACKEND", "memory")
     )
 
     # ============================================================

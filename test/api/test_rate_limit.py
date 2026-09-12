@@ -88,3 +88,54 @@ def test_rate_limit_disabled_when_zero(monkeypatch):
 
     for _ in range(5):
         assert client.post("/chat", json={"question": "q"}).status_code == 200
+
+
+# ── C4：全局限流（服务端总量）────────────────────────────────
+
+def test_global_limit_ignores_client_identity(monkeypatch):
+    """全局限流是**服务端总量**：换不同客户端也照样拦（与按客户端配额不同）。"""
+    monkeypatch.setenv("RATE_LIMIT_PER_MINUTE", "60")       # 客户端级宽松
+    monkeypatch.setenv("RATE_LIMIT_BURST", "20")
+    monkeypatch.setenv("RATE_LIMIT_GLOBAL_PER_MINUTE", "60")
+    monkeypatch.setenv("RATE_LIMIT_GLOBAL_BURST", "1")
+    client = _client()
+
+    first = client.post("/chat", json={"question": "q"},
+                        headers={"X-Forwarded-For": "1.1.1.1"})
+    assert first.status_code == 200
+
+    # 换一个"客户端"仍被拦 → 说明拦的是全局总量，不是客户端配额
+    blocked = client.post("/chat", json={"question": "q"},
+                          headers={"X-Forwarded-For": "2.2.2.2"})
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "sys_2003"
+
+
+def test_global_limit_disabled_by_default(monkeypatch):
+    """`RATE_LIMIT_GLOBAL_PER_MINUTE=0`（默认）→ 不做全局限流。"""
+    monkeypatch.setenv("RATE_LIMIT_PER_MINUTE", "60")
+    monkeypatch.setenv("RATE_LIMIT_BURST", "20")
+    monkeypatch.setenv("RATE_LIMIT_GLOBAL_PER_MINUTE", "0")
+    client = _client()
+
+    for i in range(5):
+        r = client.post("/chat", json={"question": "q"},
+                        headers={"X-Forwarded-For": f"3.3.3.{i}"})
+        assert r.status_code == 200
+
+
+def test_middleware_accepts_redis_backend_and_global_params():
+    """后端与全局参数可注入（Redis 不可用时应 fail-open 而非报错）。"""
+    from api.middleware.rate_limit import RateLimitMiddleware
+
+    mw = RateLimitMiddleware(
+        app=None,
+        per_minute=60, burst=5,
+        global_per_minute=120, global_burst=10,
+        backend="redis", redis_url="redis://127.0.0.1:1/0",   # 故意不可达
+    )
+    assert mw.backend == "redis"
+    assert mw.enabled is True
+    # fail-open：Redis 不可达时放行，不抛错
+    assert mw._global_limiter.allow(mw.GLOBAL_KEY, now=0.0) is True
+
