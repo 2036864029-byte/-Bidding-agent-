@@ -126,3 +126,71 @@ def test_kb_retrieve_uses_cache():
     assert out4 is not out1
     assert calls["n"] == 2               # 只真正检索了 2 次（两个不同问题）
 
+
+# ── W4-2b Redis 共享缓存 ─────────────────────────────────────
+
+
+def _fake_redis():
+    import fakeredis
+
+    return fakeredis.FakeRedis()
+
+
+def test_redis_cache_hit_miss_and_version():
+    from core.cache import RedisBackedCache
+
+    c = RedisBackedCache("kb", ttl=60, version="v1", client=_fake_redis())
+    k = c.key("问题")
+    assert c.get(k) is MISSING
+    c.set(k, {"chunks": [1]})
+    assert c.get(k) == {"chunks": [1]}       # pickle 往返
+    s = c.stats()
+    assert s["hits"] == 1 and s["misses"] == 1
+
+    # 版本化失效：同"问题"、版本变了 → 新 key 未命中
+    c2 = RedisBackedCache("kb", ttl=60, version="v2", client=_fake_redis())
+    assert c2.get(c2.key("问题")) is MISSING
+
+
+def test_redis_cache_pickle_roundtrip_records():
+    """缓存对象为检索结果（dict/list）→ pickle 往返一致。"""
+    from core.cache import RedisBackedCache
+
+    c = RedisBackedCache("price", ttl=60, version="v1", client=_fake_redis())
+    k = c.key("i1")
+    c.set(k, {"records": [{"company_name": "甲"}, {"company_name": "乙"}], "total_found": 2})
+    out = c.get(k)
+    assert out["total_found"] == 2 and out["records"][1]["company_name"] == "乙"
+    # 返回的是反序列化副本，调用方改动不影响缓存
+    out["records"].append({"company_name": "丙"})
+    assert len(c.get(k)["records"]) == 2
+
+
+def test_redis_cache_clear_and_prefix_scope():
+    from core.cache import RedisBackedCache
+
+    fake = _fake_redis()
+    kb = RedisBackedCache("kb", ttl=60, version="v1", client=fake)
+    pr = RedisBackedCache("price", ttl=60, version="v1", client=fake)
+    kb.set(kb.key("q"), 1)
+    pr.set(pr.key("q"), 2)
+    kb.clear()
+    assert kb.get(kb.key("q")) is MISSING
+    assert pr.get(pr.key("q")) == 2          # 只清 kb 前缀，不误伤 price
+
+
+def test_redis_cache_get_cache_backend_switch(monkeypatch):
+    """CACHE_BACKEND=redis → get_cache 返回 Redis 后端；memory → 进程内。"""
+    from core.cache import get_cache, reset_caches
+
+    monkeypatch.setenv("CACHE_BACKEND", "redis")
+    monkeypatch.setenv("CACHE_REDIS_URL", "redis://localhost:6379/9")
+    reset_caches()
+    c = get_cache("kb")
+    assert c is not None and type(c).__name__ == "RedisBackedCache"
+
+    monkeypatch.setenv("CACHE_BACKEND", "memory")
+    reset_caches()
+    assert type(get_cache("kb")).__name__ == "VersionedTTLCache"
+    reset_caches()
+

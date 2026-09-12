@@ -466,6 +466,13 @@ class Settings:
     cache_price_version: str = field(
         default_factory=lambda: os.getenv("CACHE_PRICE_VERSION", "v1")
     )
+    # 缓存后端：memory（进程内 cachetools，默认）| redis（多副本共享，W4-2b）
+    cache_backend: str = field(
+        default_factory=lambda: os.getenv("CACHE_BACKEND", "memory")
+    )
+    cache_redis_url: str = field(
+        default_factory=lambda: os.getenv("CACHE_REDIS_URL", "redis://localhost:6379/0")
+    )
 
     # ============================================================
     # 全局总超时（任务4）— 单次业务节点最大允许执行时间

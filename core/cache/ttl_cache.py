@@ -118,20 +118,25 @@ class VersionedTTLCache:
 
 
 def _build_caches() -> Dict[str, "VersionedTTLCache"]:
-    """按 Settings 构造 KB / price 两个缓存（版本信号不同）。"""
+    """按 Settings 构造 KB / price 两个缓存（版本信号不同；backend 可切换 memory/redis）。"""
     from core.config.settings import Settings
 
     s = Settings()
     corpus_version = s.cache_corpus_version or str(getattr(s, "collection_name", "") or "")
+    backend = getattr(s, "cache_backend", "memory")
+
+    def _make(name: str, ttl: int, version: str):
+        if backend == "redis":
+            from .redis_backend import RedisBackedCache
+
+            return RedisBackedCache(name, ttl=ttl, version=version, url=s.cache_redis_url)
+        return VersionedTTLCache(
+            name, maxsize=s.cache_maxsize, ttl=ttl, version=version,
+        )
+
     return {
-        "kb": VersionedTTLCache(
-            "kb", maxsize=s.cache_maxsize, ttl=s.cache_kb_ttl_seconds,
-            version=corpus_version or "kb-v1",
-        ),
-        "price": VersionedTTLCache(
-            "price", maxsize=s.cache_maxsize, ttl=s.cache_price_ttl_seconds,
-            version=s.cache_price_version,
-        ),
+        "kb": _make("kb", s.cache_kb_ttl_seconds, corpus_version or "kb-v1"),
+        "price": _make("price", s.cache_price_ttl_seconds, s.cache_price_version),
     }
 
 
