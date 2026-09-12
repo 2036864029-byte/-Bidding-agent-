@@ -139,3 +139,24 @@ def test_middleware_accepts_redis_backend_and_global_params():
     # fail-open：Redis 不可达时放行，不抛错
     assert mw._global_limiter.allow(mw.GLOBAL_KEY, now=0.0) is True
 
+
+def test_status_polling_is_exempt_from_rate_limit(monkeypatch):
+    """轮询型端点 `GET /files/{id}/status` 豁免限流 —— 前端高频轮询不该 429。
+
+    背景：该端点是廉价内存查表（无 LLM/DB 开销），但前端要按秒级轮询；
+    实跑发现 0.5s 间隔轮询 5 个文件即打满按客户端令牌桶，全部 429。
+    """
+    monkeypatch.setenv("RATE_LIMIT_PER_MINUTE", "60")
+    monkeypatch.setenv("RATE_LIMIT_BURST", "1")     # 极紧：豁免之外的请求都会 429
+    client = _client()
+
+    # 先确认限流确实在生效
+    assert client.post("/chat", json={"question": "q"}).status_code == 200
+    assert client.post("/chat", json={"question": "q"}).status_code == 429
+
+    # 轮询端点应豁免：连打 5 次都是 404（文件不存在），绝不能是 429
+    for _ in range(5):
+        r = client.get("/files/whatever-id/status")
+        assert r.status_code == 404, f"轮询端点不应被限流，实得 {r.status_code}"
+
+

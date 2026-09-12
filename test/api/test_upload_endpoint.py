@@ -60,18 +60,15 @@ def _put_file(
 
 
 def test_upload_parses_and_returns_file_id(monkeypatch):
-    from public_kb.ingestion.parse_tool import FileParseResult
-
     calls: dict = {}
 
-    def fake_parse(data, *, source_name):
-        calls["source_name"] = source_name
-        return FileParseResult(
-            source_name=source_name, source_format="text",
-            markdown="第一章 内容", preview="第一章 内容", chunk_count=1,
-        )
+    def fake_parse(data, name):
+        calls["name"] = name
+        return {"source_name": name, "source_format": "text",
+                "markdown": "第一章 内容", "preview": "第一章 内容", "chunk_count": 1}
 
-    monkeypatch.setattr("api.server.parse_file", fake_parse)
+    # 注入接缝：真实实现是独立进程（core.jobs.cpu_pool），测试里换成假解析器
+    monkeypatch.setattr("api.server._parse_upload", fake_parse)
     file_store.reset_store()
     client, _ = _client()
 
@@ -83,14 +80,14 @@ def test_upload_parses_and_returns_file_id(monkeypatch):
     assert body["source_name"] == "a.txt"
     assert body["preview"] == "第一章 内容"
     assert file_store.get(body["file_id"]) is not None
-    assert calls["source_name"] == "a.txt"
+    assert calls["name"] == "a.txt"
 
 
 def test_upload_parse_failure_400(monkeypatch):
-    def bad_parse(data, *, source_name):
+    def bad_parse(data, name):
         raise ValueError("未解析出可读文本")
 
-    monkeypatch.setattr("api.server.parse_file", bad_parse)
+    monkeypatch.setattr("api.server._parse_upload", bad_parse)
     file_store.reset_store()
     client, _ = _client()
 
@@ -126,21 +123,20 @@ def test_upload_rejects_oversize(monkeypatch):
 
 
 def test_upload_parses_in_worker_thread(monkeypatch):
-    """W0-11：解析在工作线程执行，不阻塞事件循环。"""
-    import threading
+    """W0-11：解析不在调用线程执行（先经工作线程，再下沉独立进程）。
 
-    from public_kb.ingestion.parse_tool import FileParseResult
+    解析是 CPU/GIL 重活：若在事件循环所在线程直接跑会卡住整个服务。
+    """
+    import threading
 
     seen: dict = {}
 
-    def fake_parse(data, *, source_name):
+    def fake_parse(data, name):
         seen["thread"] = threading.get_ident()
-        return FileParseResult(
-            source_name=source_name, source_format="text",
-            markdown="M", preview="M", chunk_count=1,
-        )
+        return {"source_name": name, "source_format": "text",
+                "markdown": "M", "preview": "M", "chunk_count": 1}
 
-    monkeypatch.setattr("api.server.parse_file", fake_parse)
+    monkeypatch.setattr("api.server._parse_upload", fake_parse)
     file_store.reset_store()
     client, _ = _client()
 
@@ -180,14 +176,10 @@ def test_file_of_other_session_is_rejected():
 
 def test_upload_returns_session_id_and_scopes_file(monkeypatch):
     """W0-6：上传未带 session_id 时生成并回传，文件归属该会话。"""
-    from public_kb.ingestion.parse_tool import FileParseResult
-
     monkeypatch.setattr(
-        "api.server.parse_file",
-        lambda data, *, source_name: FileParseResult(
-            source_name=source_name, source_format="text",
-            markdown="M", preview="M", chunk_count=1,
-        ),
+        "api.server._parse_upload",
+        lambda data, name: {"source_name": name, "source_format": "text",
+                            "markdown": "M", "preview": "M", "chunk_count": 1},
     )
     file_store.reset_store()
     client, _ = _client()

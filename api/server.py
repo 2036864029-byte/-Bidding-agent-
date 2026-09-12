@@ -18,7 +18,6 @@ import os
 import threading
 import time
 import uuid
-from functools import partial
 from pathlib import Path
 from typing import AsyncIterator, Callable, Optional
 
@@ -45,7 +44,6 @@ from core.protocol.renderers.api import reply_to_response
 from core.protocol.reply import to_reply
 from core.session import get_session_registry
 from core.streaming.sink import StreamSink, set_active_sink
-from public_kb.ingestion.parse_tool import parse_file
 
 from . import file_store
 from .deps import get_agent
@@ -67,6 +65,20 @@ def _resolve_session_id(session_id: Optional[str]) -> str:
     独立；服务端把生成的 id 随响应回传，客户端带回即可延续同一会话。
     """
     return session_id or uuid.uuid4().hex
+
+
+def _parse_upload(data: bytes, name: str) -> dict:
+    """解析上传文件 → 可落库的 dict（**独立进程**执行）。
+
+    解析是 CPU/GIL 密集：跑在主进程会与请求链路抢 GIL（实测 5 并发上传把同期
+    提问 p95 从 3.41s 拉到 6.29s）。故交给 `core.jobs.cpu_pool` 在独立进程执行，
+    主进程只负责把结果落进 file_store。
+
+    **本函数是可替换接缝**：测试 monkeypatch 它注入假解析器，免起子进程。
+    """
+    from core.jobs.cpu_pool import parse_file_worker, run_cpu_task
+
+    return run_cpu_task(parse_file_worker, data, name)
 
 
 def _resolve_context_docs(file_ids: list[str], session_id: str) -> list[tuple[str, str]]:
@@ -375,19 +387,18 @@ def create_app(
         _validate_upload_name(name, allowed_exts)
         data = await _read_upload_limited(file, max_bytes)
         try:
-            # W0-11：解析是 CPU/IO 重活，放到工作线程，避免阻塞事件循环
-            result = await anyio.to_thread.run_sync(
-                partial(parse_file, data, source_name=name)
-            )
+            # W0-11 + 解析隔离：先放**工作线程**避免阻塞事件循环，再放**独立进程**
+            # 避免解析抢主进程 GIL（见 _parse_upload / core.jobs.cpu_pool）
+            res = await anyio.to_thread.run_sync(_parse_upload, data, name)
         except (ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         record = file_store.FileRecord(
             file_id=file_store.new_file_id(),
-            source_name=result.source_name,
-            source_format=result.source_format,
-            markdown=result.markdown,
-            preview=result.preview,
-            chunk_count=result.chunk_count,
+            source_name=res["source_name"],
+            source_format=res["source_format"],
+            markdown=res["markdown"],
+            preview=res["preview"],
+            chunk_count=res["chunk_count"],
             session_id=session_scope,
             created_at=time.time(),
         )
@@ -432,27 +443,30 @@ def create_app(
         data = await _read_upload_limited(file, max_bytes)
 
         def _parse_and_store() -> dict:
-            """worker 内执行：解析 → 存 file_store（file_id = 当前任务 id）。"""
-            from public_kb.ingestion.parse_tool import parse_file
+            """worker 内执行：解析 → 存 file_store（file_id = 当前任务 id）。
 
+            解析放到**独立进程**（core.jobs.cpu_pool）：PDF 解析是 CPU/GIL 密集，
+            跑在主进程会拖慢同期提问链路（实测 5 并发上传使提问 p95 3.41s→6.29s）。
+            file_store 是进程内状态，故**落库仍在主进程**。
+            """
             fid = _current_task_id.get()
-            result = parse_file(data, source_name=name)
+            res = _parse_upload(data, name)
             file_store.put(file_store.FileRecord(
                 file_id=fid,
-                source_name=result.source_name,
-                source_format=result.source_format,
-                markdown=result.markdown,
-                preview=result.preview,
-                chunk_count=result.chunk_count,
+                source_name=res["source_name"],
+                source_format=res["source_format"],
+                markdown=res["markdown"],
+                preview=res["preview"],
+                chunk_count=res["chunk_count"],
                 session_id=session_scope,
                 created_at=time.time(),
             ))
             return {
                 "file_id": fid,
-                "source_name": result.source_name,
-                "source_format": result.source_format,
-                "preview": result.preview,
-                "chunk_count": result.chunk_count,
+                "source_name": res["source_name"],
+                "source_format": res["source_format"],
+                "preview": res["preview"],
+                "chunk_count": res["chunk_count"],
                 "session_id": session,
             }
 
@@ -472,19 +486,25 @@ def create_app(
         """异步上传任务状态（W4-3）：pending | processing | done | error。
 
         done 时返回与同步上传一致的文件信息；error 时返回解析失败原因（可重传）。
+
+        **契约：只需 file_id 即可查询**（无需 session_id）。file_id 是 128 位随机 id，
+        本身即能力凭据；未带 session_id 时 `_resolve_session_id` 会**每次生成新会话**，
+        若按会话过滤则"上传后轮询"必然失败（原先即如此 → 500）。
+        真正需要归属校验的是 `/chat` 的 file_ids 注入路径（见 `_resolve_context_docs`）。
         """
         from core.jobs import get_queue
 
         session = _resolve_session_id(session_id)
         set_session_id(session)
-        session_scope = tenant_scoped(session)
 
         st = get_queue().status(file_id)
         if st is None:
-            # 无进行中任务 → 回退查 file_store（可能已完成且已存在）
-            rec = file_store.get(file_id, session_id=session_scope)
+            # 任务表没有 → 可能已完成并写入 file_store（回退查，不按会话过滤）
+            rec = file_store.get(file_id)
             if rec is None:
-                raise HTTPException(status_code=404, detail="任务或文件不存在")
+                raise HTTPException(
+                    status_code=404, detail="任务或文件不存在（或已过期）"
+                )
             return {
                 "file_id": file_id, "status": "done",
                 "source_name": rec.source_name,
@@ -499,10 +519,11 @@ def create_app(
         if st["status"] == "error":
             return {"file_id": file_id, "status": "error",
                     "error": st["error"], "session_id": session}
-        # done：任务已完成，file_store 应已有记录
-        rec = file_store.get(file_id, session_id=session_scope)
+        # done：任务已完成，file_store 应已有记录（不按会话过滤，见方法文档）
+        rec = file_store.get(file_id)
         if rec is None:
-            raise HTTPException(status_code=500, detail="任务完成但文件记录缺失")
+            # file_store TTL 为 1 小时：过期后属"找不到了"，不是服务端错误
+            raise HTTPException(status_code=404, detail="任务已完成，但文件记录已过期")
         return {
             "file_id": file_id, "status": "done",
             "source_name": rec.source_name,

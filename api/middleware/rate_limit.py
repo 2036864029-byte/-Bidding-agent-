@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Iterable, Optional, Tuple
 
@@ -27,6 +28,11 @@ from core.ratelimit import TokenBucket, build_limiter
 logger = logging.getLogger(__name__)
 
 DEFAULT_EXEMPT_PATHS: Tuple[str, ...] = ("/health", "/metrics")
+
+#: 轮询型端点：廉价的只读查询（内存查表，无 LLM/DB 开销），但前端会**高频**轮询。
+#: 跑按客户端限流会让正常轮询直接 429（实测：0.5s 间隔轮询 5 个文件即打满 burst）。
+#: 限流本意是保护昂贵资源，对这类端点弊大于利，故豁免。
+_POLL_EXEMPT_RE = re.compile(r"^/files/[^/]+/status$")
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -114,7 +120,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         )
 
     async def dispatch(self, request: Request, call_next):
-        if not self.enabled or request.url.path in self._exempt:
+        path = request.url.path
+        if (not self.enabled) or path in self._exempt or _POLL_EXEMPT_RE.match(path):
             return await call_next(request)
 
         now = time.monotonic()
