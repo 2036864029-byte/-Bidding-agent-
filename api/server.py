@@ -325,6 +325,9 @@ def create_app(
 
         只存临时会话缓存（api.file_store），**不写入任何向量库**（防污染，D-4）。
         未传 session_id 时服务端生成并回传，后续 /chat 带上同一 id 才能使用该文件。
+
+        同步版本：小文件即时返回解析结果。大文件解析耗时，请用
+        ``POST /files/upload/async`` + ``GET /files/{file_id}/status``（W4-3 队列解耦）。
         """
         session = _resolve_session_id(session_id)
         set_session_id(session)  # W2-2：会话 id 进入日志上下文
@@ -366,6 +369,109 @@ def create_app(
             "source_format": record.source_format,
             "preview": record.preview,
             "chunk_count": record.chunk_count,
+            "session_id": session,
+        }
+
+    @app.post("/files/upload/async")
+    async def upload_file_async(
+        file: UploadFile = FileParam(...),
+        session_id: Optional[str] = None,
+    ) -> dict:
+        """异步上传（W4-3 队列解耦）：立即返回 file_id + status=pending，后台解析。
+
+        大文件（PDF/图片 OCR）解析耗时，用本端点避免 HTTP 阻塞；随后轮询
+        ``GET /files/{file_id}/status`` 拿结果。完成后的 file_id 与同步上传等价，
+        可传给 ``/chat`` 的 ``file_ids`` 使用。
+        """
+        from core.jobs import _current_task_id, get_queue
+
+        session = _resolve_session_id(session_id)
+        set_session_id(session)
+        session_scope = tenant_scoped(session)
+        get_session_registry().touch(session_scope)
+        name = file.filename or "upload"
+        max_bytes, allowed_exts = _upload_limits()
+        _validate_upload_name(name, allowed_exts)
+        data = await _read_upload_limited(file, max_bytes)
+
+        def _parse_and_store() -> dict:
+            """worker 内执行：解析 → 存 file_store（file_id = 当前任务 id）。"""
+            from public_kb.ingestion.parse_tool import parse_file
+
+            fid = _current_task_id.get()
+            result = parse_file(data, source_name=name)
+            file_store.put(file_store.FileRecord(
+                file_id=fid,
+                source_name=result.source_name,
+                source_format=result.source_format,
+                markdown=result.markdown,
+                preview=result.preview,
+                chunk_count=result.chunk_count,
+                session_id=session_scope,
+                created_at=time.time(),
+            ))
+            return {
+                "file_id": fid,
+                "source_name": result.source_name,
+                "source_format": result.source_format,
+                "preview": result.preview,
+                "chunk_count": result.chunk_count,
+                "session_id": session,
+            }
+
+        task_id = get_queue().submit(_parse_and_store)
+        return {
+            "file_id": task_id,
+            "session_id": session,
+            "status": "pending",
+            "message": "解析中，轮询 GET /files/{file_id}/status 获取结果",
+        }
+
+    @app.get("/files/{file_id}/status")
+    def file_status(
+        file_id: str,
+        session_id: Optional[str] = None,
+    ) -> dict:
+        """异步上传任务状态（W4-3）：pending | processing | done | error。
+
+        done 时返回与同步上传一致的文件信息；error 时返回解析失败原因（可重传）。
+        """
+        from core.jobs import get_queue
+
+        session = _resolve_session_id(session_id)
+        set_session_id(session)
+        session_scope = tenant_scoped(session)
+
+        st = get_queue().status(file_id)
+        if st is None:
+            # 无进行中任务 → 回退查 file_store（可能已完成且已存在）
+            rec = file_store.get(file_id, session_id=session_scope)
+            if rec is None:
+                raise HTTPException(status_code=404, detail="任务或文件不存在")
+            return {
+                "file_id": file_id, "status": "done",
+                "source_name": rec.source_name,
+                "source_format": rec.source_format,
+                "preview": rec.preview,
+                "chunk_count": rec.chunk_count,
+                "session_id": session,
+            }
+        if st["status"] in ("pending", "processing"):
+            return {"file_id": file_id, "status": st["status"],
+                    "session_id": session}
+        if st["status"] == "error":
+            return {"file_id": file_id, "status": "error",
+                    "error": st["error"], "session_id": session}
+        # done：任务已完成，file_store 应已有记录
+        rec = file_store.get(file_id, session_id=session_scope)
+        if rec is None:
+            raise HTTPException(status_code=500, detail="任务完成但文件记录缺失")
+        return {
+            "file_id": file_id, "status": "done",
+            "source_name": rec.source_name,
+            "source_format": rec.source_format,
+            "preview": rec.preview,
+            "chunk_count": rec.chunk_count,
             "session_id": session,
         }
 

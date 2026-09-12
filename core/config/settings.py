@@ -607,6 +607,11 @@ class Settings:
         in {"1", "true", "yes"}
     )
 
+    # 任务队列（W4-3 队列解耦）：后台 worker 数（异步上传解析用）
+    job_queue_workers: int = field(
+        default_factory=lambda: int(os.getenv("JOB_QUEUE_WORKERS", "2"))
+    )
+
     # ============================================================
     # 会话与检查点（W2-4）
     # ============================================================
