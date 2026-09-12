@@ -237,9 +237,12 @@ class Settings:
         )
     )
     pdf_tiered_book_timeout_sec: int = field(
-        # 单本导出超时：超时则终止该本并继续下一本。默认 2h——MinerU 对
-        # OCR/复杂页约 110~150s/范围，book2 ~45 范围 / book3 ~50 范围，各需
-        # 约 1~1.5h；慢但进展中的书应允许跑完，卡死（如异常大范围）才被切断。
+        # 单本导出超时：超时则终止该本并继续下一本。默认 2h 是**兜底上限**
+        # （防卡死），不是预期耗时——实测单本首次解析 6s~8min（2026-09-12
+        # manifest：range 数 书1=6 / 书2=1 / 书3=17；电子书走本地 fast_text
+        # 秒级，扫描 OCR 书因文本层碎片多较慢）。
+        # 注：2026-09-05「修复①」前曾因误判双栏导致 45~50 范围/册、耗时
+        # 1~1.5h，该数据已作废。
         default_factory=lambda: int(
             os.getenv("PDF_TIERED_BOOK_TIMEOUT_SEC", "7200")
         )

@@ -210,15 +210,15 @@ def _content_img_ratio(
 
 
 def _extract_fonts(page: Any) -> Tuple[str, ...]:
-    fonts = set()
+    """页面字体名 —— 走 ``get_fonts()``（页级字体表），不再遍历 ``get_text("dict")``。
+
+    OCR 扫描件的文本层由海量碎片 span 构成，``get_text("dict")`` 需展开全部
+    span/字体/bbox（实测 198ms/页）；而 ``get_fonts()`` 只读页级字体表
+    （0.26ms/页）。两者给出的字体名集合语义一致（都是 basefont 名）。
+    """
     try:
-        d = page.get_text("dict") or {}
-        for block in d.get("blocks", []):
-            for line in block.get("lines", []):
-                for span in line.get("spans", []):
-                    font = span.get("font")
-                    if font:
-                        fonts.add(str(font))
+        return tuple(
+            sorted({str(f[3]) for f in (page.get_fonts() or []) if len(f) > 3})
+        )
     except Exception:
-        pass
-    return tuple(sorted(fonts))
+        return ()

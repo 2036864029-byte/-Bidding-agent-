@@ -525,10 +525,19 @@ class PdfRouter:
         return out
 
     def _probe_parser_version(self) -> str:
-        """探测 MinerU 服务端的 parser_version；失败时回退到空串。"""
+        """探测 MinerU 服务端的 parser_version；失败时回退「上次已知版本」（P5）。
+
+        回退很关键：缓存键含版本号，服务不可达时若退化为空串，本地缓存会
+        全部 miss → 转 HTTP → 无 allow_partial 时整本解析失败。回退后离线
+        重跑可命中本地缓存。假 parser（测试注入）无该方法时退回 health()。
+        """
         assert self._miner_u_router is not None
+        parser = self._miner_u_router.parser
+        resolver = getattr(parser, "resolve_parser_version", None)
         try:
-            return str(self._miner_u_router.parser.health().get("parser_version") or "")
+            if callable(resolver):
+                return str(resolver() or "")
+            return str(parser.health().get("parser_version") or "")
         except Exception:  # noqa: BLE001
             return ""
 

@@ -29,6 +29,13 @@ from core.config.settings import Settings
 
 logger = logging.getLogger(__name__)
 
+# P5：health 探测用短超时（秒）。服务不可达时须**快速失败**并回退「上次已知
+# 版本」，否则默认的解析超时（mineru_api_timeout，默认 1800s）会让离线重跑
+# 长时间挂起。
+_PROBE_TIMEOUT_SEC = 5.0
+# P5：持久化的 parser_version 文件名（落在本地缓存目录）。
+_VERSION_FILE = "_parser_version.txt"
+
 
 class MinerUApiParser:
     """通过 HTTP 调用 MinerU 解析服务，把（子）PDF 解析为 Markdown。"""
@@ -47,6 +54,8 @@ class MinerUApiParser:
         self._timeout = (
             timeout if timeout is not None else settings.mineru_api_timeout
         )
+        # P5：服务不可达时的「上次已知版本」懒加载 memo（避免反复扫盘）。
+        self._fallback_version: Optional[str] = None
 
     @property
     def base_url(self) -> str:
@@ -103,12 +112,76 @@ class MinerUApiParser:
 
     # ── 内部实现 ───────────────────────────────────────────
 
-    def _parser_version(self) -> str:
-        """从 /health 探测 parser_version（失败时用空串，不阻断解析）。"""
+    def resolve_parser_version(self) -> str:
+        """解析 parser_version：探测成功则持久化；失败则回退「上次已知版本」。
+
+        P5：缓存键含 parser_version。服务不可达时若返回空串，本地缓存会**全部
+        miss** → 转 HTTP → 失败 → 无 `allow_partial` 时整本解析失败。回退到
+        上次已知值后，离线重跑可全部命中本地缓存。
+        """
         try:
-            return str(self._request("GET", "/health").get("parser_version") or "")
-        except Exception:
+            payload = self._request("GET", "/health", timeout=_PROBE_TIMEOUT_SEC)
+            version = str(payload.get("parser_version") or "")
+        except Exception:  # noqa: BLE001  不可达/超时 → 走回退
+            version = ""
+        if version:
+            self._persist_version(version)
+            return version
+        return self._fallback_parser_version()
+
+    def _parser_version(self) -> str:
+        """（内部）解析 parser_version —— 等价于 resolve_parser_version。"""
+        return self.resolve_parser_version()
+
+    def _version_file(self) -> Path:
+        return self._cache_dir() / _VERSION_FILE
+
+    def _persist_version(self, version: str) -> None:
+        try:
+            self._cache_dir().mkdir(parents=True, exist_ok=True)
+            self._version_file().write_text(version, encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001  持久化失败不影响解析
+            logger.warning("持久化 parser_version 失败: %s", exc)
+
+    def _fallback_parser_version(self) -> str:
+        """服务不可达时的版本回退（进程内 memo，避免反复扫盘）。
+
+        来源优先级：`_parser_version.txt` → 任一缓存 sidecar `.json` 的
+        `parser_version`（缓存写入时记录）→ 空串（无历史可依）。
+        """
+        if self._fallback_version is not None:
+            return self._fallback_version
+        version = ""
+        try:
+            vf = self._version_file()
+            if vf.exists():
+                version = vf.read_text(encoding="utf-8").strip()
+        except Exception:  # noqa: BLE001
+            version = ""
+        if not version:
+            version = self._scan_sidecars_for_version()
+            if version:
+                self._persist_version(version)
+        self._fallback_version = version
+        return version
+
+    def _scan_sidecars_for_version(self) -> str:
+        """从缓存 sidecar `.json` 恢复 parser_version（缓存写入时记录过）。"""
+        try:
+            for meta in sorted(self._cache_dir().glob("*.json")):
+                try:
+                    data = json.loads(meta.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001  单条损坏跳过
+                    continue
+                version = str(data.get("parser_version") or "").strip()
+                if version:
+                    logger.info(
+                        "离线回退：从缓存 sidecar 恢复 parser_version=%s", version
+                    )
+                    return version
+        except Exception:  # noqa: BLE001
             return ""
+        return ""
 
     def _request(
         self,
@@ -117,12 +190,14 @@ class MinerUApiParser:
         *,
         file_path: Optional[Path] = None,
         page_range: Optional[str] = None,
+        timeout: Optional[float] = None,
     ) -> dict:
         url = f"{self._base_url}{path}"
         headers = {"Authorization": f"Bearer {self._token}"} if self._token else {}
+        effective_timeout = self._timeout if timeout is None else timeout
         try:
             if method == "GET":
-                resp = httpx.get(url, headers=headers, timeout=self._timeout)
+                resp = httpx.get(url, headers=headers, timeout=effective_timeout)
             else:
                 file_bytes = Path(file_path).read_bytes()
                 resp = httpx.post(
@@ -136,7 +211,7 @@ class MinerUApiParser:
                             "application/pdf",
                         )
                     },
-                    timeout=self._timeout,
+                    timeout=effective_timeout,
                 )
         except httpx.HTTPError as exc:
             raise RuntimeError(f"MinerU 服务不可达 ({url}): {exc}") from exc
