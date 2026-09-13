@@ -63,11 +63,45 @@ def _hermetic_backends(monkeypatch):
     # 检查点同理：默认 memory（不落盘、不依赖 PG）。需要真后端的用例显式构造
     # （见 test/core/test_checkpointer_postgres.py）。
     monkeypatch.setenv("CHECKPOINTER_BACKEND", "memory")
+    # C1：文档索引复用 file_store 后端配置 → 同样是进程级单例，跨用例会互相污染
+    # （同一 file_id+session 命中上一用例的索引）。
     from api import file_store
+    from core import doc_index
     from core.cache import reset_caches
 
     reset_caches()
     file_store.reset_store()   # 后端是进程级单例，可能已按 .env 构造过
+    doc_index.reset_index()
     yield
     reset_caches()
     file_store.reset_store()
+    doc_index.reset_index()
+
+
+@pytest.fixture
+def fake_doc_embeddings(monkeypatch):
+    """C1 测试用假 embedding：字符计数向量（零网络、确定性）。
+
+    经 monkeypatch ``core.embeddings.get_embeddings`` 注入——``core.doc_index`` 与
+    ``api.doc_context`` 都在函数体内 ``from core.embeddings import get_embeddings``，
+    故替换模块属性即对二者同时生效。字符重叠 → 余弦相似，足以验证排序与融合。
+    """
+    import numpy as np
+
+    import core.embeddings as ce
+
+    vocab = "投标保证金金额评标委员会成员人数招标方式废标条款工期质量验收标准合同价款支付"
+
+    class _FakeEmbeddings:
+        def _vec(self, text: str):
+            return np.array(
+                [float(text.count(ch)) for ch in vocab], dtype=np.float32
+            ).tolist()
+
+        def embed_documents(self, texts):
+            return [self._vec(t) for t in texts]
+
+        def embed_query(self, text):
+            return self._vec(text)
+
+    monkeypatch.setattr(ce, "get_embeddings", lambda settings=None: _FakeEmbeddings())

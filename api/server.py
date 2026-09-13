@@ -46,7 +46,7 @@ from core.protocol.reply import to_reply
 from core.session import get_session_registry
 from core.streaming.sink import StreamSink, set_active_sink
 
-from . import file_store
+from . import doc_context, file_store
 from .deps import get_agent
 from .middleware import (
     ApiKeyAuthMiddleware,
@@ -82,13 +82,16 @@ def _parse_upload(data: bytes, name: str) -> dict:
     return run_cpu_task(parse_file_worker, data, name)
 
 
-def _resolve_context_docs(file_ids: list[str], session_id: str) -> list[tuple[str, str]]:
-    """file_ids → (文件名, 清洗后 markdown) 列表；缺失/过期/非本会话抛 404。
+def _resolve_context_docs(
+    file_ids: list[str], session_id: str, question: str
+) -> list[tuple[str, str, str]]:
+    """file_ids → (文件名, 上下文, "explicit")；缺失/过期/非本会话抛 404。
 
-    doc_qa 无检索模式（D-0-3）：文件上下文经 AgentGraph context_docs 注入。
+    上下文由 ``api.doc_context`` 渲染（C1）：长文档走**文档内检索**（top-K 块），
+    小文档 / 未建索引 / 检索失败回退全文——节点侧据块标记区分两种模式。
     归属校验（W0-6）：只允许使用本会话上传的文件。
     """
-    docs: list[tuple[str, str]] = []
+    records = []
     for fid in file_ids or []:
         rec = file_store.get(fid, session_id=session_id)
         if rec is None:
@@ -96,11 +99,13 @@ def _resolve_context_docs(file_ids: list[str], session_id: str) -> list[tuple[st
                 status_code=404,
                 detail=f"file_id 不存在、已过期或不属于本会话: {fid}",
             )
-        docs.append((rec.source_name, rec.markdown))
-    return docs
+        records.append(rec)
+    return doc_context.context_docs(records, question, kind="explicit")
 
 
-def _session_context_docs(session_id: str, limit: int) -> list[tuple[str, str, str]]:
+def _session_context_docs(
+    session_id: str, limit: int, question: str
+) -> list[tuple[str, str, str]]:
     """A3：请求没带 file_ids 时，自动附着本会话最近 N 个未过期文件。
 
     条目带 ``"session"`` 标记 → 路由层按**弱信号**处理（L1 强规则优先），
@@ -113,15 +118,17 @@ def _session_context_docs(session_id: str, limit: int) -> list[tuple[str, str, s
     if recs:
         logger.info("会话文件自动附着: session=%s files=%s", session_id[:12],
                     [r.source_name for r in recs])
-    return [(rec.source_name, rec.markdown, "session") for rec in recs]
+    return doc_context.context_docs(recs, question, kind="session")
 
 
 def _context_docs_for(req: ChatRequest, session_scope: str) -> list:
     """本轮要注入的文档上下文：显式 file_ids 优先，否则自动附着本会话文件。"""
     file_ids = [fid for fid in (req.file_ids or []) if fid]
     if file_ids:
-        return _resolve_context_docs(file_ids, session_scope)
-    return _session_context_docs(session_scope, Settings().session_file_autoload_n)
+        return _resolve_context_docs(file_ids, session_scope, req.question)
+    return _session_context_docs(
+        session_scope, Settings().session_file_autoload_n, req.question
+    )
 
 
 def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
@@ -169,7 +176,7 @@ def _run_stream_worker(
     agent: AgentGraph,
     req: ChatRequest,
     session_id: str,
-    context_docs: list[tuple[str, str]],
+    context_docs: list[tuple[str, str, str]],
     sink: StreamSink,
     gate: Optional[InflightGate] = None,
 ) -> None:
@@ -230,7 +237,7 @@ async def _sse_stream(
     agent: AgentGraph,
     req: ChatRequest,
     session_id: str,
-    context_docs: list[tuple[str, str]],
+    context_docs: list[tuple[str, str, str]],
 ) -> AsyncIterator[str]:
     """SSE 事件流（async 生成器）：sink 队列 → ``token`` / ``result`` / ``error`` / ``done``。
 
@@ -431,6 +438,10 @@ def create_app(
 
         同步版本：小文件即时返回解析结果。大文件解析耗时，请用
         ``POST /files/upload/async`` + ``GET /files/{file_id}/status``（W4-3 队列解耦）。
+
+        C1 起本端点**同步建文档索引**（仅长文档，见 api/doc_context）：实测 60 块
+        约 +3.7s（自建 bge-m3）。小文件不触发；长文档请优先走 async 端点，
+        索引在那里同样是响应前建好（轮询到 done 即已就绪）。
         """
         session = _resolve_session_id(session_id)
         set_session_id(session)  # W2-2：会话 id 进入日志上下文
@@ -457,9 +468,14 @@ def create_app(
             created_at=time.time(),
         )
         file_store.put(record)
+        # C1：长文档顺带建**会话私有**文档索引（只进 Redis，不入公共 Milvus），
+        # 提问时走文档内检索；小文档 / 失败即跳过（回退全文模式，见 api/doc_context）
+        t_index = time.perf_counter()
+        doc_context.build_index_for(record)
         logger.info(
-            "upload: file_id=%s name=%s format=%s chunks=%d",
-            record.file_id, record.source_name, record.source_format, record.chunk_count,
+            "upload: file_id=%s name=%s format=%s chunks=%d index=%.2fs",
+            record.file_id, record.source_name, record.source_format,
+            record.chunk_count, time.perf_counter() - t_index,
         )
         record_audit(
             action="upload", status="ok", session_id=session,
@@ -507,7 +523,7 @@ def create_app(
             """
             fid = _current_task_id.get()
             res = _parse_upload(data, name)
-            file_store.put(file_store.FileRecord(
+            record = file_store.FileRecord(
                 file_id=fid,
                 source_name=res["source_name"],
                 source_format=res["source_format"],
@@ -516,7 +532,11 @@ def create_app(
                 chunk_count=res["chunk_count"],
                 session_id=session_scope,
                 created_at=time.time(),
-            ))
+            )
+            file_store.put(record)
+            # C1：索引先于任务完成态落库——轮询到 status=done 时索引必然已就绪
+            # （否则上传后立刻提问会打空，退化成全文模式）
+            doc_context.build_index_for(record)
             return {
                 "file_id": fid,
                 "source_name": res["source_name"],
@@ -604,8 +624,12 @@ def create_app(
         set_session_id(session_id)  # W2-2：会话 id 进入日志上下文
         session_scope = tenant_scoped(session_id)  # W4-3：内部隔离（检查点/会话/文件）
         get_session_registry().touch(session_scope)  # W2-4：登记会话
-        # 文件校验放在响应开始之前，失败返回正常 HTTP 404 而不是流中 error 事件
-        context_docs = _context_docs_for(req, session_scope)
+        # 文件校验放在响应开始之前，失败返回正常 HTTP 404 而不是流中 error 事件。
+        # C1 起这里还含文档内检索（阻塞式 embedding HTTP 调用）——放线程里执行，
+        # 避免在 async 端点里卡住事件循环（100 并发下这是硬要求）
+        context_docs = await anyio.to_thread.run_sync(
+            _context_docs_for, req, session_scope
+        )
         return StreamingResponse(
             _sse_stream(agent, req, session_id, context_docs),
             media_type="text/event-stream",

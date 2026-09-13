@@ -135,3 +135,57 @@ def test_status_done_but_record_gone_returns_404_not_500():
     assert resp.status_code == 404
     assert "过期" in resp.json()["detail"]
 
+
+
+# ── C1：异步链路同样要建文档索引（索引先于 done 落库）──────────────
+
+
+def _long_markdown(sections: int) -> str:
+    parts = ["# 招标文件"]
+    for i in range(sections):
+        parts.append(
+            f"## 第{i + 1}章 条款{i + 1}\n"
+            f"本条规定了第{i + 1}项具体要求，投标保证金金额为{i + 1}万元。"
+        )
+    return "\n".join(parts)
+
+
+def test_async_upload_builds_doc_index(fake_doc_embeddings, monkeypatch):
+    """轮询到 done 时索引必然已就绪——否则上传后立刻提问会打空、退化成全文。"""
+    from api import file_store
+    from core import doc_index
+    from core.observability.context import tenant_scoped
+
+    md = _long_markdown(15)
+    monkeypatch.setattr(
+        "api.server._parse_upload",
+        lambda data, name: {"source_name": name, "source_format": "pdf",
+                            "markdown": md, "preview": md[:40], "chunk_count": 15},
+    )
+    file_store.reset_store()
+    client = _client()
+
+    r = client.post("/files/upload/async", files={"file": ("大.pdf", b"x", "application/pdf")})
+    fid, sid = r.json()["file_id"], r.json()["session_id"]
+
+    done = _wait_done(client, fid, sid)
+    assert done["status"] == "done"
+    assert doc_index.load(fid, tenant_scoped(sid)) is not None
+
+
+def test_async_upload_skips_index_for_small_doc(fake_doc_embeddings):
+    from api import file_store
+    from core import doc_index
+    from core.observability.context import tenant_scoped
+
+    file_store.reset_store()
+    client = _client()
+
+    r = client.post(
+        "/files/upload/async",
+        files={"file": ("a.txt", "招标方式有哪几种？".encode("utf-8"), "text/plain")},
+    )
+    fid, sid = r.json()["file_id"], r.json()["session_id"]
+    _wait_done(client, fid, sid)
+
+    assert doc_index.load(fid, tenant_scoped(sid)) is None

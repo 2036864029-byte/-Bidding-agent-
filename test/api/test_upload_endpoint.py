@@ -158,7 +158,9 @@ def test_chat_with_file_ids_passes_context(monkeypatch):
     )
 
     assert r.status_code == 200
-    assert fake.last["context_docs"] == [("a.txt", "第一章 内容")]
+    # C1：显式 file_ids 的上下文条目带 kind="explicit"（弱信号"session"由 A3 自动附着产生）
+    # 小文档（chunk_count=1 ≤ 阈值）走全文模式 → 上下文即 markdown 原文
+    assert fake.last["context_docs"] == [("a.txt", "第一章 内容", "explicit")]
 
 
 def test_file_of_other_session_is_rejected():
@@ -217,7 +219,7 @@ def test_chat_stream_with_file_ids_passes_context():
     )
 
     assert r.status_code == 200
-    assert fake.last["context_docs"] == [("a.txt", "M")]
+    assert fake.last["context_docs"] == [("a.txt", "M", "explicit")]
 
 
 # ── A3：会话文件自动附着 ─────────────────────────────────────
@@ -236,7 +238,7 @@ def test_chat_auto_attaches_session_file():
 
 
 def test_explicit_file_ids_win_over_auto_attach():
-    """客户端显式传 id 时以它为准（且保持强信号：条目不带 session 标记）。"""
+    """客户端显式传 id 时以它为准（且保持强信号：kind=explicit，非 session）。"""
     file_store.reset_store()
     _put_file(file_id="f1", name="a.txt", markdown="A", session="s1")
     _put_file(file_id="f2", name="b.txt", markdown="B", session="s1")
@@ -247,7 +249,7 @@ def test_explicit_file_ids_win_over_auto_attach():
     )
 
     assert r.status_code == 200
-    assert fake.last["context_docs"] == [("b.txt", "B")]
+    assert fake.last["context_docs"] == [("b.txt", "B", "explicit")]
 
 
 def test_auto_attach_disabled_by_config(monkeypatch):
@@ -287,3 +289,96 @@ def test_auto_attach_is_session_scoped():
 
     assert r.status_code == 200
     assert fake.last["context_docs"] == []
+
+
+# ── C1：上传建索引 → 提问走文档内检索 ───────────────────────────────
+
+
+def _long_markdown(sections: int) -> str:
+    """多章节长文档（真实分块口径下块数 = 章节数）。"""
+    parts = ["# 招标文件"]
+    for i in range(sections):
+        parts.append(
+            f"## 第{i + 1}章 条款{i + 1}\n"
+            f"本条规定了第{i + 1}项具体要求，投标保证金金额为{i + 1}万元，"
+            f"工期要求 {i + 1} 日历天。"
+        )
+    return "\n".join(parts)
+
+
+def _upload(client: TestClient, monkeypatch, markdown: str, chunk_count: int, name="大标书.pdf"):
+    monkeypatch.setattr(
+        "api.server._parse_upload",
+        lambda data, n: {"source_name": name, "source_format": "pdf",
+                         "markdown": markdown, "preview": markdown[:40],
+                         "chunk_count": chunk_count},
+    )
+    r = client.post("/files/upload", files={"file": (name, b"x", "application/pdf")})
+    assert r.status_code == 200
+    return r.json()
+
+
+def test_upload_builds_index_for_long_doc(fake_doc_embeddings, monkeypatch):
+    from core import doc_index
+    from core.observability.context import tenant_scoped
+
+    file_store.reset_store()
+    client, _ = _client()
+
+    body = _upload(client, monkeypatch, _long_markdown(15), chunk_count=15)
+
+    # 索引按**内部租户作用域**落键（与 file_store 记录、检查点同一口径）
+    index = doc_index.load(body["file_id"], tenant_scoped(body["session_id"]))
+    assert index is not None
+    assert index.source_name == "大标书.pdf"
+
+
+def test_upload_skips_index_for_small_doc(fake_doc_embeddings, monkeypatch):
+    from core import doc_index
+    from core.observability.context import tenant_scoped
+
+    file_store.reset_store()
+    client, _ = _client()
+
+    body = _upload(client, monkeypatch, _long_markdown(2), chunk_count=2)
+
+    assert doc_index.load(body["file_id"], tenant_scoped(body["session_id"])) is None
+
+
+def test_chat_with_long_doc_injects_retrieval_blocks(fake_doc_embeddings, monkeypatch):
+    """C1 端到端：/chat 拿到的是检索块（带块标记），不再是全文。"""
+    file_store.reset_store()
+    client, fake = _client()
+    body = _upload(client, monkeypatch, _long_markdown(15), chunk_count=15)
+
+    r = client.post(
+        "/chat",
+        json={"question": "第7章的投标保证金金额是多少？",
+              "file_ids": [body["file_id"]], "session_id": body["session_id"]},
+    )
+
+    assert r.status_code == 200
+    (name, content, kind) = fake.last["context_docs"][0]
+    assert name == "大标书.pdf" and kind == "explicit"
+    assert content.startswith("[检索模式｜命中 ")
+    assert "[块 " in content
+    assert content != _long_markdown(15)          # 不再是全文注入
+
+
+def test_chat_falls_back_to_fulltext_when_index_disabled(fake_doc_embeddings, monkeypatch):
+    """索引开关关闭时回退全文模式（旧行为），功能不因此不可用。"""
+    monkeypatch.setenv("DOC_INDEX_ENABLED", "false")
+    file_store.reset_store()
+    client, fake = _client()
+    body = _upload(client, monkeypatch, _long_markdown(15), chunk_count=15)
+
+    r = client.post(
+        "/chat",
+        json={"question": "第7章的投标保证金金额是多少？",
+              "file_ids": [body["file_id"]], "session_id": body["session_id"]},
+    )
+
+    assert r.status_code == 200
+    _name, content, _kind = fake.last["context_docs"][0]
+    assert content == _long_markdown(15)
+    assert not content.startswith("[检索模式")

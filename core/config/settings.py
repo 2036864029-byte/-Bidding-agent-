@@ -527,6 +527,38 @@ class Settings:
     )
 
     # ============================================================
+    # 租户私有文档索引（C1）— doc_qa 由「全文塞入」改「检索模式」
+    # ============================================================
+    # 上传时对解析产物分块 + 向量化，存入与会话文件同一存储层（复用
+    # file_store_backend / _redis_url / _ttl_seconds：索引与文件同生命周期、
+    # 同跨 worker 共享要求）；提问时只把 top-K 相关块喂给 LLM。
+    # **只进 Redis，不入公共 Milvus**（D-4 防污染）。
+    doc_index_enabled: bool = field(
+        default_factory=lambda: os.getenv("DOC_INDEX_ENABLED", "true").lower()
+        in {"1", "true", "yes"}
+    )
+    # 检索模式取回的相关块数。每块 ≤ chunk_max_chars，6 块 ≈ 上限 1.2 万字符。
+    doc_index_top_k: int = field(
+        default_factory=lambda: int(os.getenv("DOC_INDEX_TOP_K", "6"))
+    )
+    # 低相关度告警线（余弦融合分；**不用于丢弃命中**——低于线仍作答，但明确告知
+    # "相关度较低"，避免阈值误设导致"答不出来"）。
+    # 0.45 来自 2026-09-13 在自建 bge-m3 上的实测标定（60 块合成标书）：
+    #   文档内问题 0.562~0.730 · 完全无关问题 0.295~0.371 → 0.45 两侧留有余量。
+    # 已知局限：**域内但文档没有**的问题（如"投标文件递交截止时间"）得 0.484~0.571，
+    # 与真问题重叠 → 相似度阈值原理上分不开；此类靠块标记里的分数供 LLM 自判。
+    doc_index_min_score: float = field(
+        default_factory=lambda: float(os.getenv("DOC_INDEX_MIN_SCORE", "0.45"))
+    )
+    # 块数 ≤ 此值的小文档不走检索（全文本来就没多大，检索反而可能漏），
+    # 直接全文注入——同时是"检索退化"时的质量保险。
+    doc_index_full_context_max_chunks: int = field(
+        default_factory=lambda: int(
+            os.getenv("DOC_INDEX_FULL_CONTEXT_MAX_CHUNKS", "12")
+        )
+    )
+
+    # ============================================================
     # 全局总超时（任务4）— 单次业务节点最大允许执行时间
     # ============================================================
     node_total_timeout: int = field(
