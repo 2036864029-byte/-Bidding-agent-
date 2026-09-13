@@ -57,3 +57,22 @@ def test_golden_loadable_by_runner():
     assert len(cases) == len(_load_golden())
     for c in cases:
         assert c["question"] and c["expected_tools"] and c["expected_sequence"]
+
+
+def test_answer_hit_normalizes_whitespace():
+    """数字两侧的空格不能把正确回答判成失败（实测吃过亏）。
+
+    agent 答的是"80 万元"，而金标 OR 组写的是"80万" → 严格 `in` 判 False，
+    看起来像"agent 变差了"，其实是检查的问题。
+    """
+    from evals.runners.agent_trace import _answer_hit
+
+    assert _answer_hit("投标保证金为 80 万元整。", [["80万", "捌拾万"]]) is True
+    assert _answer_hit("金额为人民币 800,000.00 元", [["800,000", "800000"]]) is True
+    assert _answer_hit("保证金是捌拾万元整", [["80万", "捌拾万"]]) is True
+    # 逗号不是空白 → 不指望 "800000" 能匹配 "800,000"（OR 组里两种写法都要给）
+    assert _answer_hit("金额为 800,000 元", [["800000"]]) is False
+    # 未标注 → None（不入命中率分母）
+    assert _answer_hit("任意回答", []) is None
+    # 全组须命中
+    assert _answer_hit("只有 5%", [["百分之五", "5%"], ["二十四个月"]]) is False

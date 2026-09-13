@@ -40,6 +40,19 @@ PRICE_TOOL = "price_query"
 #: 带文件样本的 fixture 目录（`<名>.pdf.md` → 上传显示名 `<名>.pdf`）
 FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent / "eval" / "fixtures"
 
+#: graph 模式下各 query_type 的**期望路由**（与 `scripts/diag_gate_criteria.py`
+#: 的"需不需要 agent"标注同源）：
+#:   需 ≥2 个源 → deep_agent；单源可解 → doc_qa（L0 显式文件档永远压过其他路由，
+#:   所以 no_file_needed 在有文件的会话里期望落点也是 doc_qa，不是 knowledge_qa）。
+_EXPECTED_ROUTE = {
+    "file_kb": "deep_agent",
+    "file_price": "deep_agent",
+    "file_multi": "deep_agent",
+    "file_only": "doc_qa",
+    "multi_file": "doc_qa",
+    "no_file_needed": "doc_qa",
+}
+
 # 弱规则：出现价格/中标类词才期望 price_query（近似，精确值需人工标注）
 _PRICE_HINTS = (
     "价格", "报价", "中标价", "中标金额", "预算", "成交", "采购金额",
@@ -81,15 +94,21 @@ def _answer_hit(answer: str, groups: Sequence[Sequence[str]]) -> bool | None:
     """答案是否命中金标：每个 OR 组内任一写法出现即可（全组须命中）。
 
     返回 None 表示该样本未标注 `answer_contains_any`（不计入命中率分母）。
+
+    **两侧都去空白后再比**：中文答案里数字常带空格（"80 万元"、"800,000.00 元"），
+    严格 `in` 匹配会把正确回答判成失败——实测吃过这个亏（agent 明明答了
+    "80 万元"，检查却因 OR 组写的是"80万"而判 False）。
     """
     if not groups:
         return None
-    text = answer or ""
-    return all(any(form in text for form in group) for group in groups)
+    flat = "".join((answer or "").split())
+    return all(
+        any("".join(form.split()) in flat for form in group) for group in groups
+    )
 
 
-def _prepare_file_session(case: dict) -> list[str]:
-    """把 fixture 装进 filestore + 建独立会话作用域 → 返回上传显示名列表。
+def _prepare_file_session(case: dict) -> tuple[list[str], str]:
+    """把 fixture 装进 filestore + 建独立会话作用域 → ``(上传显示名列表, 会话作用域)``。
 
     **每题一个新会话**：避免跨题污染（同时保证多文件题只看到自己的文件）。
     调用方须在同一线程内使用（会话作用域是 contextvar，线程池不复制）。
@@ -117,7 +136,73 @@ def _prepare_file_session(case: dict) -> list[str]:
         rec.chunk_count = len(chunk_record(rec, settings))
         filestore.put(rec)
         names.append(display)
-    return names
+    return names, scope
+
+
+_eval_agent = None
+
+
+def _get_eval_agent():
+    """graph 模式用的 AgentGraph 单例（memory 检查点：不落盘、不写 sqlite）。"""
+    global _eval_agent
+    if _eval_agent is None:
+        from agent import AgentGraph
+
+        _eval_agent = AgentGraph(checkpointer_backend="memory")
+    return _eval_agent
+
+
+def _run_one_graph(case: dict) -> dict:
+    """单题走**完整 AgentGraph**（含路由）——量端到端"闸门把谁放给了 deep_agent"。
+
+    与 node 模式的差别：这里是 API 的真实路径（`context_docs` 注入 → supervisor 路由
+    → 节点执行），因此**能测到路由决策**；node 模式只测 agent 内部规划。
+    ⚠️ 落到 doc_qa 的样本没有 `data.trace`（该节点不产轨迹）→ 轨迹类指标为空，
+    这是预期行为：本模式的指标是**路由正确率 / 误入率 / 漏答率**。
+    """
+    from agent.doc_context import context_docs
+    from core import filestore
+
+    t0 = time.monotonic()
+    try:
+        names, scope = _prepare_file_session(case) if case.get("files") else ([], None)
+        docs = []
+        if scope is not None:
+            docs = context_docs(
+                filestore.list_by_session(scope), case["question"], kind="explicit"
+            )
+        out = _get_eval_agent().invoke(
+            case["question"], thread_id=scope or "eval-no-file", context_docs=docs
+        )
+        intent = str(out.get("intent") or "")
+        br = out.get("business_result") or {}
+        answer = str(out.get("answer") or "")
+        return {
+            "question": case["question"],
+            "query_type": case.get("query_type", ""),
+            "answer": answer,
+            "answer_hit": _answer_hit(answer, case.get("answer_contains_any") or []),
+            "routed_to": intent,
+            "route_ok": intent == _EXPECTED_ROUTE.get(case.get("query_type", "")),
+            "trace": (br.get("data") or {}).get("trace") or {},
+            "latency_ms": int((time.monotonic() - t0) * 1000),
+            # 不带 expected_tools/sequence：那是 node 模式的指标。graph 模式里
+            # 落到 doc_qa 的样本没有 trace，带上只会产出 P=R=0 的噪声。
+            "expected_tools": None,
+            "expected_sequence": None,
+            "error": None,
+        }
+    except Exception as e:  # noqa: BLE001  单题失败降级
+        return {
+            "question": case["question"],
+            "query_type": case.get("query_type", ""),
+            "answer": "", "answer_hit": None,
+            "routed_to": "", "route_ok": False,
+            "trace": {}, "latency_ms": None,
+            "expected_tools": None,
+            "expected_sequence": None,
+            "error": f"{type(e).__name__}: {e}",
+        }
 
 
 def _run_one(case: dict) -> dict:
@@ -133,7 +218,7 @@ def _run_one(case: dict) -> dict:
     tools = _default_tools()
     t0 = time.monotonic()
     try:
-        names = _prepare_file_session(case) if case.get("files") else []
+        names = _prepare_file_session(case)[0] if case.get("files") else []
         messages = []
         if names:
             # 复刻 API 层的注入形状（api/graph 把文件名放进 marker SystemMessage）
@@ -173,25 +258,31 @@ def run_agent_trace(
     workers: int = 3,
     derive_expected: bool = True,
     out_dir: Path,
+    mode: str = "node",
 ) -> dict:
     """跑 deep_agent → 汇总轨迹指标，产物写 out_dir。
 
     Args:
-        cases: [{question, query_type?, expected_tools?, expected_sequence?}]。
+        cases: [{question, query_type?, expected_tools?, expected_sequence?, files?}]。
         workers: 并发（deep_agent 工具链打 SiliconFlow，过大触发 429）。
         derive_expected: 样本无 expected_tools 时按规则派生（弱标注）。
         out_dir: 产物目录（per_sample.jsonl / summary.json / report.md）。
+        mode: ``"node"`` = 只跑生产节点（量 agent 内部规划）；
+              ``"graph"`` = 走完整 AgentGraph（**量路由/误门率**，见 `_run_one_graph`）。
     """
+    runner = _run_one_graph if mode == "graph" else _run_one
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     t0 = time.monotonic()
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        rows = list(pool.map(_run_one, cases))
+        rows = list(pool.map(runner, cases))
     elapsed = round(time.monotonic() - t0, 1)
 
     for r, c in zip(rows, cases):
-        if not r.get("expected_tools") and derive_expected:
+        # graph 模式的指标是路由，不是工具序列：落到 doc_qa 的样本没有 trace，
+        # 派生 expected_tools 只会产出 P=R=0 的噪声。
+        if mode == "node" and not r.get("expected_tools") and derive_expected:
             r["expected_tools"] = derive_expected_tools(
                 c["question"], c.get("query_type", ""))
 
@@ -220,9 +311,33 @@ def run_agent_trace(
         bucket["answer_hit_rate"] = round(bucket["answer_hit"] / n, 4) if n else None
     summary["by_query_type"] = by_type
 
+    # graph 模式才有的路由指标：把"期望落点"折算成"该不该给 agent"，算误入/漏答
+    routed = [r for r in rows if "routed_to" in r]
+    if routed:
+        def _want_agent(r) -> bool:
+            return _EXPECTED_ROUTE.get(r.get("query_type", "")) == "deep_agent"
+
+        neg = sum(1 for r in routed if not _want_agent(r))
+        pos = len(routed) - neg
+        mis = sum(1 for r in routed if r["routed_to"] == "deep_agent" and not _want_agent(r))
+        miss = sum(1 for r in routed if r["routed_to"] != "deep_agent" and _want_agent(r))
+        dist: dict[str, int] = {}
+        for r in routed:
+            dist[r["routed_to"]] = dist.get(r["routed_to"], 0) + 1
+        summary["routing"] = {
+            "n": len(routed),
+            "agent_expected": pos, "agent_got": dist.get("deep_agent", 0),
+            "misroute": mis,
+            "misroute_rate": round(mis / neg, 4) if neg else None,
+            "miss": miss,
+            "miss_rate": round(miss / pos, 4) if pos else None,
+            "route_dist": dist,
+        }
+
     per_sample = [
         {"question": r["question"], "error": r["error"], "latency_ms": r["latency_ms"],
          "query_type": r.get("query_type", ""), "answer_hit": r.get("answer_hit"),
+         "routed_to": r.get("routed_to"), "route_ok": r.get("route_ok"),
          # 存足量答案：400 字看不清"为什么没命中"，无法人工复核（诊断用）
          "answer": (r.get("answer") or "")[:2000],
          "summary": trace_summary(r["trace"], expected_tools=r["expected_tools"],

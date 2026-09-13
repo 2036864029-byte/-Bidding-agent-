@@ -38,6 +38,9 @@ def main() -> None:
                              "（其 items 带 files 字段 → 自动装载 fixture 会话）")
     parser.add_argument("--query-type", default="",
                         help="只跑指定 query_type（如 no_file_needed 专门压误入率）")
+    parser.add_argument("--mode", choices=["node", "graph"], default="node",
+                        help="node=只跑生产节点（量 agent 内部规划）；"
+                             "graph=走完整 AgentGraph（量路由/误入率，需 CAPABILITY_ENABLED=deep_agent）")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--workers", type=int, default=3,
                         help="并发（deep_agent 工具链打 SiliconFlow，过大触发 429）")
@@ -62,11 +65,17 @@ def main() -> None:
     out_dir = args.out_dir or OUT_DIR / f"agent_trace_{time.strftime('%Y%m%d_%H%M%S')}"
     summary = run_agent_trace(
         cases, workers=args.workers,
-        derive_expected=not args.no_derive, out_dir=out_dir,
+        derive_expected=not args.no_derive, out_dir=out_dir, mode=args.mode,
     )
 
-    print(f"\n=== Agent 轨迹指标（详见 {out_dir}）===")
+    print(f"\n=== Agent 轨迹指标（mode={args.mode}，详见 {out_dir}）===")
     print(f"  样本 {summary['n']}  失败 {summary['errors']}  耗时 {summary['elapsed_s']}s")
+    rt = summary.get("routing")
+    if rt:
+        print(f"  路由: 期望给 agent {rt['agent_expected']} / 实际 {rt['agent_got']}"
+              f"（{rt['route_dist']}）")
+        print(f"    误入率 {rt['misroute_rate']}（{rt['misroute']} 条）"
+              f"  漏答率 {rt['miss_rate']}（{rt['miss']} 条）")
     ps = summary["plan_steps"]
     print(f"  规划步数 均值 {ps['mean']}（min {ps['min']}/max {ps['max']}），"
           f"多步占比 {ps['multi_step_rate']:.1%}")
