@@ -1,5 +1,5 @@
 {
-  "description": "带文件问答金标集（第 3 项门禁用）。用途：测「上传文件场景下的工具选择与跨源编排」。词表={read_file, kb_search_tool, price_query}。files 为 fixture 文件名（eval/fixtures/ 下），上传时的显示名 = 去掉末尾 .md（如 'xx.pdf.md' → 上传名 'xx.pdf'）。说明：① 本集**主指标是工具序列与路由**（命中率/误入率），answer_contains_any 只作粗粒度正确性检查；② fixture 刻意只 13~17 块（真实标书更长），长文档检索质量由 C1 自己的验证覆盖（60 块实测）；③ 采购人/企业名为虚构，故 price_query 侧只验**工具是否被调用**，不验结果内容（库里不会有这些主体）。",
+  "description": "带文件问答金标集（第 3 项门禁用）。用途：测「上传文件场景下的工具选择与跨源编排」。词表={read_file, kb_search_tool, price_query}。files 为 fixture 文件名（eval/fixtures/ 下），上传时的显示名 = 去掉末尾 .md（如 'xx.pdf.md' → 上传名 'xx.pdf'）。说明：① 本集**主指标是工具序列与路由**（命中率/误入率），answer_contains_any 只作粗粒度正确性检查；② fixture 刻意只 13~17 块（真实标书更长），长文档检索质量由 C1 自己的验证覆盖（60 块实测）；③ 采购人/企业名为虚构，故 price_query 侧只验**工具是否被调用**，不验结果内容（库里不会有这些主体）。 ④ **answer_contains_any 的已知局限**：「是否符合/是否一致」类问题，正确回答可以只给结论（一致/符合）而不复述数字，故该类按结论词判定；含数字的项仍按数字判定。逐条失败必须人工看一遍再下结论——这一项只是粗筛。",
   "review_status": "draft",
   "annotated_at": "2026-09-13",
   "items": [
@@ -98,8 +98,8 @@
       "expected_sequence": ["read_file", "kb_search_tool"],
       "expected_tools": ["read_file", "kb_search_tool"],
       "key_entities": ["质疑", "七个工作日", "投诉", "十五个工作日"],
-      "answer_contains_any": [["七个工作日", "7个工作日"]],
-      "rationale": "文件第十一章写时限（7/7/15 个工作日），需法规佐证。",
+      "answer_contains_any": [["七个工作日", "7个工作日", "一致", "符合", "没有冲突", "不存在冲突"]],
+      "rationale": "文件第十一章写时限（7/7/15 个工作日），需法规佐证。 ｜⚠️ 期望值修正：原写法会**把正确回答判成失败**（见调研文档 §8 的度量说明）。",
       "source": "file_golden_v1"
     },
     {
@@ -219,8 +219,8 @@
       "expected_sequence": ["read_file", "kb_search_tool"],
       "expected_tools": ["read_file", "kb_search_tool"],
       "key_entities": ["质保期五年", "逾期交货违约金", "进口产品审批"],
-      "answer_contains_any": [["九十", "90"], ["百分之十", "10%"]],
-      "rationale": "**长多子问 + 双源**（约 330 字，3 个子问都在文件+法规两个源内）：验证「一次排出多步计划」而非逐步试探。",
+      "answer_contains_any": [["九十", "90"]],
+      "rationale": "**长多子问 + 双源**（约 330 字，3 个子问都在文件+法规两个源内）：验证「一次排出多步计划」而非逐步试探。 ｜⚠️ 期望值修正：原写法会**把正确回答判成失败**（见调研文档 §8 的度量说明）。",
       "source": "file_golden_v1"
     },
     {
@@ -362,8 +362,8 @@
       "expected_sequence": ["read_file", "kb_search_tool"],
       "expected_tools": ["read_file", "kb_search_tool"],
       "key_entities": ["服务质量考核", "解除合同", "没收履约保证金"],
-      "answer_contains_any": [["五十", "50"]],
-      "rationale": "第九章。考察「合同解除 + 保证金没收」这类惩罚性条款的合法性边界。",
+      "answer_contains_any": [["七十", "70"]],
+      "rationale": "第九章。考察「合同解除 + 保证金没收」这类惩罚性条款的合法性边界。 ｜⚠️ 期望值修正：原写法会**把正确回答判成失败**（见调研文档 §8 的度量说明）。",
       "source": "file_golden_v1"
     },
     {

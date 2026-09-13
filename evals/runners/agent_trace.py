@@ -223,7 +223,8 @@ def run_agent_trace(
     per_sample = [
         {"question": r["question"], "error": r["error"], "latency_ms": r["latency_ms"],
          "query_type": r.get("query_type", ""), "answer_hit": r.get("answer_hit"),
-         "answer": (r.get("answer") or "")[:400],
+         # 存足量答案：400 字看不清"为什么没命中"，无法人工复核（诊断用）
+         "answer": (r.get("answer") or "")[:2000],
          "summary": trace_summary(r["trace"], expected_tools=r["expected_tools"],
                                   expected_sequence=r["expected_sequence"])}
         for r in rows
