@@ -19,10 +19,11 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage
@@ -73,14 +74,27 @@ SYNTHESIZE_PROMPT = """{persona}
 {observations}
 """
 
+#: 反思输出的标记行（主格式；见 REFLECT_PROMPT / `_parse_reflection`）
+_REFLECT_VERDICT_RE = re.compile(r"VERDICT\s*[:：]\s*(adequate|revised|gap)", re.IGNORECASE)
+_REFLECT_NOTES_RE = re.compile(r"NOTES\s*[:：]\s*(.*)")
+#: 修订回答的分隔标记（其后全部内容即修订版；见 `_parse_reflection`）
+REFLECT_ANSWER_SEP = "---ANSWER---"
+
 REFLECT_PROMPT = """{persona}
 你是严谨的回答审校。检查草稿是否准确、完整、有依据（是否真的引用了观察结果）。
-输出 **JSON**：{{"verdict": "adequate"|"revised"|"gap", "notes": "发现", "revised_answer": "修订后的完整回答"}}
-verdict 含义：
+
+**严格按下面格式输出，不要用 JSON、不要加别的说明文字**：
+第 1 行：VERDICT: adequate 或 revised 或 gap
+第 2 行：NOTES: 一句话说明发现（没有可留空）
+仅当 VERDICT 为 revised 时，从第 3 行起先输出下面这行分隔符，再输出修订后的**完整回答**：
+{sep}
+<修订后的完整回答>
+
+VERDICT 含义：
   adequate  草稿准确完整，直接采用
-  revised   草稿有错漏，给出修订版（revised_answer 必须给完整回答）
+  revised   草稿有错漏，给出修订版（必须给出完整回答，不要只给差异）
   gap       观察不足以回答，如实说明缺口
-只输出 JSON，不要其他文字。
+
 用户问题：{question}
 检索观察：
 {observations}
@@ -169,17 +183,38 @@ def _plan_question(
 
 # ── EXECUTE：执行 ─────────────────────────────────────────────
 
+#: 观察摘要预算（按工具区分）：(块数上限, 每块字符上限, 总字符上限)。
+#:
+#: **为什么按工具区分**：不同工具"agent 需要多少内容"根本不同。
+#: `read_file` 的目的就是把相关段落**原文**交给 agent（块 128~2000 字），
+#: 用默认的 120 字/块会把事实截在句中——实测教训：「设备质保期：自验收合格
+#: 之日起五年」正好落在第 121 字，agent 检索对了却回答"文件中未提及质保期年限"；
+#: 另一题 LLM 自己说出"文件表述被截断（显示为「按合…」）"。
+#: 而 `kb_search_tool` 的 120 字/块够看主旨（KB 块 700~900 字，且工具自带 summary 契约），
+#: 维持原值以免无差别抬高 token 成本。
+_OBSERVATION_BUDGETS: Dict[str, Tuple[int, int, int]] = {
+    "read_file": (5, 800, 4000),
+}
+_DEFAULT_OBSERVATION_BUDGET: Tuple[int, int, int] = (3, 120, OBSERVATION_HEAD_CHARS)
 
-def _summarize_result(result: Any) -> str:
-    """工具返回值 → 观察摘要（kb 按块、price 按记录，统一限长；空结果返回空串）。"""
+
+def _summarize_result(result: Any, tool_name: str = "") -> str:
+    """工具返回值 → 观察摘要（kb 按块、price 按记录；预算按工具区分）。
+
+    摘要为空串 = 该步视为 `status="empty"`（见 `_execute_step`），
+    也是 agent 判断"要不要补检索"的现成信号。
+    """
+    max_chunks, per_chunk, total_cap = _OBSERVATION_BUDGETS.get(
+        tool_name, _DEFAULT_OBSERVATION_BUDGET
+    )
     if isinstance(result, dict):
         chunks = result.get("chunks")
         if isinstance(chunks, list):
             if not chunks:
                 return ""
             parts = []
-            for c in chunks[:3]:
-                head = (c.get("content") or "")[:120].replace("\n", " ")
+            for c in chunks[:max_chunks]:
+                head = (c.get("content") or "")[:per_chunk].replace("\n", " ")
                 loc = " / ".join(x for x in (c.get("doc_name"), c.get("chapter")) if x)
                 parts.append(f"[{loc}] {head}" if loc else head)
             text = "\n".join(parts)
@@ -191,8 +226,8 @@ def _summarize_result(result: Any) -> str:
                 text = json.dumps(result, ensure_ascii=False, default=str)
     else:
         text = str(result)
-    if len(text) > OBSERVATION_HEAD_CHARS:
-        text = text[:OBSERVATION_HEAD_CHARS] + "…"
+    if len(text) > total_cap:
+        text = text[:total_cap] + "…"
     return text
 
 
@@ -229,7 +264,7 @@ def _execute_step(step: PlanStep, tool_map: Dict[str, BaseTool]) -> StepRecord:
             status="error", observation_head=f"工具错误: {e}", records_count=0,
             latency_ms=elapsed_ms(),
         )
-    head = _summarize_result(result)
+    head = _summarize_result(result, step.tool)
     return StepRecord(
         step_id=step.id, tool=step.tool, query=step.query,
         status="ok" if head else "empty", observation_head=head,
@@ -286,6 +321,46 @@ def _synthesize(
 # ── REFLECT：反思 ─────────────────────────────────────────────
 
 
+def _parse_reflection(text: str) -> Optional[ReflectionRecord]:
+    """解析反思输出 → ReflectionRecord；无法解析返回 None（调用方采纳草稿）。
+
+    **主格式是「标记行 + 正文」而不是 JSON**：修订回答是长中文散文，要塞进 JSON
+    字符串就得靠模型自行转义，实测稳定产出非法 JSON（`Expecting ',' delimiter`）
+    → 过去只能降级为"采纳草稿"，也就是**答案根本没被审校**（Phase G-8 实测记录）。
+    把长文本移出 JSON，就从结构上消除了这一类失败。
+
+    兼容 JSON 输出（模型忽略格式要求时兜底；老格式不至于因此失效）。
+    """
+    raw = (text or "").strip()
+    m = _REFLECT_VERDICT_RE.search(raw)
+    if m is not None:
+        verdict = m.group(1).lower()
+        notes_m = _REFLECT_NOTES_RE.search(raw)
+        answer: Optional[str] = None
+        if REFLECT_ANSWER_SEP in raw:
+            answer = raw.split(REFLECT_ANSWER_SEP, 1)[1].strip() or None
+        return ReflectionRecord(
+            verdict=verdict,
+            notes=(notes_m.group(1).strip() if notes_m else ""),
+            revised_answer=answer,
+        )
+    try:  # 兼容 JSON
+        data = _extract_json(raw)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(data, dict):
+        return None
+    verdict = str(data.get("verdict") or "adequate")
+    if verdict not in ("adequate", "revised", "gap"):
+        verdict = "adequate"
+    revised = data.get("revised_answer")
+    return ReflectionRecord(
+        verdict=verdict,
+        notes=str(data.get("notes") or ""),
+        revised_answer=str(revised).strip() if revised else None,
+    )
+
+
 def _reflect(
     question: str,
     steps: List[StepRecord],
@@ -295,24 +370,17 @@ def _reflect(
 ) -> ReflectionRecord:
     """反思：LLM 审校草稿 → verdict + 可选修订（解析失败默认采纳草稿）。"""
     prompt = REFLECT_PROMPT.format(
-        persona=persona, question=question,
+        persona=persona, question=question, sep=REFLECT_ANSWER_SEP,
         observations=_observations_text(steps), draft=draft,
     )
     try:
         resp = llm.invoke([SystemMessage(content=prompt)])
-        data = _extract_json(str(resp.content or ""))
-        if isinstance(data, dict):
-            verdict = str(data.get("verdict") or "adequate")
-            if verdict not in ("adequate", "revised", "gap"):
-                verdict = "adequate"
-            revised = data.get("revised_answer")
-            return ReflectionRecord(
-                verdict=verdict,
-                notes=str(data.get("notes") or ""),
-                revised_answer=str(revised).strip() if revised else None,
-            )
+        record = _parse_reflection(str(resp.content or ""))
+        if record is not None:
+            return record
+        logger.warning("deep_agent 反思输出无法解析（既非标记格式也非 JSON），采纳草稿")
     except Exception as e:
-        logger.warning("deep_agent 反思解析失败，采纳草稿: %s", e)
+        logger.warning("deep_agent 反思调用失败，采纳草稿: %s", e)
     return ReflectionRecord(verdict="adequate", notes="反思解析失败，采纳草稿")
 
 

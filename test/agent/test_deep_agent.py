@@ -400,3 +400,172 @@ def test_node_without_doc_context_does_not_add_file_hint():
     node({"messages": [HumanMessage(content="政府采购适用什么法律？")]})
 
     assert "[本会话已上传文件" not in llm.prompts[0]
+
+
+# ── 观察摘要预算按工具区分（实测缺陷：read_file 的事实被截在句中）──────
+
+
+def _chunk_series(n: int, chars: int = 900):
+    return {"chunks": [
+        {"content": f"第{i}章内容。" + "填充文字" * (chars // 4),
+         "doc_name": "标书.pdf", "chapter": f"第{i}章"}
+        for i in range(1, n + 1)
+    ]}
+
+
+def test_default_budget_truncates_fact_inside_chunk():
+    """锁住缺陷本身：默认预算（120 字/块）会把句中事实截断。
+
+    实测原型：第五章「设备质保期：自验收合格之日起五年」被截在「自验收合格之」，
+    agent 于是回答"文件中未提及质保期年限"——**检索对了，但答案送不到 LLM 面前**。
+    """
+    from agent.nodes.deep_agent import _summarize_result
+
+    content = ("交货期：合同签订之日起九十日历天内完成供货、安装与调试。"
+               "交货地点：某市第一人民医院医学影像科。"
+               "安装调试完成后，由采购人组织验收，验收标准执行国家医疗器械相关标准及投标文件承诺。"
+               "验收不合格的，投标人应当在十五日内完成整改并申请复验。"
+               "设备质保期：自验收合格之日起五年（含球管等易损件）。")
+    result = {"chunks": [{"content": content, "doc_name": "d.pdf", "chapter": "第五章"}]}
+
+    assert "设备质保期：自验收合格之日起五年" not in _summarize_result(result)
+
+
+def test_read_file_budget_keeps_fact_past_120_chars():
+    """read_file 的预算必须保住句中事实（否则 agent 检索对了也答不出）。"""
+    from agent.nodes.deep_agent import _summarize_result
+
+    content = ("交货期：合同签订之日起九十日历天内完成供货、安装与调试。"
+               "交货地点：某市第一人民医院医学影像科。"
+               "安装调试完成后，由采购人组织验收，验收标准执行国家医疗器械相关标准及投标文件承诺。"
+               "验收不合格的，投标人应当在十五日内完成整改并申请复验。"
+               "设备质保期：自验收合格之日起五年（含球管等易损件）。")
+    result = {"chunks": [{"content": content, "doc_name": "d.pdf", "chapter": "第五章"}]}
+
+    out = _summarize_result(result, "read_file")
+
+    assert "设备质保期：自验收合格之日起五年" in out
+
+
+def test_read_file_budget_covers_more_chunks():
+    """默认只取前 3 块，read_file 取前 5 块（read_file 一次返回 6 块）。"""
+    from agent.nodes.deep_agent import _summarize_result
+
+    result = _chunk_series(6)
+
+    default_out = _summarize_result(result)
+    read_file_out = _summarize_result(result, "read_file")
+
+    assert "第3章" in default_out and "第4章" not in default_out
+    assert "第5章" in read_file_out and "第6章" not in read_file_out
+
+
+def test_read_file_budget_total_cap():
+    """总长上限 4000（默认 400），且超限以省略号收尾。"""
+    from agent.nodes.deep_agent import _summarize_result
+
+    long_out = _summarize_result(_chunk_series(5, chars=1200), "read_file")
+
+    assert long_out.endswith("…")
+    assert len(long_out) <= 4001
+
+
+def test_kb_and_price_observation_budget_unchanged():
+    """回归：kb_search / price_query 不受影响（避免无差别抬高 token 成本）。"""
+    from agent.nodes.deep_agent import _summarize_result
+
+    kb = {"chunks": [{"content": "招标方式包括公开招标和邀请招标。" + "甲" * 300,
+                      "doc_name": "招标投标法", "chapter": "第一章"}]}
+    assert _summarize_result(kb, "kb_search_tool") == _summarize_result(kb)
+    assert len(_summarize_result(kb)) <= 401
+
+    price = {"records": [{"project": "某项目"}]}
+    assert _summarize_result(price, "price_query") == _summarize_result(price)
+
+    assert _summarize_result({"chunks": []}, "read_file") == ""
+
+
+# ── 反思解析：从 JSON 改为标记行 + 正文（Phase G-8 实测缺陷）──────────
+
+
+def test_parse_reflection_handles_untrusted_prose():
+    """实测失败原型：修订回答是长中文散文、含未转义引号与真实换行。
+
+    塞进 JSON 字符串必然非法（`Expecting ',' delimiter`）→ 过去只能"采纳草稿"，
+    等于**答案没被审校**。标记格式下长文本不进 JSON，从结构上消除该失败。
+    """
+    from agent.nodes.deep_agent import REFLECT_ANSWER_SEP, _parse_reflection
+
+    text = (
+        "VERDICT: revised\nNOTES: 缺少法律依据\n" + REFLECT_ANSWER_SEP + "\n"
+        '根据《招标投标法》第三十五条"中标人应当依法签订合同"，\n'
+        '该标书的约定"不符合"要求。\n\n要点：\n1. 比例约 6.2%\n2. 上限 2%'
+    )
+
+    r = _parse_reflection(text)
+
+    assert r.verdict == "revised"
+    assert r.notes == "缺少法律依据"
+    assert "中标人应当依法签订合同" in r.revised_answer
+    assert "\n" in r.revised_answer          # 换行必须原样保留
+    assert '"' in r.revised_answer
+
+
+def test_parse_reflection_adequate_and_gap_have_no_answer():
+    from agent.nodes.deep_agent import _parse_reflection
+
+    adequate = _parse_reflection("VERDICT: adequate\nNOTES: 草稿准确")
+    assert adequate.verdict == "adequate" and adequate.revised_answer is None
+
+    gap = _parse_reflection("VERDICT: gap\nNOTES: 观察不足")
+    assert gap.verdict == "gap" and gap.revised_answer is None
+
+
+def test_parse_reflection_tolerates_preamble_and_case():
+    from agent.nodes.deep_agent import REFLECT_ANSWER_SEP, _parse_reflection
+
+    r = _parse_reflection(f"好的，我来审校。\n\nverdict：REVISED\nnotes：x\n{REFLECT_ANSWER_SEP}\n修订内容")
+
+    assert r.verdict == "revised" and r.revised_answer == "修订内容"
+
+
+def test_parse_reflection_still_accepts_legacy_json():
+    """向后兼容：模型忽略格式要求、仍输出 JSON 时不能失效。"""
+    from agent.nodes.deep_agent import _parse_reflection
+
+    r = _parse_reflection(
+        '{"verdict": "revised", "notes": "遗漏依据", "revised_answer": "修订后的完整回答。"}'
+    )
+
+    assert r.verdict == "revised" and r.revised_answer == "修订后的完整回答。"
+
+
+def test_parse_reflection_returns_none_for_garbage():
+    from agent.nodes.deep_agent import _parse_reflection
+
+    assert _parse_reflection("完全不是格式") is None
+    assert _parse_reflection("") is None
+
+
+def test_reflect_uses_marker_format_end_to_end():
+    """端到端：审校输出走标记格式 → 修订版成为终答（不再出现"采纳草稿"）。"""
+    from agent.nodes.deep_agent import REFLECT_ANSWER_SEP
+
+    class _MarkerReflectLLM(_FakeDeepLLM):
+        def invoke(self, messages):
+            prompt = messages[0].content
+            if "深度规划" in prompt:
+                return AIMessage(content='[{"objective": "查", "tool": "kb_search_tool", "query": "q"}]')
+            if "审校" in prompt:
+                return AIMessage(content=(
+                    "VERDICT: revised\nNOTES: 补引用\n" + REFLECT_ANSWER_SEP + "\n"
+                    '修订版：依据《招标投标法》第三十五条，"应"依法签约。'
+                ))
+            return AIMessage(content="")
+
+    out = run_deep_agent("q", llm=_MarkerReflectLLM(plan_json="[]", draft="草稿。"),
+                         tools=[_kb_tool()])
+
+    assert out["trace"]["reflection"]["verdict"] == "revised"
+    assert out["answer"].startswith("修订版")
+    assert "依法签约" in out["answer"]
