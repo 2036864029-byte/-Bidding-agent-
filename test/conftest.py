@@ -73,6 +73,12 @@ def _hermetic_backends(monkeypatch):
     # 检查点同理：默认 memory（不落盘、不依赖 PG）。需要真后端的用例显式构造
     # （见 test/core/test_checkpointer_postgres.py）。
     monkeypatch.setenv("CHECKPOINTER_BACKEND", "memory")
+    # 能力开关同理：**开发机 .env 可能把 deep_agent 启用了**（第 3 项上线后的正常状态），
+    # 若测试跟着变，"默认候选集 = 5 内置"这类断言就会随环境飘。钉成空 →
+    # 一律用 spec 的声明默认值；要测开关的用例自行 monkeypatch.setenv
+    # （见 test/orchestration/test_agent_gate.py、test/core/test_registry.py）。
+    monkeypatch.setenv("CAPABILITY_ENABLED", "")
+    monkeypatch.setenv("CAPABILITY_DISABLED", "")
     # C1：文档索引复用 filestore 后端配置 → 同样是进程级单例，跨用例会互相污染
     # （同一 file_id+session 命中上一用例的索引）。
     from core import doc_index, filestore
