@@ -41,6 +41,9 @@ class StepRecord(BaseModel):
     observation_head: str = Field("", description="观察摘要（前 OBSERVATION_HEAD_CHARS 字）")
     records_count: int = Field(0, description="结果条数（0=无结果）")
     latency_ms: Optional[int] = Field(None, description="单步耗时（毫秒）")
+    #: 本步检索到的**来源标识**（形如 ``doc_name｜chapter``），供「引用覆盖率」核算：
+    #: 答案是否引用了**实际检索到**的来源（可核验性）。不落正文，只留标识。
+    sources: List[str] = Field(default_factory=list, description="检索来源标识（引用核算用）")
 
 
 class ReflectionRecord(BaseModel):

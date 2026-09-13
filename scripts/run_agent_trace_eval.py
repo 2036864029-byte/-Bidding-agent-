@@ -95,6 +95,10 @@ def main() -> None:
     ah = summary.get("answer_hit") or {}
     if ah.get("rate") is not None:
         print(f"  答案命中(n={ah['n']}): {ah['hit']}/{ah['n']} = {ah['rate']:.1%}")
+    ci = summary.get("citation") or {}
+    if ci.get("rate") is not None:
+        print(f"  引用覆盖率(n={ci['n']}): {ci['cited']}/{ci['n']} = {ci['rate']:.1%}"
+              f"  ← 答案引用了**实际检索到**的来源（doc_qa 结构上恒 0）")
     bt = summary.get("by_query_type") or {}
     if bt:
         print("  按 query_type:")

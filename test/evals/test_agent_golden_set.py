@@ -76,3 +76,27 @@ def test_answer_hit_normalizes_whitespace():
     assert _answer_hit("任意回答", []) is None
     # 全组须命中
     assert _answer_hit("只有 5%", [["百分之五", "5%"], ["二十四个月"]]) is False
+
+
+def test_cited_from_retrieval():
+    """引用核算：答案引用了**实际检索到**的来源才算（doc_qa 无来源 → 恒 False）。
+
+    量的是**可核验性**——这是两条路径的结构性差异，不是答案质量比较。
+    """
+    from evals.runners.agent_trace import _cited_from_retrieval, _trace_sources
+
+    # 轨迹里带的来源
+    trace = {"steps": [
+        {"sources": ["招标投标法实施条例｜第四十七条", "某标书.pdf｜招标文件 > 第三章"]},
+    ]}
+    sources = _trace_sources(trace)
+    assert len(sources) == 2
+
+    # 引用了检索到的法规名 → True
+    assert _cited_from_retrieval("依据《招标投标法实施条例》第四十七条…", sources) is True
+    # 只引用了文件、没引法规 → 也算（来源里含文件名）
+    assert _cited_from_retrieval("该标书第三章规定…", sources) is False  # "第三章"太短，不足 5 字
+    # 泛泛而谈、没有具体来源 → False
+    assert _cited_from_retrieval("一般来说应当依法办理。", sources) is False
+    # 无来源（doc_qa 路径）→ 恒 False
+    assert _cited_from_retrieval("依据《招标投标法》…", []) is False

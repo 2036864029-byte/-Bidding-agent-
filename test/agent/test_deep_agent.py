@@ -588,3 +588,36 @@ def test_registered_node_entry_builds(monkeypatch):
         assert get_node_spec("deep_agent").entry is da.node_deep_agent
     finally:
         da.reset_deep_agent()
+
+
+# ── 引用核算的来源标识（可核验性）──────────────────────────────────
+
+
+def test_extract_sources_from_chunks_and_records():
+    """来源标识供「引用覆盖率」核算：chunks 取 doc_name｜chapter，records 取主体名。"""
+    from agent.nodes.deep_agent import _extract_sources
+
+    got = _extract_sources({"chunks": [
+        {"content": "x", "doc_name": "招标投标法实施条例", "chapter": "第四十七条"},
+        {"content": "y", "doc_name": "某标书.pdf", "chapter": "招标文件 > 第三章"},
+    ]})
+    assert got == ["招标投标法实施条例｜第四十七条", "某标书.pdf｜招标文件 > 第三章"]
+
+    recs = _extract_sources({"records": [{"project_name": "智慧园区项目"}]})
+    assert recs == ["智慧园区项目"]
+
+    assert _extract_sources({"chunks": []}) == []
+    assert _extract_sources("不是 dict") == []
+
+
+def test_step_record_carries_sources():
+    """轨迹要带上来源，否则无法核算"答案引用的东西是否真的检索到了"。"""
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "查法规", "tool": "kb_search_tool", "query": "履约担保"}]',
+        draft="依据《招标投标法实施条例》，招标人应提供工程款支付担保。",
+    )
+
+    out = run_deep_agent("q", llm=llm, tools=[_kb_tool()])
+
+    src = out["trace"]["steps"][0]["sources"]
+    assert src and "招标投标法" in src[0]

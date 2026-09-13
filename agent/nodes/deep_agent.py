@@ -240,6 +240,42 @@ def _count_records(result: Any) -> int:
     return 0
 
 
+#: 单步最多记录多少条来源标识（够核算引用即可，不进 prompt）
+_MAX_SOURCES = 8
+
+
+def _extract_sources(result: Any) -> List[str]:
+    """工具结果 → 来源标识列表（``doc_name｜chapter``），供「引用覆盖率」核算。
+
+    只留**标识**不留正文：用于回答"答案里的引用是否来自**实际检索到**的东西"
+    （可核验性）。`doc_qa` 结构上没有检索 → 其轨迹不存在 → 覆盖率恒 0，
+    这正是要度量的结构性差异。
+    """
+    if not isinstance(result, dict):
+        return []
+    out: List[str] = []
+    for c in (result.get("chunks") or [])[:_MAX_SOURCES]:
+        if not isinstance(c, dict):
+            continue
+        label = "｜".join(
+            str(c.get(k) or "").strip() for k in ("doc_name", "chapter") if str(c.get(k) or "").strip()
+        )
+        if label:
+            out.append(label[:200])
+    if not out:                       # price_query 等按记录返回
+        for rec in (result.get("records") or [])[:_MAX_SOURCES]:
+            if isinstance(rec, dict):
+                label = "｜".join(
+                    str(rec.get(k)) for k in ("company_name", "project_name", "name")
+                    if rec.get(k)
+                ) or str(rec)[:80]
+            else:
+                label = str(rec)[:80]
+            if label:
+                out.append(label)
+    return out
+
+
 def _execute_step(step: PlanStep, tool_map: Dict[str, BaseTool]) -> StepRecord:
     """执行单步：按工具契约注入默认参数，观察摘要限长落轨迹。"""
     started = time.monotonic()
@@ -270,6 +306,7 @@ def _execute_step(step: PlanStep, tool_map: Dict[str, BaseTool]) -> StepRecord:
         status="ok" if head else "empty", observation_head=head,
         records_count=_count_records(result),
         latency_ms=elapsed_ms(),
+        sources=_extract_sources(result),
     )
 
 

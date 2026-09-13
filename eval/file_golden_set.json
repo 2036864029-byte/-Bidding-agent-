@@ -1,5 +1,5 @@
 {
-  "description": "带文件问答金标集（第 3 项门禁用）。用途：测「上传文件场景下的工具选择与跨源编排」。词表={read_file, kb_search_tool, price_query}。files 为 fixture 文件名（eval/fixtures/ 下），上传时的显示名 = 去掉末尾 .md（如 'xx.pdf.md' → 上传名 'xx.pdf'）。说明：① 本集**主指标是工具序列与路由**（命中率/误入率），answer_contains_any 只作粗粒度正确性检查；② fixture 刻意只 13~17 块（真实标书更长），长文档检索质量由 C1 自己的验证覆盖（60 块实测）；③ 采购人/企业名为虚构，故 price_query 侧只验**工具是否被调用**，不验结果内容（库里不会有这些主体）。 ④ **answer_contains_any 的已知局限**：「是否符合/是否一致」类问题，正确回答可以只给结论（一致/符合）而不复述数字，故该类按结论词判定；含数字的项仍按数字判定。逐条失败必须人工看一遍再下结论——这一项只是粗筛。",
+  "description": "带文件问答金标集（第 3 项门禁用）。用途：测「上传文件场景下的工具选择与跨源编排」。词表={read_file, kb_search_tool, price_query}。files 为 fixture 文件名（eval/fixtures/ 下），上传时的显示名 = 去掉末尾 .md（如 'xx.pdf.md' → 上传名 'xx.pdf'）。说明：① 本集**主指标是工具序列与路由**（命中率/误入率），answer_contains_any 只作粗粒度正确性检查；② fixture 刻意只 13~17 块（真实标书更长），长文档检索质量由 C1 自己的验证覆盖（60 块实测）；③ 采购人/企业名为虚构，故 price_query 侧只验**工具是否被调用**，不验结果内容（库里不会有这些主体）。 ④ **answer_contains_any 的已知局限**：「是否符合/是否一致」类问题，正确回答可以只给结论（一致/符合）而不复述数字，故该类按结论词判定；含数字的项仍按数字判定。逐条失败必须人工看一遍再下结论——这一项只是粗筛。 ⑤ **file_kb_grounded（2026-09-13 新增）**：这一类的「法规侧关键事实」刻意选**模型不可能知道的具体条款**（具体条款号/时限/义务表述），用来测出「检索」的增量 —— 原先的 file_kb 类其法规侧都是通用国法，模型凭自身知识就能答，导致两条路径无法区分（见调研文档 §9.6）。校验见 `scripts/diag_requires_retrieval.py`（token 必须落在检索块前 120 字内、且不在 fixture 里）。",
   "review_status": "draft",
   "annotated_at": "2026-09-13",
   "items": [
@@ -540,6 +540,90 @@
       "key_entities": ["进口产品"],
       "answer_contains_any": [["医疗", "影像", "医院"]],
       "rationale": "**三文件辨别**：只有医疗设备那份接受进口产品（另两份明确不接受）。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书第十一章写的是「七个工作日内提出质疑、十五个工作日内投诉」。按工程建设项目招标投标的规定，向行政监督部门投诉应当自知道或者应当知道之日起多少日内提出？这两个时限分别约束谁？",
+      "query_type": "file_kb_grounded",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["投诉时限", "工程建设项目", "行政监督部门"],
+      "answer_contains_any": [["10日", "10 日", "十日"]],
+      "requires_retrieval": true,
+      "rationale": "**不可猜**：`10日内向行政监督部门投诉`是《工程建设项目招标投标活动投诉处理办法》第八十九条的具体时限，与文件里的政府采购口径（7/15 个工作日）**不同**。模型只有通用知识时极可能直接复述文件的 7/15 → 答错。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书要求中标人提交合同价款百分之十的履约保证金。按规定，招标人在要求中标人提交履约担保的同时，还应当向中标人提供什么？",
+      "query_type": "file_kb_grounded",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["履约担保", "招标人义务"],
+      "answer_contains_any": [["工程款支付担保", "支付担保"]],
+      "requires_retrieval": true,
+      "rationale": "**不可猜**：招标投标法实施条例第四十七条的**对等义务**（招标人应同时提供工程款支付担保），属具体条文，模型未必知道。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份运维服务标书里约定了质疑与投诉的处理时限。在政府采购中，财政部门处理投诉期间可以视具体情况暂停采购活动，这个暂停时间最长不得超过多少天？依据是什么？",
+      "query_type": "file_kb_grounded",
+      "files": ["某市政务信息系统运维服务采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["财政部门", "暂停采购活动", "30日"],
+      "answer_contains_any": [["30日", "30 日", "三十日"]],
+      "requires_retrieval": true,
+      "rationale": "**不可猜**：政府采购法实施条例对财政部门暂停采购活动的**具体上限 30 日**。 ｜注意【实测教训】：初版措辞不含任何闸门关键词 → 闸门未放行、留在 doc_qa 上答不出。这是漏答 13% 的一个具体实例：跨源需求若没被关键词表达就会漏放行。已补上「依据是什么」使其明确要求法规依据。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书要求电子投标文件在投标截止时间前完成传输递交。如果截止时间前没有完成传输，按规定会有什么后果？",
+      "query_type": "file_kb_grounded",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["电子投标文件", "传输递交", "后果"],
+      "answer_contains_any": [["视为撤回"]],
+      "requires_retrieval": true,
+      "rationale": "**不可猜**：《电子招标投标办法》第二十七条第一款的后果条款「视为撤回投标文件」——是具体条文表述。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书的废标条款写着「投标人不足三家予以废标」。按规定，工程建设项目施工招标中投标人少于三个的，招标人应当怎么做？与文件的口径一致吗？",
+      "query_type": "file_kb_grounded",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["投标人少于三个", "重新招标"],
+      "answer_contains_any": [["重新招标"]],
+      "requires_retrieval": true,
+      "rationale": "**不可猜**：招标投标法第二十八条的处理方式是「依照本法**重新招标**」，与政府采购口径（废标）不同——需要具体条文才能判断是否一致。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书接受进口产品投标。在政府采购中，采购进口产品需要经过哪个部门审核？依据是什么？",
+      "query_type": "file_kb_grounded",
+      "files": ["某三甲医院医疗设备采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["进口产品", "审核主体", "设区的市"],
+      "answer_contains_any": [["设区的市", "设区的市级", "设区的市、自治州"]],
+      "requires_retrieval": true,
+      "rationale": "**不可猜**：《政府采购进口产品管理办法》第六条明确审核主体是「**设区的市、自治州以上**人民政府财政部门」——具体到行政层级，只有检索才能答准（初版 token 用「财政部门」被校验脚本判不合格：fixture 第十一章本就出现过该词）。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书里写了中标人不按招标文件订立合同的后果。按规定，招标人与中标人订立背离合同实质性内容的协议属于什么性质的行为？",
+      "query_type": "file_kb_grounded",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["背离合同实质性内容", "违法行为"],
+      "answer_contains_any": [["背离合同实质性内容"]],
+      "requires_retrieval": true,
+      "rationale": "**不可猜**：「**背离合同实质性内容**」是该类违法行为的法定表述，属具体条文用语。",
       "source": "file_golden_v1"
     }
   ]

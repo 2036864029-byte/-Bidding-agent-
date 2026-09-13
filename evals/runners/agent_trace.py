@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -40,14 +41,47 @@ PRICE_TOOL = "price_query"
 #: 带文件样本的 fixture 目录（`<名>.pdf.md` → 上传显示名 `<名>.pdf`）
 FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent / "eval" / "fixtures"
 
-#: graph 模式下各 query_type 的**期望路由**（与 `scripts/diag_gate_criteria.py`
-#: 的"需不需要 agent"标注同源）：
+#: 引用核算时，来源标识里多长的片段才算"名字"（避开"第五章"这类易误配的碎片）
+_CITE_SEGMENT_MIN = 5
+
+
+def _trace_sources(trace: Any) -> list[str]:
+    """轨迹 → 全部步骤的来源标识（见 `StepRecord.sources`）。"""
+    if not isinstance(trace, dict):
+        return []
+    out: list[str] = []
+    for st in trace.get("steps") or []:
+        if isinstance(st, dict):
+            out.extend(st.get("sources") or [])
+    return out
+
+
+def _cited_from_retrieval(answer: str, sources: Sequence[str]) -> bool:
+    """答案是否引用了**实际检索到**的来源（法规名/文件名+章节）。
+
+    从来源标识里切出 ≥`_CITE_SEGMENT_MIN` 字的片段，任一出现在答案里即算引用。
+    用于度量**可核验性**：`doc_qa` 结构上没有检索 → 来源为空 → 恒 False；
+    deep_agent 若引用了检索到的法规名/章节 → True。
+    """
+    flat = "".join((answer or "").split())
+    for src in sources:
+        for seg in re.split(r"[｜/]", str(src)):
+            seg = "".join(seg.split())
+            if len(seg) >= _CITE_SEGMENT_MIN and seg in flat:
+                return True
+    return False
+
+
+#: graph 模式下各 query_type 的**期望路由**（与 `scripts/diag_gate_criteria.py` 的
+#: "需不需要 agent"标注同源）：
 #:   需 ≥2 个源 → deep_agent；单源可解 → doc_qa（L0 显式文件档永远压过其他路由，
 #:   所以 no_file_needed 在有文件的会话里期望落点也是 doc_qa，不是 knowledge_qa）。
 _EXPECTED_ROUTE = {
     "file_kb": "deep_agent",
     "file_price": "deep_agent",
     "file_multi": "deep_agent",
+    # 「不可猜」类（法规侧是具体条款，必须检索）——同样该给 agent
+    "file_kb_grounded": "deep_agent",
     "file_only": "doc_qa",
     "multi_file": "doc_qa",
     "no_file_needed": "doc_qa",
@@ -177,14 +211,16 @@ def _run_one_graph(case: dict) -> dict:
         intent = str(out.get("intent") or "")
         br = out.get("business_result") or {}
         answer = str(out.get("answer") or "")
+        trace = (br.get("data") or {}).get("trace") or {}
         return {
             "question": case["question"],
             "query_type": case.get("query_type", ""),
             "answer": answer,
             "answer_hit": _answer_hit(answer, case.get("answer_contains_any") or []),
+            "cited": _cited_from_retrieval(answer, _trace_sources(trace)),
             "routed_to": intent,
             "route_ok": intent == _EXPECTED_ROUTE.get(case.get("query_type", "")),
-            "trace": (br.get("data") or {}).get("trace") or {},
+            "trace": trace,
             "latency_ms": int((time.monotonic() - t0) * 1000),
             # 不带 expected_tools/sequence：那是 node 模式的指标。graph 模式里
             # 落到 doc_qa 的样本没有 trace，带上只会产出 P=R=0 的噪声。
@@ -196,7 +232,7 @@ def _run_one_graph(case: dict) -> dict:
         return {
             "question": case["question"],
             "query_type": case.get("query_type", ""),
-            "answer": "", "answer_hit": None,
+            "answer": "", "answer_hit": None, "cited": False,
             "routed_to": "", "route_ok": False,
             "trace": {}, "latency_ms": None,
             "expected_tools": None,
@@ -229,12 +265,14 @@ def _run_one(case: dict) -> dict:
             {"messages": messages}
         )["business_result"]
         answer = str(out.get("answer") or "")
+        trace = (out.get("data") or {}).get("trace") or {}
         return {
             "question": case["question"],
             "query_type": case.get("query_type", ""),
             "answer": answer,
             "answer_hit": _answer_hit(answer, case.get("answer_contains_any") or []),
-            "trace": (out.get("data") or {}).get("trace") or {},
+            "cited": _cited_from_retrieval(answer, _trace_sources(trace)),
+            "trace": trace,
             "latency_ms": int((time.monotonic() - t0) * 1000),
             "expected_tools": case.get("expected_tools"),
             "expected_sequence": case.get("expected_sequence"),
@@ -244,7 +282,7 @@ def _run_one(case: dict) -> dict:
         return {
             "question": case["question"],
             "query_type": case.get("query_type", ""),
-            "answer": "", "answer_hit": None,
+            "answer": "", "answer_hit": None, "cited": False,
             "trace": {}, "latency_ms": None,
             "expected_tools": case.get("expected_tools"),
             "expected_sequence": case.get("expected_sequence"),
@@ -334,9 +372,20 @@ def run_agent_trace(
             "route_dist": dist,
         }
 
+    # 引用覆盖率：答案是否引用了**实际检索到**的来源（可核验性）。
+    # doc_qa 结构上没有检索 → 恒 False —— 这正是要度量的结构性差异。
+    if any("cited" in r for r in rows):
+        n = sum(1 for r in rows if "cited" in r)
+        hit = sum(1 for r in rows if r.get("cited"))
+        summary["citation"] = {
+            "n": n, "cited": hit,
+            "rate": round(hit / n, 4) if n else None,
+        }
+
     per_sample = [
         {"question": r["question"], "error": r["error"], "latency_ms": r["latency_ms"],
          "query_type": r.get("query_type", ""), "answer_hit": r.get("answer_hit"),
+         "cited": r.get("cited"),
          "routed_to": r.get("routed_to"), "route_ok": r.get("route_ok"),
          # 存足量答案：400 字看不清"为什么没命中"，无法人工复核（诊断用）
          "answer": (r.get("answer") or "")[:2000],
