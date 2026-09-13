@@ -272,17 +272,17 @@ def _current_session_scope() -> Optional[str]:
 
 
 def _pick_record(records: Sequence[Any], file_name: str) -> Tuple[Optional[Any], str]:
-    """按文件名挑记录 → ``(记录, 错误说明)``。
+    """按文件名挑**单一**记录 → ``(记录, 错误说明)``。
 
     宽松匹配依次：精确 → 忽略大小写 → 去扩展名 → 唯一子串。**多义即报错**
     （列出候选）——静默挑一个会让 agent 读到错误的文件却不自知。
-    """
-    if not records:
-        return None, "本会话没有已上传的文件"
-    if not file_name or not file_name.strip():
-        return records[0], ""          # 未指定 → 最近上传的（list_by_session 已按时间倒序）
 
-    name = file_name.strip()
+    ⚠️ 只处理"**指定了**文件名"的情形。留空 = 在全部文件内检索，
+    由 `read_session_file` 直接处理（不再回落"最近上传"）——见该函数文档。
+    """
+    name = (file_name or "").strip()
+    if not name:
+        return None, "未指定文件名"
     lowered = name.lower()
     for rec in records:
         if rec.source_name == name:
@@ -335,9 +335,18 @@ def read_session_file(
 
     Args:
         question: 检索问题（也是工具主参数，deep_agent 执行器固定传 ``question=``）。
-        file_name: 目标文件名；空 → 本会话最近上传的文件。
+        file_name: 目标文件名；**留空 → 在会话全部文件内检索**（见下）。
         top_k: 返回块数上限；0 → 用 ``doc_index_top_k`` 配置。
         records: 注入记录列表（测试用；默认按当前会话作用域查）。
+
+    **留空 = 全部文件**（调研文档 §8.3）：原先留空取"最近上传的那一个"，导致
+    多文件问题必然失败——规划器通常不传名字，连续两次调用拿回**同一份**文件
+    （实测原话："只返回了《道路工程》的工期条款，未返回《智慧园区》的任何工期信息"）。
+    工具默认行为应当对"会话里有几份文件"自适应，而不是依赖规划器记得传参。
+
+    **算力公平分配而非全局排序**：不同文档的余弦分**不可比**，故多文件时按
+    ``max(2, ceil(top_k / 文件数))`` 给每份文件配额，各自取自己的 top-k，
+    避免某一份文件的高分把其他文件整份挤掉。
     """
     from core import doc_index, filestore
 
@@ -353,64 +362,97 @@ def read_session_file(
             }
         records = filestore.list_by_session(scope)
 
-    record, err = _pick_record(records, file_name)
-    if record is None:
-        return {"chunks": [], "error": err, "available_files": _available_names(records)}
+    if not records:
+        return {"chunks": [], "error": "本会话没有已上传的文件", "available_files": []}
 
-    read = _read_record(
-        record, question, settings, allow_build=True,
-        top_k=int(top_k) if int(top_k or 0) > 0 else None,   # 0/None → 用配置值
-    )
-    out: Dict[str, Any] = {
-        "file": record.source_name,
-        "mode": read.mode,
-        "total_chunks": read.total_chunks,
-        "available_files": _available_names(records),
-    }
-    notes: List[str] = []
-
-    if read.mode == MODE_RETRIEVAL:
-        hits = read.result.hits
-        out["chunks"] = [
-            {
-                "content": hit.content,
-                "doc_name": record.source_name,
-                "chapter": hit.chapter,
-                "chunk_index": hit.chunk_index,
-                "score": round(hit.dense, 4),
-            }
-            for hit in hits
-        ]
-        out["matched"] = len(hits)
-        out["max_score"] = round(read.max_score, 4)
-        out["low_confidence"] = read.low_confidence
-        if read.low_confidence:
-            floor = float(
-                getattr(settings, "doc_index_min_score", doc_index.DEFAULT_MIN_SCORE)
-                or doc_index.DEFAULT_MIN_SCORE
-            )
-            notes.append(
-                f"检索到的段落相关度较低（最高 {read.max_score:.2f} < {floor:.2f}），"
-                "文档中可能没有该问题的答案"
-            )
-        if read.built_on_demand:
-            notes.append("该文件此前未建立索引，本次已现场建立（首问较慢）")
+    if (file_name or "").strip():
+        record, err = _pick_record(records, file_name)
+        if record is None:
+            return {"chunks": [], "error": err, "available_files": _available_names(records)}
+        targets = [record]
     else:
-        content, truncated = _cap_text(record.markdown, settings)
-        out["chunks"] = [{
-            "content": content,
-            "doc_name": record.source_name,
-            "chapter": "",
-            "chunk_index": 0,
-            "score": 0.0,
-        }]
-        out["matched"] = 1
-        out["truncated"] = truncated
-        if truncated:
-            notes.append(
-                f"文档较长（共 {len(record.markdown)} 字符），仅返回了前 {len(content)} 字符"
-            )
+        targets = list(records)
 
+    k = int(top_k) if int(top_k or 0) > 0 else int(
+        getattr(settings, "doc_index_top_k", 6) or 6
+    )
+    per_file_k = max(2, -(-k // len(targets)))   # ceil(k / n)，下限 2
+
+    notes: List[str] = []
+    chunks: List[Dict[str, Any]] = []
+    searched: List[Dict[str, Any]] = []
+    total_chunks = 0
+    built_on_demand = False
+    any_retrieval = False
+    last_read: Any = None
+    last_truncated = False
+
+    for record in targets:
+        read = _read_record(record, question, settings, allow_build=True, top_k=per_file_k)
+        last_read = read
+        total_chunks += read.total_chunks
+        built_on_demand = built_on_demand or read.built_on_demand
+
+        if read.mode == MODE_RETRIEVAL:
+            any_retrieval = True
+            for hit in read.result.hits:
+                chunks.append({
+                    "content": hit.content,
+                    "doc_name": record.source_name,
+                    "chapter": hit.chapter,
+                    "chunk_index": hit.chunk_index,
+                    "score": round(hit.dense, 4),
+                })
+            searched.append({
+                "file": record.source_name, "mode": read.mode,
+                "matched": len(read.result.hits), "max_score": round(read.max_score, 4),
+            })
+            if read.low_confidence:
+                floor = float(
+                    getattr(settings, "doc_index_min_score", doc_index.DEFAULT_MIN_SCORE)
+                    or doc_index.DEFAULT_MIN_SCORE
+                )
+                notes.append(
+                    f"《{record.source_name}》检索到的段落相关度较低"
+                    f"（最高 {read.max_score:.2f} < {floor:.2f}），可能没有该问题的答案"
+                )
+        else:
+            content, truncated = _cap_text(record.markdown, settings)
+            last_truncated = truncated
+            chunks.append({
+                "content": content,
+                "doc_name": record.source_name,
+                "chapter": "",
+                "chunk_index": 0,
+                "score": 0.0,
+            })
+            searched.append({"file": record.source_name, "mode": read.mode, "matched": 1})
+            if truncated:
+                notes.append(
+                    f"《{record.source_name}》较长（共 {len(record.markdown)} 字符），"
+                    f"仅返回了前 {len(content)} 字符"
+                )
+
+    out: Dict[str, Any] = {
+        "mode": MODE_RETRIEVAL if any_retrieval else MODE_FULLTEXT,
+        "chunks": chunks,
+        "matched": len(chunks),
+        "total_chunks": total_chunks,
+        "available_files": _available_names(records),
+        "files_searched": searched,
+    }
+    if len(targets) == 1:
+        # 单文件保持原契约（既有调用方与测试依赖这些顶层字段）
+        out["file"] = targets[0].source_name
+        out["max_score"] = round(last_read.max_score, 4) if last_read else 0.0
+        out["low_confidence"] = bool(last_read.low_confidence) if last_read else False
+        if not any_retrieval:
+            out["truncated"] = last_truncated
+    else:
+        notes.append(f"未指定文件名，已在全部 {len(targets)} 份文件内检索")
+
+    if built_on_demand:
+        notes.append("有文件此前未建立索引，本次已现场建立（首问较慢）")
     if notes:
         out["note"] = "；".join(notes)
     return out
@@ -440,14 +482,16 @@ def read_file_as_tool():
 
         Args:
             question: 要在这个文件里查什么（用自然语言描述）。
-            file_name: 目标文件名；留空表示本会话最近上传的那个。
+            file_name: 目标文件名；**留空 = 在本会话全部文件内检索**。
+                只有一个文件时留空即可；问题明确指向某一份（或需要逐份指名）时才传。
                 可用文件名见返回的 available_files。
             top_k: 返回段落数上限；0 表示用系统默认。
 
         Returns:
-            dict：{file, mode, total_chunks, chunks, matched, max_score,
-            low_confidence, available_files, note?}。chunks 每项含
-            content / doc_name / chapter / chunk_index / score。
+            dict：{mode, total_chunks, chunks, matched, max_score, low_confidence,
+            available_files, files_searched, note?}。chunks 每项含
+            content / doc_name / chapter / chunk_index / score ——
+            **多文件时靠 doc_name 区分块来自哪一份**。
         """
         return read_session_file(question, file_name=file_name, top_k=top_k)
 
