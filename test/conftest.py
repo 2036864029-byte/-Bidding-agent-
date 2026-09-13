@@ -20,6 +20,17 @@ def _reset_retrieval_cache():
 
 
 @pytest.fixture(autouse=True)
+def _reset_mineru_version_memo():
+    """P5 加固：MinerU parser_version 是**模块级** memo（按 base_url），跨用例会
+    互相短路探测（后一个用例拿到前一个的版本，断言全错）。"""
+    import public_kb.services.mineru_api_parser as parser_mod
+
+    parser_mod.reset_version_memo()
+    yield
+    parser_mod.reset_version_memo()
+
+
+@pytest.fixture(autouse=True)
 def _reset_inflight_gate():
     """C1：在飞闸门是进程级单例，跨用例会残留计数与配置 → 每个用例前后重置。"""
     from core.concurrency.limits import reset_inflight_gate

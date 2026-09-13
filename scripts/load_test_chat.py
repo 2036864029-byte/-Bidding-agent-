@@ -207,11 +207,23 @@ def _print_report(report: Report, args: argparse.Namespace, wall: float) -> int:
     if busy:
         print()
         print(f"✓ 观察到 {busy} 次 503（闸门打满 → 快速失败），符合 C1 设计")
-    elif args.concurrency > 32:
-        print()
-        print(f"⚠ 并发 {args.concurrency} 已超过默认闸门 32，但未观察到 503 —— "
-              f"可能 MAX_INFLIGHT_REQUESTS 被调高、或请求未真正并发")
+    else:
+        limit = _configured_gate_limit()
+        if limit and args.concurrency > limit:
+            print()
+            print(f"⚠ 并发 {args.concurrency} 已超过配置的闸门 {limit}，但未观察到 503 —— "
+                  f"可能服务端闸门被调高、或请求未真正并发")
     return 0 if ok == total else 1
+
+
+def _configured_gate_limit() -> int:
+    """本机配置的闸门上限（仅作提示；服务端实际值以它自己的 .env 为准）。"""
+    try:
+        from core.config.settings import Settings
+
+        return int(Settings().max_inflight_requests)
+    except Exception:  # noqa: BLE001  取不到就不提示
+        return 0
 
 
 def main() -> int:

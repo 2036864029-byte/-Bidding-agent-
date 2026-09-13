@@ -194,7 +194,8 @@ def test_offline_rerun_hits_local_cache(tmp_path, monkeypatch):
     online_md = MinerUApiParser(_settings(tmp_path)).parse(pdf, page_range="1-3")
     assert online_md == "# 第一条 正文\n"
 
-    # 2) 服务下线（新实例，无进程内 memo）
+    # 2) 服务下线（新实例 + 清掉进程级 memo，强制走回退路径而非 memo）
+    parser_mod.reset_version_memo()
     offline = FailingHttpx()
     monkeypatch.setattr(parser_mod, "httpx", offline)
     offline_md = MinerUApiParser(_settings(tmp_path)).parse(pdf, page_range="1-3")
@@ -208,3 +209,50 @@ def test_fallback_empty_when_no_history(tmp_path, monkeypatch):
     monkeypatch.setattr(parser_mod, "httpx", FailingHttpx())
     parser = MinerUApiParser(_settings(tmp_path))
     assert parser.resolve_parser_version() == ""
+
+
+# ── P5 加固：版本探测的进程级 memo ────────────────────────────
+
+
+def test_version_probe_memoized_within_ttl(fake_httpx, tmp_path):
+    """TTL 内只探测一次。
+
+    为什么重要：服务端单 worker + 阻塞 subprocess，解析期间 `/health` 不可达，
+    每次探测都要等满 5s 超时。一个多 Tier C 范围的 PDF 会调 parse() 多次 →
+    N × 5s 纯空转。
+    """
+    parser = MinerUApiParser(_settings(tmp_path))
+    for _ in range(3):
+        assert parser.resolve_parser_version() == "2.0.0"
+    assert len(fake_httpx.calls) == 1, "TTL 内应只探测一次"
+
+
+def test_version_memo_expires_after_ttl(fake_httpx, tmp_path, monkeypatch):
+    monkeypatch.setattr(parser_mod, "_VERSION_MEMO_TTL_SEC", 0.0)
+    parser = MinerUApiParser(_settings(tmp_path))
+    parser.resolve_parser_version()
+    parser.resolve_parser_version()
+    assert len(fake_httpx.calls) == 2, "TTL 过期后应重新探测"
+
+
+def test_version_memo_is_per_service(fake_httpx, tmp_path):
+    """不同 base_url 的版本互不串用。"""
+    a = MinerUApiParser(_settings(tmp_path, base_url="http://a:8002"))
+    b = MinerUApiParser(_settings(tmp_path, base_url="http://b:8002"))
+    a.resolve_parser_version()
+    b.resolve_parser_version()
+    assert len(fake_httpx.calls) == 2
+
+
+def test_offline_fallback_is_memoized(tmp_path, monkeypatch):
+    """不可达时的回退值同样 memo —— 否则并发 Tier C 每次都要空等 5s 超时。"""
+    failing = FailingHttpx()
+    monkeypatch.setattr(parser_mod, "httpx", failing)
+    _cache_dir(tmp_path).mkdir(parents=True, exist_ok=True)
+    (_cache_dir(tmp_path) / "_parser_version.txt").write_text("v1", encoding="utf-8")
+
+    parser = MinerUApiParser(_settings(tmp_path))
+    for _ in range(3):
+        assert parser.resolve_parser_version() == "v1"
+
+    assert len(failing.calls) == 1
