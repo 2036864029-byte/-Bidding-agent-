@@ -286,14 +286,25 @@ class AgentGraph:
         question: str,
         context_docs: Optional[Sequence[Tuple[str, str]]] = None,
     ) -> List[Any]:
-        """构造图输入消息：文档上下文以 SystemMessage 前缀注入（D-0-2）。"""
+        """构造图输入消息：文档上下文以 SystemMessage 前缀注入（D-0-2）。
+
+        条目为 ``(文件名, markdown)`` 或 ``(文件名, markdown, kind)``；kind 取
+        ``"explicit"``（客户端显式传 file_ids，默认）| ``"session"``（服务端按会话
+        自动附着）。前缀不同 → 路由层优先级不同（见 agent/nodes/doc_qa.py）。
+        """
         messages: List[Any] = []
         if context_docs:
-            from agent.nodes.doc_qa import DOC_CONTEXT_MARKER
+            from agent.nodes.doc_qa import DOC_CONTEXT_MARKER, SESSION_DOC_MARKER
 
-            parts = [f"[文件：{name}]\n{content}" for name, content in context_docs]
+            parts, session_ctx = [], False
+            for entry in context_docs:
+                name, content = entry[0], entry[1]
+                if len(entry) > 2 and entry[2] == "session":
+                    session_ctx = True
+                parts.append(f"[文件：{name}]\n{content}")
+            marker = SESSION_DOC_MARKER if session_ctx else DOC_CONTEXT_MARKER
             messages.append(
-                SystemMessage(content=f"{DOC_CONTEXT_MARKER}\n" + "\n\n".join(parts))
+                SystemMessage(content=f"{marker}\n" + "\n\n".join(parts))
             )
         messages.append(HumanMessage(content=question))
         return messages

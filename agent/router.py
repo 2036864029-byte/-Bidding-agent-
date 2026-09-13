@@ -171,7 +171,8 @@ def build_router_node(llm: BaseChatModel, *, registry: Optional[CapabilityRegist
     tools = build_route_tools(caps)
     tool_map = tool_intent_map(caps)
     decision_model = build_decision_model([c.id for c in caps])
-
+    # L0 前置：doc_qa 未启用时该规则自动失效（构建期算一次）
+    doc_qa_enabled = any(c.id == "doc_qa" for c in caps)
     # 预检测 structured_output 支持性
     tool_fallback = False
     try:
@@ -190,6 +191,17 @@ def build_router_node(llm: BaseChatModel, *, registry: Optional[CapabilityRegist
         messages = agent_state.get("messages", [])
         if not messages:
             return {"router_intent": "fallback"}
+
+        # L0：客户端**显式**传了 file_ids → 直接 doc_qa（B2），与 supervisor 同口径，
+        # 避免「文件在上下文里、答案却来自公共库」的静默错答。
+        # 自动附着的会话文件是弱信号（A3）：单图没有 L1 规则层可让位，交给 LLM 判
+        # ——与 supervisor「弱信号不强制」的语义一致，代价是可能仍被忽略。
+        if doc_qa_enabled:
+            from .nodes.doc_qa import doc_context_kind
+
+            if doc_context_kind(messages) == "explicit":
+                logger.info("路由 L0（显式文件）→ doc_qa")
+                return {"router_intent": "doc_qa"}
 
         history_str = _format_history(messages, max_turns=3)
         user_input = str(messages[-1].content)

@@ -42,6 +42,7 @@ def _put_file(
     name: str = "a.txt",
     markdown: str = "第一章 内容",
     session: str = "s1",
+    created_at: float | None = None,
 ) -> None:
     from core.observability.context import tenant_scoped
 
@@ -54,7 +55,7 @@ def _put_file(
             preview=markdown,
             chunk_count=1,
             session_id=tenant_scoped(session),  # W4-3：镜像上传端点的租户作用域
-            created_at=file_store.time.time(),
+            created_at=file_store.time.time() if created_at is None else created_at,
         )
     )
 
@@ -217,3 +218,72 @@ def test_chat_stream_with_file_ids_passes_context():
 
     assert r.status_code == 200
     assert fake.last["context_docs"] == [("a.txt", "M")]
+
+
+# ── A3：会话文件自动附着 ─────────────────────────────────────
+
+
+def test_chat_auto_attaches_session_file():
+    """不带 file_ids 也能用本会话文件；条目带 session 标记（路由层按弱信号处理）。"""
+    file_store.reset_store()
+    _put_file(file_id="f1", name="a.txt", markdown="第一章 内容", session="s1")
+    client, fake = _client()
+
+    r = client.post("/chat", json={"question": "投标保证金是多少？", "session_id": "s1"})
+
+    assert r.status_code == 200
+    assert fake.last["context_docs"] == [("a.txt", "第一章 内容", "session")]
+
+
+def test_explicit_file_ids_win_over_auto_attach():
+    """客户端显式传 id 时以它为准（且保持强信号：条目不带 session 标记）。"""
+    file_store.reset_store()
+    _put_file(file_id="f1", name="a.txt", markdown="A", session="s1")
+    _put_file(file_id="f2", name="b.txt", markdown="B", session="s1")
+    client, fake = _client()
+
+    r = client.post(
+        "/chat", json={"question": "q", "file_ids": ["f2"], "session_id": "s1"}
+    )
+
+    assert r.status_code == 200
+    assert fake.last["context_docs"] == [("b.txt", "B")]
+
+
+def test_auto_attach_disabled_by_config(monkeypatch):
+    monkeypatch.setenv("SESSION_FILE_AUTOLOAD_N", "0")
+    file_store.reset_store()
+    _put_file(file_id="f1", session="s1")
+    client, fake = _client()
+
+    r = client.post("/chat", json={"question": "q", "session_id": "s1"})
+
+    assert r.status_code == 200
+    assert fake.last["context_docs"] == []
+
+
+def test_auto_attach_respects_limit_and_recency(monkeypatch):
+    """N=1：只附着最近上传的那个。"""
+    monkeypatch.setenv("SESSION_FILE_AUTOLOAD_N", "1")
+    file_store.reset_store()
+    now = file_store.time.time()
+    _put_file(file_id="old", name="old.txt", markdown="O", session="s1", created_at=now - 10)
+    _put_file(file_id="new", name="new.txt", markdown="N", session="s1", created_at=now)
+    client, fake = _client()
+
+    r = client.post("/chat", json={"question": "q", "session_id": "s1"})
+
+    assert r.status_code == 200
+    assert fake.last["context_docs"] == [("new.txt", "N", "session")]
+
+
+def test_auto_attach_is_session_scoped():
+    """别的会话的文件不得被自动附着（W0-6 同源要求）。"""
+    file_store.reset_store()
+    _put_file(file_id="f1", name="a.txt", markdown="A", session="s1")
+    client, fake = _client()
+
+    r = client.post("/chat", json={"question": "q", "session_id": "s2"})
+
+    assert r.status_code == 200
+    assert fake.last["context_docs"] == []

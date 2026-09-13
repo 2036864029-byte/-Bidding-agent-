@@ -44,11 +44,19 @@ def _hermetic_backends(monkeypatch):
     """
     monkeypatch.setenv("CACHE_BACKEND", "memory")
     monkeypatch.setenv("RATE_LIMIT_BACKEND", "memory")
+    # 上传文件缓存（B1）同理：钉在进程内，测试不依赖外部 Redis、也不跨用例污染。
+    # 需要真后端的用例自行显式构造（见 test/api/test_file_store_backends.py）。
+    monkeypatch.setenv("FILE_STORE_BACKEND", "memory")
+    # 任务状态表（B1 姊妹项）同理：进程内，不依赖外部 Redis。
+    monkeypatch.setenv("JOB_QUEUE_BACKEND", "memory")
     # 检查点同理：默认 memory（不落盘、不依赖 PG）。需要真后端的用例显式构造
     # （见 test/core/test_checkpointer_postgres.py）。
     monkeypatch.setenv("CHECKPOINTER_BACKEND", "memory")
+    from api import file_store
     from core.cache import reset_caches
 
     reset_caches()
+    file_store.reset_store()   # 后端是进程级单例，可能已按 .env 构造过
     yield
     reset_caches()
+    file_store.reset_store()

@@ -27,8 +27,13 @@ from ..state import AgentState
 
 logger = logging.getLogger(__name__)
 
-# API 层注入文档上下文的 SystemMessage 前缀（D-0-2：上下文经 messages 传递）
+# API 层注入文档上下文的 SystemMessage 前缀（D-0-2：上下文经 messages 传递）。
+# 两种前缀对应两种强度——路由层据此决定优先级（A2/A3）：
+#   - DOC_CONTEXT_MARKER   客户端**显式**传了 file_ids：最强意图信号，L0 直接走 doc_qa
+#   - SESSION_DOC_MARKER   服务端按会话**自动附着**本会话文件：弱信号，L1 规则优先
 DOC_CONTEXT_MARKER = "【已上传文档】"
+SESSION_DOC_MARKER = "【本会话文档】"
+_CONTEXT_MARKERS = (DOC_CONTEXT_MARKER, SESSION_DOC_MARKER)
 
 _DOC_QA_SYSTEM_SUFFIX = (
     "\n\n你收到用户上传的文档内容。请严格仅依据该文档内容回答用户问题；"
@@ -98,30 +103,56 @@ def _last_human_question(messages: List[BaseMessage]) -> str:
     return ""
 
 
+def _injected_marker(messages) -> Optional[str]:
+    """本轮注入的上下文前缀（无则 None）。
+
+    只认最后一条 HumanMessage 之前紧邻的 marker SystemMessage——避免 MemorySaver
+    历史中的旧上下文跨轮残留（9.3 验收修复：file_ids 每轮显式传入才生效）。
+    """
+    if not messages or len(messages) < 2:
+        return None
+    if not isinstance(messages[-1], HumanMessage):
+        return None
+    prev = messages[-2]
+    if not isinstance(prev, SystemMessage):
+        return None
+    content = str(prev.content)
+    for marker in _CONTEXT_MARKERS:
+        if content.startswith(marker):
+            return marker
+    return None
+
+
 def extract_doc_context(messages) -> Tuple[List[str], str]:
     """提取**本轮注入**的文档上下文：返回 (文件名列表, 拼接后的清洗后 Markdown)。
 
-    上下文经 SystemMessage + DOC_CONTEXT_MARKER 注入（D-0-2）。只认最后一条
-    HumanMessage 之前紧邻的 marker SystemMessage——避免 MemorySaver 历史中的
-    旧文档上下文跨轮残留（9.3 验收修复：file_ids 每轮显式传入才生效）。
+    上下文经 SystemMessage + marker 前缀注入（D-0-2）。显式与自动附着两种前缀
+    都认——节点本身不关心强度，只关心"这一轮有没有文档可用"。
     """
     names: List[str] = []
-    if not messages:
+    marker = _injected_marker(messages)
+    if marker is None:
         return names, ""
-    last = messages[-1]
-    if not isinstance(last, HumanMessage):
-        return names, ""
-    if len(messages) < 2:
-        return names, ""
-    prev = messages[-2]
-    if not isinstance(prev, SystemMessage) or not str(prev.content).startswith(DOC_CONTEXT_MARKER):
-        return names, ""
-    body = str(prev.content)[len(DOC_CONTEXT_MARKER):].strip()
+    body = str(messages[-2].content)[len(marker):].strip()
     for line in body.splitlines():
         stripped = line.strip()
         if stripped.startswith("[文件：") and stripped.endswith("]"):
             names.append(stripped[len("[文件："):-1])
     return names, body
+
+
+def doc_context_kind(messages) -> Optional[str]:
+    """本轮注入的文档上下文强度（路由前置判定用）。
+
+    - ``"explicit"``：客户端显式传了 ``file_ids`` → 最强意图信号，L0 直接走 doc_qa
+    - ``"session"`` ：服务端按会话自动附着 → 弱信号，让 L1 规则先判（否则上传过
+      文件的会话里，"查一下 XX 项目" 会被强行拉进 doc_qa——B2 症状的反向）
+    - ``None``      ：本轮没带文档
+    """
+    marker = _injected_marker(messages)
+    if marker is None:
+        return None
+    return "session" if marker == SESSION_DOC_MARKER else "explicit"
 
 
 def _no_doc_reply() -> dict:

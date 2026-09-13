@@ -37,6 +37,9 @@ services:
       # —— 以下覆盖 .env 里指向 127.0.0.1 的地址（容器内那是指自己）——
       MILVUS_HOST: "host.docker.internal"
       MYSQL_HOST: "host.docker.internal"
+      # ⚠️ 这一项同时是 FILE_STORE / JOB_QUEUE 的 Redis 地址：那两个变量在 .env 里
+      # **刻意留空**，取的就是本值的回退。改这里即可，别在 .env 里写死 localhost
+      # （那会让容器指向自己 → 多 worker 下上传文件与任务状态全部 404）。
       CACHE_REDIS_URL: "redis://host.docker.internal:6380/0"
       CHECKPOINTER_POSTGRES_URL: "postgresql://ztb:ztb_dev_pw@host.docker.internal:5433/ztb_checkpoints"
       EMBEDDING_BASE_URL: "http://host.docker.internal:18003/v1"   # SSH 隧道 → 云上模型服务

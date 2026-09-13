@@ -39,7 +39,9 @@ def enabled() -> bool:
 def _get_pool() -> ProcessPoolExecutor:
     global _pool
     if _pool is None:
-        workers = max(1, int(os.getenv("CPU_POOL_WORKERS", "2")))
+        # B8：默认 2 时 5 个并发上传只有 2 个在跑、其余排队（实测解析 5.2~10.3s）。
+        # 服务器 16 核，8 个解析进程无压力；再高要留意单进程内存（PyMuPDF 整本解析）。
+        workers = max(1, int(os.getenv("CPU_POOL_WORKERS", "8")))
         _pool = ProcessPoolExecutor(max_workers=workers)
         logger.info("CPU_POOL 初始化: max_workers=%d", workers)
     return _pool

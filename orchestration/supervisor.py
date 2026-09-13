@@ -1,6 +1,9 @@
 """orchestration.supervisor — Supervisor 三级路由 + handoff 决策（方案 Phase 6 / Step 2 G-2）。
 
 三级路由级联（先命中先返回，全 miss → fallback）：
+  L0 `_doc_context_kind`
+      **显式**（客户端传 file_ids）→ 文档问答，压过 L1/L2/L3
+      **自动附着**（服务端按会话带文件）→ 让过 L1 后生效（A3）
   L1 `classify_rules`      规则快路径（问候 / 项目编号 / 文档关键词，确定性，零成本）
   L2 `classify_semantic`   语义相似度（BGE-M3 嵌入 × registry examples 余弦，
                            **默认关闭**——embedder 为 API（SiliconFlow），每请求 13+ 次
@@ -35,6 +38,27 @@ SEMANTIC_ROUTE_ENABLED = os.getenv("SUPERVISOR_SEMANTIC_ROUTE", "false").lower()
     "1", "true", "yes",
 }
 SEMANTIC_ROUTE_THRESHOLD = 0.5
+
+
+# ── L0 文档上下文（B2/A3：本轮带了上传文件 → 走 doc_qa）──────────
+
+#: L0 路由目标（能力 id）。doc_qa 未启用时 L0 自动失效，退回三级级联。
+DOC_CONTEXT_ROUTE = "doc_qa"
+
+
+def _doc_context_kind(
+    messages: List[BaseMessage], registry: Optional[CapabilityRegistry]
+) -> Optional[str]:
+    """本轮文档上下文的强度（doc_qa 不可调度时一律 None）。
+
+    判定口径复用 `agent.nodes.doc_qa.doc_context_kind`（与 doc_qa 节点同源），
+    避免路由说"有文档"、节点却读不出上下文的自相矛盾。
+    """
+    from agent.nodes.doc_qa import doc_context_kind
+
+    if DOC_CONTEXT_ROUTE not in set(agent_ids(registry)):
+        return None
+    return doc_context_kind(messages)
 
 
 # ── L1 规则快路径（W2-1：规则数据化 → orchestration/routing_rules.yaml）────
@@ -130,7 +154,12 @@ def route_question(
     embedder: Optional[Any] = None,
     llm_router: Optional[Callable[[dict], dict]] = None,
 ) -> str:
-    """三级级联路由：L1 规则 → L2 语义 → L3 LLM（registry router）→ fallback。
+    """路由：L0 文档上下文 → L1 规则 → L2 语义 → L3 LLM → fallback。
+
+    L0 分两档（A3）：
+      - **显式**（客户端传了 file_ids）→ 最高的 L0，压过 L1/L2/L3；
+      - **自动附着**（服务端按会话带上文件）→ 让过 L1 强规则后再生效，
+        否则「上传过文件的会话」里问项目编号/公司会被强行拉进 doc_qa。
 
     Args:
         messages: 对话消息（末条为用户问题；L3 走完整 history 与既有 router 一致）。
@@ -141,10 +170,22 @@ def route_question(
     """
     question = str(messages[-1].content) if messages else ""
 
+    # L0（强）：客户端显式带了文件，是最强意图信号——交给关键词/LLM 判断会把它推翻
+    # （实测：带 file_ids 问法规问题错走 knowledge_qa，文件被完全忽略）。
+    kind = _doc_context_kind(messages, registry)
+    if kind == "explicit":
+        logger.info("supervisor L0（显式文件）路由 → %s", DOC_CONTEXT_ROUTE)
+        return DOC_CONTEXT_ROUTE
+
     rule_hit = classify_rules(question)
     if rule_hit:
         logger.info("supervisor L1 规则路由 → %s", rule_hit)
         return rule_hit
+
+    # L0（弱）：本会话有自动附着的文件，且没有 L1 强信号 → 按文档答。
+    if kind == "session":
+        logger.info("supervisor L0（会话文件）路由 → %s", DOC_CONTEXT_ROUTE)
+        return DOC_CONTEXT_ROUTE
 
     semantic_hit = classify_semantic(question, registry, embedder)
     if semantic_hit:

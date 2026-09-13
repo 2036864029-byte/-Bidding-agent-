@@ -1,4 +1,4 @@
-"""core.jobs — 轻量内存任务队列（W4-3 队列解耦）。"""
+"""core.jobs — 轻量任务队列（W4-3 队列解耦；状态表可切 Redis，见 queue.py）。"""
 
 from __future__ import annotations
 

@@ -114,6 +114,129 @@ def test_route_cascade_all_miss_no_llm_falls_back():
     assert r == "fallback"
 
 
+# ── L0 文档上下文（B2：本轮带了上传文件 → 直接 doc_qa）─────────
+
+
+def _doc_messages(question: str):
+    """构造「本轮注入了文档 + 用户问题」的消息序列（D-0-2 注入形状）。"""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    from agent.nodes.doc_qa import DOC_CONTEXT_MARKER
+
+    return [
+        SystemMessage(content=f"{DOC_CONTEXT_MARKER}\n[文件：a.pdf]\n第一章 内容"),
+        HumanMessage(content=question),
+    ]
+
+
+def test_doc_context_wins_over_l1_rule():
+    """带文件时即便问题命中 L1 问候规则，也必须走 doc_qa。"""
+    assert route_question(_doc_messages("你好")) == "doc_qa"
+
+
+def test_doc_context_wins_over_l3_llm():
+    """B2 原始症状：带 file_ids 问法规问题，曾被 LLM 判成 knowledge_qa、文件被忽略。"""
+    fake_router = lambda state: {"router_intent": "knowledge_qa"}
+
+    r = route_question(
+        _doc_messages("政府采购工程建设项目应适用什么法律？"),
+        llm_router=fake_router,
+    )
+
+    assert r == "doc_qa"
+
+
+def test_no_doc_context_routes_as_before():
+    """无文档上下文时不受影响：仍按三级级联交给 L3。"""
+    from langchain_core.messages import HumanMessage
+
+    fake_router = lambda state: {"router_intent": "knowledge_qa"}
+
+    r = route_question(
+        [HumanMessage(content="政府采购工程建设项目应适用什么法律？")],
+        llm_router=fake_router,
+    )
+
+    assert r == "knowledge_qa"
+
+
+def test_stale_doc_context_does_not_trigger_l0():
+    """上一轮注入的文档上下文不得触发本轮 L0（与 doc_qa 节点同口径）。"""
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    fake_router = lambda state: {"router_intent": "knowledge_qa"}
+    messages = _doc_messages("第一个问题") + [
+        AIMessage(content="回答"),
+        HumanMessage(content="第二个问题"),   # 本轮未注入文档
+    ]
+
+    assert route_question(messages, llm_router=fake_router) == "knowledge_qa"
+
+
+def test_doc_context_ignored_when_doc_qa_disabled():
+    """doc_qa 未启用时 L0 自动失效，退回三级级联（不许路由到不存在的 agent）。"""
+    from agent.registry import CapabilityRegistry, CapabilitySpec
+
+    reg = CapabilityRegistry()
+    reg.register(CapabilitySpec(id="knowledge_qa", node="knowledge_qa"))
+    fake_router = lambda state: {"router_intent": "knowledge_qa"}
+
+    r = route_question(
+        _doc_messages("这份文件说明了什么"),
+        registry=reg,
+        llm_router=fake_router,
+    )
+
+    assert r == "knowledge_qa"
+
+
+# ── A3：会话自动附着是弱信号，不得压过 L1 强规则 ──────────────
+
+
+def _session_doc_messages(question: str):
+    """构造「服务端自动附着本会话文件 + 用户问题」的消息序列。"""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    from agent.nodes.doc_qa import SESSION_DOC_MARKER
+
+    return [
+        SystemMessage(content=f"{SESSION_DOC_MARKER}\n[文件：a.pdf]\n第一章 内容"),
+        HumanMessage(content=question),
+    ]
+
+
+def test_session_doc_does_not_override_l1_rules():
+    """回归：上传过文件的会话里问项目编号，必须仍走 price_inquiry（B2 症状的反向）。"""
+    for q, expected in [
+        ("查一下 AH2024-001 项目", "price_inquiry"),
+        ("[350001]FJGGZY[GK]2024013 中标情况", "price_inquiry"),
+        ("你好", "general_chat"),
+    ]:
+        assert route_question(_session_doc_messages(q)) == expected, q
+
+
+def test_session_doc_routes_to_doc_qa_when_no_strong_signal():
+    """没有 L1 强信号时，自动附着的文件才生效（否则 A3 等于没做）。"""
+    fake_router = lambda state: {"router_intent": "knowledge_qa"}
+
+    r = route_question(
+        _session_doc_messages("投标保证金是多少？"),
+        llm_router=fake_router,
+    )
+
+    assert r == "doc_qa"
+
+
+def test_session_doc_still_hits_l1_doc_rule():
+    """L1 的 doc_qa 关键词（"分析文档"）命中在先，结果同样是 doc_qa。"""
+    assert route_question(_session_doc_messages("帮我分析这个文档")) == "doc_qa"
+
+
+def test_explicit_doc_context_still_outranks_l1():
+    """显式 file_ids 是强信号：即便问题命中 L1 问候，也走 doc_qa（A2 行为不变）。"""
+    assert route_question(_doc_messages("你好")) == "doc_qa"
+
+
 # ── W0-4：router 只构建一次 ───────────────────────────────────
 
 def test_supervisor_node_builds_llm_router_once(monkeypatch):

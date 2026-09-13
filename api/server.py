@@ -18,6 +18,7 @@ import os
 import threading
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator, Callable, Optional
 
@@ -99,6 +100,30 @@ def _resolve_context_docs(file_ids: list[str], session_id: str) -> list[tuple[st
     return docs
 
 
+def _session_context_docs(session_id: str, limit: int) -> list[tuple[str, str, str]]:
+    """A3：请求没带 file_ids 时，自动附着本会话最近 N 个未过期文件。
+
+    条目带 ``"session"`` 标记 → 路由层按**弱信号**处理（L1 强规则优先），
+    与客户端显式传 file_ids 的强信号区分开。N 经 `SESSION_FILE_AUTOLOAD_N` 配置，
+    0 = 关闭。
+    """
+    if limit <= 0:
+        return []
+    recs = file_store.list_by_session(session_id)[:limit]
+    if recs:
+        logger.info("会话文件自动附着: session=%s files=%s", session_id[:12],
+                    [r.source_name for r in recs])
+    return [(rec.source_name, rec.markdown, "session") for rec in recs]
+
+
+def _context_docs_for(req: ChatRequest, session_scope: str) -> list:
+    """本轮要注入的文档上下文：显式 file_ids 优先，否则自动附着本会话文件。"""
+    file_ids = [fid for fid in (req.file_ids or []) if fid]
+    if file_ids:
+        return _resolve_context_docs(file_ids, session_scope)
+    return _session_context_docs(session_scope, Settings().session_file_autoload_n)
+
+
 def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
     session_id = _resolve_session_id(req.session_id)  # 客户端可见的原始会话 id
     set_session_id(session_id)  # W2-2：会话 id 进入日志上下文
@@ -117,7 +142,7 @@ def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
         result = agent.invoke(
             req.question,
             thread_id=session_scope,
-            context_docs=_resolve_context_docs(req.file_ids, session_scope),
+            context_docs=_context_docs_for(req, session_scope),
         )
     finally:
         gate.release()
@@ -317,6 +342,35 @@ async def _read_upload_limited(file: UploadFile, max_bytes: int) -> bytes:
     return b"".join(chunks)
 
 
+def _apply_thread_limiter(limit: int) -> None:
+    """C2/B7：把 anyio 同步端点线程池上限调到配置值。
+
+    必须在**事件循环内**执行（见 `_lifespan`）——`current_default_thread_limiter()`
+    在没有运行中的事件循环时会抛 NoEventLoopError。
+
+    why：FastAPI 的同步端点（`/chat`）由 anyio 线程池代跑，**默认上限 40**。
+    闸门（`max_inflight_requests`）一旦调大超过 40，线程池会先成为瓶颈：请求过了
+    闸门却排在线程池外，看起来"容量没提升"。故两者必须一起调。
+    """
+    if limit <= 0:
+        return
+    try:
+        from anyio.to_thread import current_default_thread_limiter
+
+        limiter = current_default_thread_limiter()
+        limiter.total_tokens = int(limit)
+        logger.info("anyio 同步端点线程池上限 = %d", limiter.total_tokens)
+    except Exception as exc:  # noqa: BLE001  版本/平台差异不应阻断启动
+        logger.warning("anyio 线程池上限设置失败（沿用默认 40）: %s", exc)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """启动钩子：应用级并发参数（必须在事件循环内生效）。"""
+    _apply_thread_limiter(Settings().chat_thread_limit)
+    yield
+
+
 def create_app(
     get_agent_fn: Callable[[], AgentGraph] = get_agent,
 ) -> FastAPI:
@@ -325,7 +379,7 @@ def create_app(
     Args:
         get_agent_fn: 返回 AgentGraph 的依赖函数；测试可注入 mock。
     """
-    app = FastAPI(title="ztb_demo Agent API", version="0.1.0")
+    app = FastAPI(title="ztb_demo Agent API", version="0.1.0", lifespan=_lifespan)
     register_exception_handlers(app)  # W2-3：统一错误信封 + 不泄露内部细节
 
     # 中间件顺序：后添加的在外层。目标（外→内）：CORS → RequestContext → RateLimit，
@@ -447,7 +501,9 @@ def create_app(
 
             解析放到**独立进程**（core.jobs.cpu_pool）：PDF 解析是 CPU/GIL 密集，
             跑在主进程会拖慢同期提问链路（实测 5 并发上传使提问 p95 3.41s→6.29s）。
-            file_store 是进程内状态，故**落库仍在主进程**。
+            本回调仍在**主进程**（队列 worker 线程）里跑：解析产物要交给
+            file_store，而子进程只做纯解析。多 worker 下 file_store 走 Redis，
+            其他 worker 也能读到（见 api/file_store.py）。
             """
             fid = _current_task_id.get()
             res = _parse_upload(data, name)
@@ -549,7 +605,7 @@ def create_app(
         session_scope = tenant_scoped(session_id)  # W4-3：内部隔离（检查点/会话/文件）
         get_session_registry().touch(session_scope)  # W2-4：登记会话
         # 文件校验放在响应开始之前，失败返回正常 HTTP 404 而不是流中 error 事件
-        context_docs = _resolve_context_docs(req.file_ids, session_scope)
+        context_docs = _context_docs_for(req, session_scope)
         return StreamingResponse(
             _sse_stream(agent, req, session_id, context_docs),
             media_type="text/event-stream",

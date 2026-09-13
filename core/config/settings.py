@@ -426,11 +426,13 @@ class Settings:
     # 线程池（W0-1）— "整条查询"与"单条 SQL"必须分池
     # ============================================================
     # 同池嵌套会导致并发 ≥ worker 数时内层任务永不调度（审计 A1）。两者独立配置。
+    # 容量（B10）：默认 8 时并发价格查询会在 8 排队 → 提到 32 与闸门（128）匹配
+    # 的价格分支份额。上限仍受 mysql_pool_max 约束，两者需同步调整。
     query_pool_max_workers: int = field(
-        default_factory=lambda: int(os.getenv("QUERY_POOL_MAX_WORKERS", "8"))
+        default_factory=lambda: int(os.getenv("QUERY_POOL_MAX_WORKERS", "32"))
     )
     sql_pool_max_workers: int = field(
-        default_factory=lambda: int(os.getenv("SQL_POOL_MAX_WORKERS", "8"))
+        default_factory=lambda: int(os.getenv("SQL_POOL_MAX_WORKERS", "32"))
     )
 
     # ============================================================
@@ -439,12 +441,19 @@ class Settings:
     # 进程级「在飞请求」上限；超限等待 wait_timeout 后快速失败（503 + Retry-After），
     # 不无限排队。0 = 关闭（便于灰度/回退）。多 worker 下总上限 ≈ workers × 本值。
     # 与入口限流（rate_limit_per_minute，按客户端）互补：本项管**全局容量**。
+    # B6：默认 32 远低于上游能力（DeepSeek 支持 2500 并发，rerank 已自建无速率上限），
+    # 提到 128 起步；须配合 `chat_thread_limit`（线程池 ≥ 闸门）一起调。
     # 建议值按上游速率上限实测标定（见 scripts/load_test_chat.py）。
     max_inflight_requests: int = field(
-        default_factory=lambda: int(os.getenv("MAX_INFLIGHT_REQUESTS", "32"))
+        default_factory=lambda: int(os.getenv("MAX_INFLIGHT_REQUESTS", "128"))
     )
     inflight_wait_timeout_seconds: float = field(
         default_factory=lambda: float(os.getenv("INFLIGHT_WAIT_TIMEOUT_SECONDS", "5"))
+    )
+    # C2：同步端点的 anyio 线程池上限（默认 40）。**必须 ≥ 闸门**——否则闸门放行的
+    # 请求会先卡在线程池外，闸门调大反而看不出容量提升（B7）。
+    chat_thread_limit: int = field(
+        default_factory=lambda: int(os.getenv("CHAT_THREAD_LIMIT", "128"))
     )
 
     # ============================================================
@@ -492,6 +501,32 @@ class Settings:
     )
 
     # ============================================================
+    # 上传文件缓存（B1）— 上传解析产物的会话级临时存储
+    # ============================================================
+    # 后端：memory（进程内 dict，默认）| redis（多 worker / 多副本共享）。
+    # **多 worker 必须用 redis**：进程内 dict 不跨进程共享，worker A 上传的文件
+    # 落到 worker B 即 404（C7 支持 API_WORKERS=N 后暴露的冲突）。
+    file_store_backend: str = field(
+        default_factory=lambda: os.getenv("FILE_STORE_BACKEND", "memory")
+    )
+    # 留空时复用 CACHE_REDIS_URL（本地开发通常同一个 Redis 实例）。
+    file_store_redis_url: str = field(
+        default_factory=lambda: (
+            os.getenv("FILE_STORE_REDIS_URL", "")
+            or os.getenv("CACHE_REDIS_URL", "redis://localhost:6379/0")
+        )
+    )
+    file_store_ttl_seconds: int = field(
+        default_factory=lambda: int(os.getenv("FILE_STORE_TTL_SECONDS", "3600"))
+    )
+    # A3：请求未带 file_ids 时，自动附着本会话**最近 N 个**未过期文件（按上传时间倒序）。
+    # N=0 关闭（回退到"必须客户端回传 id"的旧行为）。自动附着是弱信号——路由层
+    # 会让 L1 强规则先判（见 orchestration/supervisor.py 的 L0 两档）。
+    session_file_autoload_n: int = field(
+        default_factory=lambda: int(os.getenv("SESSION_FILE_AUTOLOAD_N", "1"))
+    )
+
+    # ============================================================
     # 全局总超时（任务4）— 单次业务节点最大允许执行时间
     # ============================================================
     node_total_timeout: int = field(
@@ -520,8 +555,11 @@ class Settings:
         default_factory=lambda: os.getenv("MYSQL_CLEAN_DB", "ztb_clean")
     )
     # 连接池上限（W0-10）：无上限时并发下池会无限增长（审计 A5）。
+    # B10 配套：query/sql 池提到 32 后，本项若停在 16 会成为新的瓶颈，且失败形态
+    # 更差（池满 → 等待超时 → 报错，而非优雅排队）。故同步提到 32。
+    # 上限还受 MySQL 服务端 max_connections 约束（默认 151，单机 2 worker 共 64 连接，余量充足）。
     mysql_pool_max: int = field(
-        default_factory=lambda: int(os.getenv("MYSQL_POOL_MAX", "16"))
+        default_factory=lambda: int(os.getenv("MYSQL_POOL_MAX", "32"))
     )
     # socket 读/写超时（W0-10）：SSDictCursor 流式读大表需要较长窗口；
     # 单条 SQL 的**业务**超时由 _execute_sql_with_timeout 用线程池控制，
@@ -627,6 +665,22 @@ class Settings:
     # 任务队列（W4-3 队列解耦）：后台 worker 数（异步上传解析用）
     job_queue_workers: int = field(
         default_factory=lambda: int(os.getenv("JOB_QUEUE_WORKERS", "2"))
+    )
+    # 任务**状态表**后端（B1 姊妹项）：memory（进程内，默认）| redis（多 worker 共享）。
+    # 执行仍在提交到的那个 worker 上跑，跨进程共享的只是状态——否则多 worker 下
+    # 轮询 pending 任务会落到没有该任务的进程 → 404「任务不存在」（实测复现）。
+    # **多 worker 必须用 redis**，与 FILE_STORE_BACKEND 同源。
+    job_queue_backend: str = field(
+        default_factory=lambda: os.getenv("JOB_QUEUE_BACKEND", "memory")
+    )
+    job_queue_redis_url: str = field(
+        default_factory=lambda: (
+            os.getenv("JOB_QUEUE_REDIS_URL", "")
+            or os.getenv("CACHE_REDIS_URL", "redis://localhost:6379/0")
+        )
+    )
+    job_queue_ttl_seconds: int = field(
+        default_factory=lambda: int(os.getenv("JOB_QUEUE_TTL_SECONDS", "3600"))
     )
 
     # ============================================================
