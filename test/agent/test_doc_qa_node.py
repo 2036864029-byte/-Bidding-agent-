@@ -183,8 +183,8 @@ def test_single_mode_router_unchanged_without_context():
 
 
 def _retrieval_body(*blocks, used=None, total=57, max_score=None) -> str:
-    """构造 ``api.doc_context`` 的检索模式注入正文（复用其格式常量，防格式漂移）。"""
-    from api.doc_context import BLOCK_LINE, RETRIEVAL_HEADER
+    """构造 ``agent.doc_context`` 的检索模式注入正文（复用其格式常量，防格式漂移）。"""
+    from agent.doc_context import BLOCK_LINE, RETRIEVAL_HEADER
 
     used = used if used is not None else len(blocks)
     max_score = max_score if max_score is not None else max(b[2] for b in blocks)

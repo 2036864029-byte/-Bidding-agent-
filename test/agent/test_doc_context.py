@@ -1,4 +1,4 @@
-"""api.doc_context 测试（C1 胶水层）— 假 embedding，不触网络。
+"""agent.doc_context 测试（C1 胶水层）— 假 embedding，不触网络。
 
 覆盖：长/小文档的路由（检索 vs 全文）、索引缺失/关闭/异常的回退、
 以及**渲染 ↔ 节点解析的跨模块契约**（块标记往返不丢字段）。
@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-import api.doc_context as dc
-from api.file_store import FileRecord
+import agent.doc_context as dc
+from core.filestore import FileRecord
 from core import doc_index
 from core.config.settings import Settings
 

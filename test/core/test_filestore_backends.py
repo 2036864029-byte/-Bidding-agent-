@@ -1,4 +1,4 @@
-"""file_store 后端切换与多 worker 共享测试（B1）。
+"""filestore 后端切换与多 worker 共享测试（B1）。
 
 - `memory` / `redis`（fakeredis）两个后端跑**同一组行为断言**——接口等价是本次
   改造的核心契约（调用方零改动）；
@@ -11,8 +11,8 @@ from __future__ import annotations
 import fakeredis
 import pytest
 
-from api import file_store
-from api.file_store import FileRecord, _MemoryBackend, _RedisBackend
+from core import filestore
+from core.filestore import FileRecord, _MemoryBackend, _RedisBackend
 
 
 def _record(
@@ -29,7 +29,7 @@ def _record(
         preview="正文",
         chunk_count=3,
         session_id=session,
-        created_at=file_store.time.time() if created_at is None else created_at,
+        created_at=filestore.time.time() if created_at is None else created_at,
     )
 
 
@@ -37,9 +37,9 @@ def _record(
 def backend(request):
     """两个后端同一组用例（Redis 用 fakeredis，不依赖外部服务）。"""
     if request.param == "memory":
-        return _MemoryBackend(ttl=file_store.FILE_TTL_SECONDS)
+        return _MemoryBackend(ttl=filestore.FILE_TTL_SECONDS)
     return _RedisBackend(
-        ttl=file_store.FILE_TTL_SECONDS, url="", client=fakeredis.FakeRedis()
+        ttl=filestore.FILE_TTL_SECONDS, url="", client=fakeredis.FakeRedis()
     )
 
 
@@ -58,7 +58,7 @@ def test_get_unknown_returns_none(backend):
 
 
 def test_list_by_session_filters_and_sorts_desc(backend):
-    now = file_store.time.time()
+    now = filestore.time.time()
     backend.put(_record(fid="old", session="s1", created_at=now - 200))
     backend.put(_record(fid="new", session="s1", created_at=now - 100))
     backend.put(_record(fid="other", session="s2", created_at=now))
@@ -85,7 +85,7 @@ def test_clear_empties_store(backend):
 def test_memory_expired_record_dropped():
     """TTL 过期即在 get / list_by_session 两处都不可见。"""
     backend = _MemoryBackend(ttl=10)
-    backend.put(_record(created_at=file_store.time.time() - 11))
+    backend.put(_record(created_at=filestore.time.time() - 11))
     assert backend.get("f1") is None
     assert backend.list_by_session("s1") == []
 
@@ -96,8 +96,8 @@ def test_redis_put_sets_ttl_on_record_and_index():
     backend = _RedisBackend(ttl=123, url="", client=client)
     backend.put(_record())
 
-    assert 0 < client.ttl(f"{file_store._REDIS_PREFIX}:file:f1") <= 123
-    assert 0 < client.ttl(f"{file_store._REDIS_PREFIX}:session:s1") <= 123
+    assert 0 < client.ttl(f"{filestore._REDIS_PREFIX}:file:f1") <= 123
+    assert 0 < client.ttl(f"{filestore._REDIS_PREFIX}:session:s1") <= 123
 
 
 def test_redis_list_by_session_prunes_stale_index_entries():
@@ -105,10 +105,10 @@ def test_redis_list_by_session_prunes_stale_index_entries():
     client = fakeredis.FakeRedis()
     backend = _RedisBackend(ttl=123, url="", client=client)
     backend.put(_record(fid="gone"))
-    client.delete(f"{file_store._REDIS_PREFIX}:file:gone")   # 模拟记录先过期
+    client.delete(f"{filestore._REDIS_PREFIX}:file:gone")   # 模拟记录先过期
 
     assert backend.list_by_session("s1") == []
-    assert client.smembers(f"{file_store._REDIS_PREFIX}:session:s1") == set()
+    assert client.smembers(f"{filestore._REDIS_PREFIX}:session:s1") == set()
 
 
 # ── 多 worker 验收（B1 的核心）────────────────────────────────
@@ -138,14 +138,14 @@ def test_memory_backend_is_not_shared():
 
 
 def test_module_api_roundtrip_and_ownership(monkeypatch):
-    monkeypatch.setattr(file_store, "_backend", _MemoryBackend(ttl=60))
-    file_store.put(_record(session="s1"))
+    monkeypatch.setattr(filestore, "_backend", _MemoryBackend(ttl=60))
+    filestore.put(_record(session="s1"))
 
-    assert file_store.get("f1") is not None
-    assert file_store.get("f1", session_id="s1") is not None
-    assert file_store.get("f1", session_id="s2") is None, "跨会话按不存在处理（W0-6）"
-    assert [r.file_id for r in file_store.list_by_session("s1")] == ["f1"]
-    assert file_store.list_by_session("s2") == []
+    assert filestore.get("f1") is not None
+    assert filestore.get("f1", session_id="s1") is not None
+    assert filestore.get("f1", session_id="s2") is None, "跨会话按不存在处理（W0-6）"
+    assert [r.file_id for r in filestore.list_by_session("s1")] == ["f1"]
+    assert filestore.list_by_session("s2") == []
 
 
 # ── 后端选择与降级 ────────────────────────────────────────────
@@ -153,7 +153,7 @@ def test_module_api_roundtrip_and_ownership(monkeypatch):
 
 def test_build_backend_defaults_to_memory(monkeypatch):
     monkeypatch.delenv("FILE_STORE_BACKEND", raising=False)
-    assert isinstance(file_store._build_backend(), _MemoryBackend)
+    assert isinstance(filestore._build_backend(), _MemoryBackend)
 
 
 def test_build_backend_redis_with_injected_url(monkeypatch):
@@ -164,7 +164,7 @@ def test_build_backend_redis_with_injected_url(monkeypatch):
     monkeypatch.setattr(
         redis_mod.Redis, "from_url", staticmethod(lambda *a, **k: fakeredis.FakeRedis())
     )
-    assert isinstance(file_store._build_backend(), _RedisBackend)
+    assert isinstance(filestore._build_backend(), _RedisBackend)
 
 
 def test_build_backend_falls_back_when_redis_unreachable(monkeypatch):
@@ -172,11 +172,11 @@ def test_build_backend_falls_back_when_redis_unreachable(monkeypatch):
     monkeypatch.setenv("FILE_STORE_BACKEND", "redis")
     monkeypatch.setenv("FILE_STORE_REDIS_URL", "redis://127.0.0.1:1/0")
 
-    assert isinstance(file_store._build_backend(), _MemoryBackend)
+    assert isinstance(filestore._build_backend(), _MemoryBackend)
 
 
 def test_ttl_setting_is_honored(monkeypatch):
     monkeypatch.setenv("FILE_STORE_BACKEND", "memory")
     monkeypatch.setenv("FILE_STORE_TTL_SECONDS", "42")
-    backend = file_store._build_backend()
+    backend = filestore._build_backend()
     assert backend._ttl == 42

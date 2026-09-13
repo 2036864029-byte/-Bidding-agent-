@@ -47,7 +47,7 @@ def test_status_unknown_returns_none():
 
 
 def test_current_task_id_available_in_worker():
-    """任务回调内能读到自己的 task_id（异步上传存 file_store 用）。"""
+    """任务回调内能读到自己的 task_id（异步上传存 filestore 用）。"""
     from core.jobs import _current_task_id
 
     q = _queue()

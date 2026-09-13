@@ -28,7 +28,8 @@ from fastapi import File as FileParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from agent import AgentGraph
+from agent import AgentGraph, doc_context
+from core import filestore
 from core.concurrency.limits import InflightGate, get_inflight_gate
 from core.config.settings import Settings
 from core.errors.exceptions import ServiceBusyError
@@ -46,7 +47,6 @@ from core.protocol.reply import to_reply
 from core.session import get_session_registry
 from core.streaming.sink import StreamSink, set_active_sink
 
-from . import doc_context, file_store
 from .deps import get_agent
 from .middleware import (
     ApiKeyAuthMiddleware,
@@ -73,7 +73,7 @@ def _parse_upload(data: bytes, name: str) -> dict:
 
     解析是 CPU/GIL 密集：跑在主进程会与请求链路抢 GIL（实测 5 并发上传把同期
     提问 p95 从 3.41s 拉到 6.29s）。故交给 `core.jobs.cpu_pool` 在独立进程执行，
-    主进程只负责把结果落进 file_store。
+    主进程只负责把结果落进 filestore。
 
     **本函数是可替换接缝**：测试 monkeypatch 它注入假解析器，免起子进程。
     """
@@ -87,13 +87,13 @@ def _resolve_context_docs(
 ) -> list[tuple[str, str, str]]:
     """file_ids → (文件名, 上下文, "explicit")；缺失/过期/非本会话抛 404。
 
-    上下文由 ``api.doc_context`` 渲染（C1）：长文档走**文档内检索**（top-K 块），
+    上下文由 ``agent.doc_context`` 渲染（C1）：长文档走**文档内检索**（top-K 块），
     小文档 / 未建索引 / 检索失败回退全文——节点侧据块标记区分两种模式。
     归属校验（W0-6）：只允许使用本会话上传的文件。
     """
     records = []
     for fid in file_ids or []:
-        rec = file_store.get(fid, session_id=session_id)
+        rec = filestore.get(fid, session_id=session_id)
         if rec is None:
             raise HTTPException(
                 status_code=404,
@@ -114,7 +114,7 @@ def _session_context_docs(
     """
     if limit <= 0:
         return []
-    recs = file_store.list_by_session(session_id)[:limit]
+    recs = filestore.list_by_session(session_id)[:limit]
     if recs:
         logger.info("会话文件自动附着: session=%s files=%s", session_id[:12],
                     [r.source_name for r in recs])
@@ -433,13 +433,13 @@ def create_app(
     ) -> dict:
         """上传临时文件：FileParseTool 解析为清洗后 Markdown，返回 file_id + 预览。
 
-        只存临时会话缓存（api.file_store），**不写入任何向量库**（防污染，D-4）。
+        只存临时会话缓存（core.filestore），**不写入任何向量库**（防污染，D-4）。
         未传 session_id 时服务端生成并回传，后续 /chat 带上同一 id 才能使用该文件。
 
         同步版本：小文件即时返回解析结果。大文件解析耗时，请用
         ``POST /files/upload/async`` + ``GET /files/{file_id}/status``（W4-3 队列解耦）。
 
-        C1 起本端点**同步建文档索引**（仅长文档，见 api/doc_context）：实测 60 块
+        C1 起本端点**同步建文档索引**（仅长文档，见 agent/doc_context）：实测 60 块
         约 +3.7s（自建 bge-m3）。小文件不触发；长文档请优先走 async 端点，
         索引在那里同样是响应前建好（轮询到 done 即已就绪）。
         """
@@ -457,8 +457,8 @@ def create_app(
             res = await anyio.to_thread.run_sync(_parse_upload, data, name)
         except (ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        record = file_store.FileRecord(
-            file_id=file_store.new_file_id(),
+        record = filestore.FileRecord(
+            file_id=filestore.new_file_id(),
             source_name=res["source_name"],
             source_format=res["source_format"],
             markdown=res["markdown"],
@@ -467,9 +467,9 @@ def create_app(
             session_id=session_scope,
             created_at=time.time(),
         )
-        file_store.put(record)
+        filestore.put(record)
         # C1：长文档顺带建**会话私有**文档索引（只进 Redis，不入公共 Milvus），
-        # 提问时走文档内检索；小文档 / 失败即跳过（回退全文模式，见 api/doc_context）
+        # 提问时走文档内检索；小文档 / 失败即跳过（回退全文模式，见 agent/doc_context）
         t_index = time.perf_counter()
         doc_context.build_index_for(record)
         logger.info(
@@ -513,17 +513,17 @@ def create_app(
         data = await _read_upload_limited(file, max_bytes)
 
         def _parse_and_store() -> dict:
-            """worker 内执行：解析 → 存 file_store（file_id = 当前任务 id）。
+            """worker 内执行：解析 → 存 filestore（file_id = 当前任务 id）。
 
             解析放到**独立进程**（core.jobs.cpu_pool）：PDF 解析是 CPU/GIL 密集，
             跑在主进程会拖慢同期提问链路（实测 5 并发上传使提问 p95 3.41s→6.29s）。
             本回调仍在**主进程**（队列 worker 线程）里跑：解析产物要交给
-            file_store，而子进程只做纯解析。多 worker 下 file_store 走 Redis，
-            其他 worker 也能读到（见 api/file_store.py）。
+            filestore，而子进程只做纯解析。多 worker 下 filestore 走 Redis，
+            其他 worker 也能读到（见 core/filestore.py）。
             """
             fid = _current_task_id.get()
             res = _parse_upload(data, name)
-            record = file_store.FileRecord(
+            record = filestore.FileRecord(
                 file_id=fid,
                 source_name=res["source_name"],
                 source_format=res["source_format"],
@@ -533,7 +533,7 @@ def create_app(
                 session_id=session_scope,
                 created_at=time.time(),
             )
-            file_store.put(record)
+            filestore.put(record)
             # C1：索引先于任务完成态落库——轮询到 status=done 时索引必然已就绪
             # （否则上传后立刻提问会打空，退化成全文模式）
             doc_context.build_index_for(record)
@@ -575,8 +575,8 @@ def create_app(
 
         st = get_queue().status(file_id)
         if st is None:
-            # 任务表没有 → 可能已完成并写入 file_store（回退查，不按会话过滤）
-            rec = file_store.get(file_id)
+            # 任务表没有 → 可能已完成并写入 filestore（回退查，不按会话过滤）
+            rec = filestore.get(file_id)
             if rec is None:
                 raise HTTPException(
                     status_code=404, detail="任务或文件不存在（或已过期）"
@@ -595,10 +595,10 @@ def create_app(
         if st["status"] == "error":
             return {"file_id": file_id, "status": "error",
                     "error": st["error"], "session_id": session}
-        # done：任务已完成，file_store 应已有记录（不按会话过滤，见方法文档）
-        rec = file_store.get(file_id)
+        # done：任务已完成，filestore 应已有记录（不按会话过滤，见方法文档）
+        rec = filestore.get(file_id)
         if rec is None:
-            # file_store TTL 为 1 小时：过期后属"找不到了"，不是服务端错误
+            # filestore TTL 为 1 小时：过期后属"找不到了"，不是服务端错误
             raise HTTPException(status_code=404, detail="任务已完成，但文件记录已过期")
         return {
             "file_id": file_id, "status": "done",

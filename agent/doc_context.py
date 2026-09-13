@@ -1,9 +1,10 @@
-# 功能：上传文档 → 索引/上下文渲染（C1 胶水层）。
-"""api.doc_context — 把「会话文件」变成「喂给 doc_qa 的上下文」。
+# 功能：上传文档 → 索引/上下文渲染 + read_file 工具（C1 胶水层）。
+"""agent.doc_context — 把「会话文件」变成「喂给 agent 的上下文 / 可调用的工具」。
 
-**分层**：本模块位于 api 层，可同时 import ``public_kb``（分块）与 ``core``
-（索引引擎 ``core.doc_index``）。``core`` 不得反向依赖 ``public_kb``，故分块
-链条留在这里，见 ``core/doc_index.py`` 的模块文档。
+**分层**：本模块位于 agent 层，可同时 import ``public_kb``（分块）与 ``core``
+（索引引擎 ``core.doc_index``、文件记录 ``core.filestore``）。**core 不得反向
+依赖 public_kb**，故分块链条留在这里（见 ``core/doc_index.py`` 模块文档）；
+api 层经本模块渲染上下文（api → agent 是既有方向，见 ``api/deps.py``）。
 
 **两条路径**：
 

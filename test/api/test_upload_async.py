@@ -35,9 +35,9 @@ def _wait_done(client, file_id: str, session_id: str, timeout: float = 5.0) -> d
 
 def test_async_upload_then_status_done():
     """上传 txt → pending → 轮询到 done，file_id 可用。"""
-    from api import file_store
+    from core import filestore
 
-    file_store.reset_store()
+    filestore.reset_store()
     client = _client()
 
     r = client.post(
@@ -59,7 +59,7 @@ def test_async_upload_then_status_done():
     # 完成后 file_store 里有记录，/chat 的 file_ids 可用
     from core.observability.context import tenant_scoped
 
-    assert file_store.get(fid, session_id=tenant_scoped(sid)) is not None
+    assert filestore.get(fid, session_id=tenant_scoped(sid)) is not None
 
 
 def test_async_upload_status_unknown_404():
@@ -86,9 +86,9 @@ def test_status_queryable_without_session_id():
     不同会话 → 按会话过滤时"上传后轮询"**必然 500**（"任务完成但文件记录缺失"），
     文件虽解析成功却永远取不回。file_id 是 128 位随机 id，本身即能力凭据。
     """
-    from api import file_store
+    from core import filestore
 
-    file_store.reset_store()
+    filestore.reset_store()
     client = _client()
 
     r = client.post(
@@ -118,9 +118,9 @@ def test_status_done_but_record_gone_returns_404_not_500():
 
     500 意味着"服务端出错"，而"文件已过期找不到"是客户端可理解的正常结果。
     """
-    from api import file_store
+    from core import filestore
 
-    file_store.reset_store()
+    filestore.reset_store()
     client = _client()
 
     r = client.post(
@@ -130,7 +130,7 @@ def test_status_done_but_record_gone_returns_404_not_500():
     fid = r.json()["file_id"]
     _wait_done(client, fid, r.json()["session_id"])
 
-    file_store.reset_store()          # 模拟 TTL 过期把记录清掉（任务表仍记 done）
+    filestore.reset_store()          # 模拟 TTL 过期把记录清掉（任务表仍记 done）
     resp = client.get(f"/files/{fid}/status")
     assert resp.status_code == 404
     assert "过期" in resp.json()["detail"]
@@ -152,7 +152,7 @@ def _long_markdown(sections: int) -> str:
 
 def test_async_upload_builds_doc_index(fake_doc_embeddings, monkeypatch):
     """轮询到 done 时索引必然已就绪——否则上传后立刻提问会打空、退化成全文。"""
-    from api import file_store
+    from core import filestore
     from core import doc_index
     from core.observability.context import tenant_scoped
 
@@ -162,7 +162,7 @@ def test_async_upload_builds_doc_index(fake_doc_embeddings, monkeypatch):
         lambda data, name: {"source_name": name, "source_format": "pdf",
                             "markdown": md, "preview": md[:40], "chunk_count": 15},
     )
-    file_store.reset_store()
+    filestore.reset_store()
     client = _client()
 
     r = client.post("/files/upload/async", files={"file": ("大.pdf", b"x", "application/pdf")})
@@ -174,11 +174,11 @@ def test_async_upload_builds_doc_index(fake_doc_embeddings, monkeypatch):
 
 
 def test_async_upload_skips_index_for_small_doc(fake_doc_embeddings):
-    from api import file_store
+    from core import filestore
     from core import doc_index
     from core.observability.context import tenant_scoped
 
-    file_store.reset_store()
+    filestore.reset_store()
     client = _client()
 
     r = client.post(

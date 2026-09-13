@@ -1,5 +1,9 @@
-# 功能：临时文件会话缓存（9.3 Track D / D-3）。
-"""api.file_store — 上传文件解析产物的临时缓存（会话级，TTL 过期）。
+# 功能：临时文件会话缓存（9.3 Track D / D-3；P6 结构收敛时由 api/ 下沉 core/）。
+"""core.filestore — 上传文件解析产物的临时缓存（会话级，TTL 过期）。
+
+**为什么在 core**：会话文件记录有三个跨层消费者——api 上传/状态端点、
+agent.doc_context 的上下文渲染、`read_file` 工具（agent 层）。基础设施被
+多层消费即应下沉，否则 agent 必须反向 import api。
 
 后端可切换（与 C4/C5 同一模式）：
   - ``FILE_STORE_BACKEND=memory``（默认）：进程内 dict；

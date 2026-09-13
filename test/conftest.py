@@ -56,25 +56,24 @@ def _hermetic_backends(monkeypatch):
     monkeypatch.setenv("CACHE_BACKEND", "memory")
     monkeypatch.setenv("RATE_LIMIT_BACKEND", "memory")
     # 上传文件缓存（B1）同理：钉在进程内，测试不依赖外部 Redis、也不跨用例污染。
-    # 需要真后端的用例自行显式构造（见 test/api/test_file_store_backends.py）。
+    # 需要真后端的用例自行显式构造（见 test/core/test_filestore_backends.py）。
     monkeypatch.setenv("FILE_STORE_BACKEND", "memory")
     # 任务状态表（B1 姊妹项）同理：进程内，不依赖外部 Redis。
     monkeypatch.setenv("JOB_QUEUE_BACKEND", "memory")
     # 检查点同理：默认 memory（不落盘、不依赖 PG）。需要真后端的用例显式构造
     # （见 test/core/test_checkpointer_postgres.py）。
     monkeypatch.setenv("CHECKPOINTER_BACKEND", "memory")
-    # C1：文档索引复用 file_store 后端配置 → 同样是进程级单例，跨用例会互相污染
+    # C1：文档索引复用 filestore 后端配置 → 同样是进程级单例，跨用例会互相污染
     # （同一 file_id+session 命中上一用例的索引）。
-    from api import file_store
-    from core import doc_index
+    from core import doc_index, filestore
     from core.cache import reset_caches
 
     reset_caches()
-    file_store.reset_store()   # 后端是进程级单例，可能已按 .env 构造过
+    filestore.reset_store()   # 后端是进程级单例，可能已按 .env 构造过
     doc_index.reset_index()
     yield
     reset_caches()
-    file_store.reset_store()
+    filestore.reset_store()
     doc_index.reset_index()
 
 
@@ -83,7 +82,7 @@ def fake_doc_embeddings(monkeypatch):
     """C1 测试用假 embedding：字符计数向量（零网络、确定性）。
 
     经 monkeypatch ``core.embeddings.get_embeddings`` 注入——``core.doc_index`` 与
-    ``api.doc_context`` 都在函数体内 ``from core.embeddings import get_embeddings``，
+    ``agent.doc_context`` 都在函数体内 ``from core.embeddings import get_embeddings``，
     故替换模块属性即对二者同时生效。字符重叠 → 余弦相似，足以验证排序与融合。
     """
     import numpy as np
