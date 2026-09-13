@@ -69,7 +69,6 @@
       "rationale": "第五章：自验收合格之日起五年（含球管等易损件）。",
       "source": "file_golden_v1"
     },
-
     {
       "q": "这份标书规定的投标保证金金额，符合招标投标法对投标保证金的要求吗？",
       "query_type": "file_kb",
@@ -125,7 +124,6 @@
       "rationale": "第九章 5% + 第五章 3%，双事实 + 法规上限（再次考察对多处「保证金」的区分）。",
       "source": "file_golden_v1"
     },
-
     {
       "q": "这份标书的采购人有没有行政处罚或者不良记录？",
       "query_type": "file_price",
@@ -159,7 +157,6 @@
       "rationale": "同上：主体名只出现在文件第一章，必须读文件才知道查谁。初版把「某市第一人民医院」写进了提问，已修正。",
       "source": "file_golden_v1"
     },
-
     {
       "q": "招标方式有哪几种？",
       "query_type": "no_file_needed",
@@ -204,7 +201,6 @@
       "rationale": "误入案例：纯业务库查询，读文件无用。",
       "source": "file_golden_v1"
     },
-
     {
       "q": "我最近在跟进某市大数据管理局的智慧园区智慧化改造项目，他们发的招标文件我看了一遍，里面有几点想确认：第一，他们要求投标保证金捌拾万元，这个金额相对于一千两百八十六万的项目预算来说，比例合规吗？第二，他们要求评标委员会七个人、专家不少于五个，这个构成符合法定要求吗？第三，这家采购人过往有没有被行政处罚或者列入不良记录的情况？我这边正在准备投标，想把这些风险点先摸清楚再决定报价策略，麻烦你帮我逐条分析一下。",
       "query_type": "file_multi",
@@ -225,6 +221,325 @@
       "key_entities": ["质保期五年", "逾期交货违约金", "进口产品审批"],
       "answer_contains_any": [["九十", "90"], ["百分之十", "10%"]],
       "rationale": "**长多子问 + 双源**（约 330 字，3 个子问都在文件+法规两个源内）：验证「一次排出多步计划」而非逐步试探。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书的招标控制价是多少？",
+      "query_type": "file_only",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["招标控制价"],
+      "answer_contains_any": [["4700万", "肆仟柒佰万", "47,000,000", "47000000"]],
+      "rationale": "第一章。工程类用「招标控制价」而非「预算金额」，考察术语区分。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书里计划工期是多少日历天？",
+      "query_type": "file_only",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["计划工期"],
+      "answer_contains_any": [["240", "二百四十"]],
+      "rationale": "第五章。与智慧园区（180 天）构成数字干扰。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书里质量保证金按什么比例预留？缺陷责任期多久？",
+      "query_type": "file_only",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["质量保证金", "5%", "二十四个月"],
+      "answer_contains_any": [["百分之五", "5%"], ["二十四个月", "24个月"]],
+      "rationale": "第五章。文件内另有履约保证金 10%（第三章）——再次考察多处「保证金」的区分。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书的评标办法是什么？评标委员会怎么组成的？",
+      "query_type": "file_only",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["经评审的最低投标价法", "评标委员会", "随机抽取"],
+      "answer_contains_any": [["最低投标价法"]],
+      "rationale": "第四章。工程类特有评标方法（区别于综合评分法）。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书要求的服务期是多长？总预算是多少？",
+      "query_type": "file_only",
+      "files": ["某市政务信息系统运维服务采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["服务期", "三年", "采购预算"],
+      "answer_contains_any": [["三年", "3年"], ["240万", "贰佰肆拾万", "2,400,000", "2400000"]],
+      "rationale": "第一章 + 第五章。服务类的「预算 = 服务期总预算」是其特点。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书要求核心业务系统的年度可用率不低于多少？",
+      "query_type": "file_only",
+      "files": ["某市政务信息系统运维服务采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["SLA", "可用率", "99.9%"],
+      "answer_contains_any": [["99.9", "百分之九十九点九"]],
+      "rationale": "第六章。服务类特有的 SLA 指标。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书要求配备多少名驻场人员？",
+      "query_type": "file_only",
+      "files": ["某市政务信息系统运维服务采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["驻场人员", "八名"],
+      "answer_contains_any": [["八名", "8名", "八人", "8人"]],
+      "rationale": "第二章本地化服务承诺。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书里安全文明施工费可以下浮吗？",
+      "query_type": "file_only",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["安全文明施工费", "不可竞争费"],
+      "answer_contains_any": [["不可竞争", "不得下浮"]],
+      "rationale": "第六章。工程类特有的不可竞争费概念。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书要求提交百分之十的履约保证金，这个比例符合规定吗？",
+      "query_type": "file_kb",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["履约保证金", "10%", "法定上限"],
+      "answer_contains_any": [["百分之十", "10%"]],
+      "rationale": "第三章 10% + 法规上限（中标金额 10%）→ 恰好压线，需要法规才能判断。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书约定工期延误违约金按万分之三计算、累计不超过百分之五，这个标准合规吗？",
+      "query_type": "file_kb",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["工期延误违约金", "万分之三", "上限"],
+      "answer_contains_any": [],
+      "rationale": "第九章 + 法规对违约金上限的一般规定。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书要求项目负责人具备安全生产考核合格证书（B 证），这个要求有依据吗？",
+      "query_type": "file_kb",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["项目负责人", "安全生产考核合格证书", "B证"],
+      "answer_contains_any": [],
+      "rationale": "第二章 + 安全生产法规对施工项目负责人的持证要求。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书里质疑答复七个工作日、投诉十五个工作日的约定，符合政府采购法吗？",
+      "query_type": "file_kb",
+      "files": ["某市政务信息系统运维服务采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["质疑", "七个工作日", "投诉", "十五个工作日"],
+      "answer_contains_any": [["七个工作日", "7个工作日"]],
+      "rationale": "第十一章 + 政府采购法质疑投诉时限（7/7/15）。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书约定连续两个季度考核低于七十分可以解除合同并没收履约保证金，这类条款合法吗？",
+      "query_type": "file_kb",
+      "files": ["某市政务信息系统运维服务采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["服务质量考核", "解除合同", "没收履约保证金"],
+      "answer_contains_any": [["五十", "50"]],
+      "rationale": "第九章。考察「合同解除 + 保证金没收」这类惩罚性条款的合法性边界。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书把 ITSS 三级、ISO 27001 认证设为资格条件，会不会构成以不合理条件限制供应商？",
+      "query_type": "file_kb",
+      "files": ["某市政务信息系统运维服务采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["ITSS", "ISO 27001", "资格条件", "不合理条件"],
+      "answer_contains_any": [],
+      "rationale": "第二章 + 政府采购法关于「不得以不合理条件对供应商实行差别待遇」的规定——需要法规判断。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书列了百分之十的暂列金额，这个比例有规定吗？",
+      "query_type": "file_kb",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["暂列金额", "10%"],
+      "answer_contains_any": [],
+      "rationale": "第六章 + 工程量清单计价规范对暂列金额的规定。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书的招标人近期有没有被行政处罚或者列入不良记录？",
+      "query_type": "file_price",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "price_query"],
+      "expected_tools": ["read_file", "price_query"],
+      "key_entities": ["某市住房和城乡建设局", "行政处罚", "不良记录"],
+      "answer_contains_any": [],
+      "rationale": "主体名只出现在文件第一章 → 必须读文件才知道查谁。**注**：主体虚构，库里查不到属正常，本项只验工具选择。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书的采购人过往有没有对外招标的采购项目记录？",
+      "query_type": "file_price",
+      "files": ["某市政务信息系统运维服务采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "price_query"],
+      "expected_tools": ["read_file", "price_query"],
+      "key_entities": ["某市政务服务管理局", "采购记录"],
+      "answer_contains_any": [],
+      "rationale": "同上，服务类领域。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书里提到的招标代理机构，有没有不良行为记录？",
+      "query_type": "file_price",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "price_query"],
+      "expected_tools": ["read_file", "price_query"],
+      "key_entities": ["某省建设工程招标中心", "不良记录"],
+      "answer_contains_any": [],
+      "rationale": "代理机构名只在文件第一章 → 同样必须读文件。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "经评审的最低投标价法一般适用于什么类型的项目？",
+      "query_type": "no_file_needed",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["最低投标价法", "适用范围"],
+      "answer_contains_any": [],
+      "rationale": "**强误入案例**：提问里的术语正是该文件用的评标办法，但问的是「一般适用于什么项目」——法规问题，答案不在文件里。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "政府采购中哪些情形可以采用单一来源方式采购？",
+      "query_type": "no_file_needed",
+      "files": ["某市政务信息系统运维服务采购项目招标文件.pdf.md"],
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["单一来源", "适用情形"],
+      "answer_contains_any": [],
+      "rationale": "误入案例：与在场文件（运维服务采购）无关的纯法规问题。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "工程建设项目招标中，投标保证金最高不得超过招标项目估算价的多少？",
+      "query_type": "no_file_needed",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["投标保证金", "法定上限"],
+      "answer_contains_any": [],
+      "rationale": "误入案例：话题与文件重叠（文件里也有投标保证金），但问的是法定上限。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "近期有哪些市政道路工程类项目完成了招标？",
+      "query_type": "no_file_needed",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["price_query"],
+      "expected_tools": ["price_query"],
+      "key_entities": ["市政道路工程", "招标"],
+      "answer_contains_any": [],
+      "rationale": "误入案例：纯业务库查询，读文件无用（文件里没有行业数据）。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "我在跟进某市住房和城乡建设局的滨江路市政道路改造工程，看了招标文件之后有几个问题想确认。一是招标控制价肆仟柒佰万，投标保证金要玖拾肆万，这个保证金比例合规吗？二是文件要求履约保证金按合同价款的百分之十提交，这个比例有没有超过规定上限？三是这个项目的招标人近期有没有被行政处罚或者列入不良记录，我投这个标有没有风险？四是安全文明施工费明确写了不可竞争，投标时是不是就完全不能调整？麻烦逐条帮我分析。",
+      "query_type": "file_multi",
+      "files": ["某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool", "price_query"],
+      "expected_tools": ["read_file", "kb_search_tool", "price_query"],
+      "key_entities": ["投标保证金比例", "履约保证金上限", "招标人处罚记录", "安全文明施工费"],
+      "answer_contains_any": [["百分之十", "10%"]],
+      "rationale": "**长多子问 + 三源**（约 290 字，4 个子问分属文件/法规/业务库）：3 步计划应一次排完。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "我们准备投某市政务服务管理局的一体化平台运维服务项目，有几处拿不准。第一，文件要求核心系统可用率不低于 99.9%，如果没达到就按合同扣服务费，这种 SLA 罚则条款合法吗，扣款上限有没有规定？第二，文件要求中标后设立本地服务机构并配备八名驻场人员，这算不算对供应商的差别待遇或者不合理条件？第三，连续两个季度考核低于七十分就可以解除合同并没收履约保证金，这种约定在政府采购服务合同里有效吗？请结合规定说明。",
+      "query_type": "file_multi",
+      "files": ["某市政务信息系统运维服务采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["SLA罚则", "本地化服务要求", "合同解除与保证金没收"],
+      "answer_contains_any": [["99.9"]],
+      "rationale": "**长多子问 + 双源**（约 300 字，3 个子问都在文件+法规内）。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "我在看一份医疗设备采购的招标文件，想确认三件事：一是投标保证金玖万元相对肆佰伍拾万的预算，比例合规吗？二是质量保证金百分之十的约定有没有问题？三是这个采购人过往的采购项目有没有中标记录？我打算参与投标，想先把这几点弄清楚。",
+      "query_type": "file_multi",
+      "files": ["某三甲医院医疗设备采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool", "price_query"],
+      "expected_tools": ["read_file", "kb_search_tool", "price_query"],
+      "key_entities": ["投标保证金比例", "质保金比例", "采购人中标记录"],
+      "answer_contains_any": [["玖万", "9万", "90,000", "90000"]],
+      "rationale": "**长多子问 + 三源**：医疗设备领域的三源组合（文件 + 法规 + 业务库）。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "我上传的这几份招标文件里，哪一份的项目工期更长？分别是多少天？",
+      "query_type": "multi_file",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md", "某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["工期对比", "180", "240"],
+      "answer_contains_any": [["240", "二百四十"], ["180", "一百八十"]],
+      "rationale": "**多文件辨别**：两个数字都在文件里，必须分别读到两份才能比较（只读一份答不出）。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "我上传的这两份文件里，投标保证金分别是多少？哪个更高？",
+      "query_type": "multi_file",
+      "files": ["某三甲医院医疗设备采购项目招标文件.pdf.md", "某市政务信息系统运维服务采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["投标保证金对比"],
+      "answer_contains_any": [["玖万", "9万", "90,000"], ["肆万捌仟", "4.8万", "48,000"]],
+      "rationale": "**多文件辨别**：9 万 vs 4.8 万，同领域不同量级。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "我上传的这两份文件里，哪一份采用的评标办法是「经评审的最低投标价法」？",
+      "query_type": "multi_file",
+      "files": ["某市政道路工程施工招标文件.pdf.md", "智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["评标办法", "最低投标价法"],
+      "answer_contains_any": [["最低投标价法"]],
+      "rationale": "**多文件辨别**：只有道路工程用最低投标价法，智慧园区用综合评分法——必须读对文件。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "我上传的这几份文件里，哪一份是接受进口产品投标的？",
+      "query_type": "multi_file",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md", "某三甲医院医疗设备采购项目招标文件.pdf.md", "某市政道路工程施工招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["进口产品"],
+      "answer_contains_any": [["医疗", "影像", "医院"]],
+      "rationale": "**三文件辨别**：只有医疗设备那份接受进口产品（另两份明确不接受）。",
       "source": "file_golden_v1"
     }
   ]
