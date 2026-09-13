@@ -253,7 +253,7 @@ def test_deep_agent_registry_reserved_disabled():
     assert spec is not None
     assert spec.enabled is False          # 预留防误路由（同 doc_agent）
     assert spec.model_slots == ["deep_agent"]
-    assert spec.tools == ["kb_search", "price_query"]
+    assert spec.tools == ["kb_search", "price_query", "read_file"]
 
 
 def test_deep_agent_entry_registered_in_base():
@@ -331,3 +331,72 @@ def test_plan_accepts_plain_tool_names_and_fallback():
     assert "kb_search_tool" in llm.prompts[0]
     assert plan[0].tool == "kb_search_tool"      # 空 JSON → 兜底 tool_names[0]
 
+
+
+# ── Phase G-5/G-6：文档能力接线（read_file 工具 + 文件名可见性）────────
+
+
+def test_default_tools_includes_read_file():
+    """前置阻断 ①：原先工具只有 kb_search + price_query，deep_agent 无任何读文件手段。"""
+    from agent.nodes.deep_agent import _default_tools
+
+    names = {t.name for t in _default_tools()}
+
+    assert {"kb_search_tool", "price_query", "read_file"} <= names
+
+
+def test_read_file_has_tool_defaults():
+    """执行器固定传 question=…，其余参数由 _TOOL_DEFAULTS 补——新工具必须登记。"""
+    from agent.nodes.deep_agent import _TOOL_DEFAULTS
+
+    assert _TOOL_DEFAULTS["read_file"] == {"top_k": 6}
+
+
+class _CapturePlanLLM:
+    """捕获规划 prompt 的 fake（返回空计划 → 单步兜底，避免依赖 LLM 行为）。"""
+
+    def __init__(self):
+        self.prompts: list[str] = []
+
+    def invoke(self, messages):
+        self.prompts.append(messages[0].content)
+        return AIMessage(content="[]")
+
+    def stream(self, messages):
+        yield "草稿"
+
+
+def _doc_state_with_file(question="这份标书的保证金要求合规吗？"):
+    from langchain_core.messages import SystemMessage
+
+    from agent.nodes.doc_qa import DOC_CONTEXT_MARKER
+
+    return {"messages": [
+        SystemMessage(content=f"{DOC_CONTEXT_MARKER}\n[文件：招标文件.pdf]\n第三章 保证金…"),
+        HumanMessage(content=question),
+    ]}
+
+
+def test_node_makes_injected_file_names_visible_to_planner():
+    """前置阻断 ②：原实现只取 messages[-1]，看不到注入的文件 → read_file 永不会被规划。
+
+    只注入**文件名清单**（不含正文）：正文由 read_file 按需检索拉取。
+    """
+    llm = _CapturePlanLLM()
+    node = build_deep_agent_node(llm=llm, tools=[_kb_tool()], reflect=False)
+
+    node(_doc_state_with_file())
+
+    prompt = llm.prompts[0]
+    assert "招标文件.pdf" in prompt, "规划器必须知道有文件可读"
+    assert "[本会话已上传文件" in prompt
+
+
+def test_node_without_doc_context_does_not_add_file_hint():
+    """没带文件的会话不得凭空出现文件清单（否则规划器会去读不存在的文件）。"""
+    llm = _CapturePlanLLM()
+    node = build_deep_agent_node(llm=llm, tools=[_kb_tool()], reflect=False)
+
+    node({"messages": [HumanMessage(content="政府采购适用什么法律？")]})
+
+    assert "[本会话已上传文件" not in llm.prompts[0]

@@ -44,8 +44,8 @@ DEFAULT_MAX_STEPS = 4
 OBSERVATION_HEAD_CHARS = 400
 
 DEEP_AGENT_SYSTEM_PROMPT = (
-    "你是招投标智能助手的深度综合 agent。你通过多步检索（法规知识 + 结构化数据）"
-    "回答复杂问题；回答需有依据，引用工具观察结果，不臆造。"
+    "你是招投标智能助手的深度综合 agent。你通过多步检索（用户上传的文件 + 法规知识 + "
+    "结构化数据）回答复杂问题；回答需有依据，引用工具观察结果，不臆造。"
 )
 
 PLAN_PROMPT = """你是招投标智能助手的深度规划 agent。把用户问题拆成可独立执行的检索步骤。
@@ -55,8 +55,12 @@ PLAN_PROMPT = """你是招投标智能助手的深度规划 agent。把用户问
 要求：
 1. 输出 **JSON 数组**，每项含 objective（目标说明）、tool（工具名）、query（给工具的自然语言查询）。
 2. 简单问题只输出 1 步；需要「先查数据、再查法规」等多源组合的复杂问题拆 2~4 步。
-3. 选工具看问题要什么：问企业/工商/处罚/不良记录/中标等**结构化事实** → price_query；
-   问法律/法规/制度/条文/原则 → kb_search_tool；两者都要 → 都排进计划。
+3. 选工具看问题要什么：
+   - 问**用户本次上传的文件**（"这份标书""我上传的合同""附件里"…）→ read_file；
+     问题中出现的文件名要作为 file_name 传入；
+   - 问企业/工商/处罚/不良记录/中标等**结构化事实** → price_query；
+   - 问法律/法规/制度/条文/原则 → kb_search_tool；
+   - 多源组合（如"这份标书写得合规吗"→ read_file 取文件条款 + kb_search_tool 查法规）→ 都排进计划。
 4. 只输出 JSON，不要其他文字。
 用户问题：{question}
 """
@@ -88,6 +92,7 @@ verdict 含义：
 _TOOL_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "kb_search_tool": {"summary": True, "top_k": 5},
     "price_query": {"max_rows": 10},
+    "read_file": {"top_k": 6},
 }
 
 
@@ -379,7 +384,9 @@ def _default_tools() -> List[BaseTool]:
     from public_kb.tools import kb_search_as_tool
     from price_engine.tools import price_query_as_tool
 
-    return [kb_search_as_tool(), price_query_as_tool()]
+    from ..doc_context import read_file_as_tool
+
+    return [kb_search_as_tool(), price_query_as_tool(), read_file_as_tool()]
 
 
 def _slot_llm_factory() -> BaseChatModel:
@@ -422,6 +429,18 @@ def build_deep_agent_node(
                 },
             }
         question = str(messages[-1].content)
+        # Phase G-5 前置阻断 ②：原实现只看 messages[-1]，**看不到 API 层注入的
+        # 文档上下文** → 不知道有文件可读，read_file 就永远不会被调用。
+        # 这里只补**文件名清单**（不含正文——正文由 read_file 按需检索拉取），
+        # 既是规划器选 read_file 的依据，也避免把整份文档塞进 prompt。
+        from ..doc_context import session_file_names
+
+        files = session_file_names(messages)
+        if files:
+            question = (
+                f"{question}\n\n[本会话已上传文件（可用 read_file 工具读取）] "
+                + "、".join(files)
+            )
         llm_ = llm if llm is not None else llm_factory()
         result = run_deep_agent(
             question, llm=llm_, tools=tools,

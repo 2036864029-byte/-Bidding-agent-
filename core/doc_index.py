@@ -164,14 +164,18 @@ def _get_cache():
 
 
 def reset_index() -> None:
-    """清空索引并丢弃后端实例（测试 / 后端切换用）。"""
+    """清空索引并丢弃后端实例（测试 / 后端切换用）。
+
+    **按当前配置现构造后端再清空**：若只在 ``_cache`` 已实例化时清，首次调用
+    （后端尚未建）会静默不生效——Redis 后端的旧索引仍在且跨进程可见，
+    "已重置" 的假设不成立。
+    """
     global _cache
     with _cache_lock:
-        if _cache is not None:
-            try:
-                _cache.clear()
-            except Exception:  # noqa: BLE001
-                pass
+        try:
+            _build_cache().clear()
+        except Exception as exc:  # noqa: BLE001  后端不可用时不影响后续重建
+            logger.warning("doc_index 清空失败: %s", exc)
         _cache = None
 
 
@@ -408,19 +412,26 @@ def search_file(
     session_id: str,
     question: str,
     *,
+    top_k: Optional[int] = None,
     settings: Optional[Any] = None,
 ) -> Optional[SearchResult]:
-    """``load`` + ``search`` 的便捷组合；未建索引返回 None（调用方回退全文模式）。"""
+    """``load`` + ``search`` 的便捷组合；未建索引返回 None（调用方回退全文模式）。
+
+    Args:
+        top_k: 覆盖 ``doc_index_top_k`` 配置（工具可按调用方要求调整）；None 用配置值。
+    """
     from core.config.settings import Settings
 
     index = load(file_id, session_id)
     if index is None:
         return None
     settings = settings or Settings()
+    if top_k is None:
+        top_k = int(getattr(settings, "doc_index_top_k", 6) or 6)
     return search(
         index,
         question,
-        top_k=int(getattr(settings, "doc_index_top_k", 6) or 6),
+        top_k=max(1, int(top_k)),
         min_score=float(
             getattr(settings, "doc_index_min_score", DEFAULT_MIN_SCORE)
             or DEFAULT_MIN_SCORE

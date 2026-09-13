@@ -211,7 +211,7 @@ def _seed_deep_agent() -> CapabilitySpec:
             "采购进口产品需要履行哪些审核程序？若供应商在采购活动中违法，又应当依据什么处理？",
             "先查一下某公司的中标记录，再结合法规说明中标后不签合同的法律责任。",
         ],
-        model_slots=["deep_agent"], tools=["kb_search", "price_query"],
+        model_slots=["deep_agent"], tools=["kb_search", "price_query", "read_file"],
         enabled=False,
     )
 
