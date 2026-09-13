@@ -7,9 +7,11 @@ tenant_id / token_usage / user_id（避免死字段）。
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+from core.protocol.reply import ReplyType
 
 
 class ChatRequest(BaseModel):
@@ -24,7 +26,11 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
-    reply_type: Literal["kb_answer", "price_records", "chat", "doc_qa", "fallback"] = "chat"
+    #: ⚠️ **从 `core.protocol.reply.ReplyType` 派生，不要在这里另抄一份字面量** ——
+    #: 曾经抄了一份且漏了 `deep_agent`/`safety`，导致第 3 项上线后 agent 路由的问题
+    #: **每个都 500**（pydantic 校验失败：`Input should be 'kb_answer', …`）。
+    #: 派生后与出口协议天然同步，不会再漂。
+    reply_type: ReplyType = "chat"
     intent: str = "unknown"
     citations: List[Dict[str, Any]] = Field(default_factory=list)
     data: Optional[Dict[str, Any]] = None

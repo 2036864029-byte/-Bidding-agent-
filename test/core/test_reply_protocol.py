@@ -90,3 +90,15 @@ def test_cli_renderer_citations_block():
 def test_cli_renderer_agentreply_direct():
     reply = AgentReply(reply_type="chat", answer="你好")
     assert render_reply(reply) == "你好"
+
+
+def test_deep_agent_branch_maps_to_own_reply_type():
+    """第 3 项上线后新增：deep_agent 必须有独立 reply_type。
+
+    否则落到 `.get(branch, "fallback")` 兜底 → **前端把「agent 成功作答」当降级提示
+    渲染**（实测：intent=deep_agent、error_code=None，reply_type 却是 "fallback"）。
+    """
+    reply = to_reply({"branch": "deep_agent", "answer": "依据…", "data": {"trace": {}}})
+
+    assert reply.reply_type == "deep_agent"
+    assert reply.error_code is None

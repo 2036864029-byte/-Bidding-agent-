@@ -13,7 +13,9 @@ from pydantic import BaseModel, Field
 
 from core.errors.codes import ErrorCode
 
-ReplyType = Literal["kb_answer", "price_records", "chat", "doc_qa", "safety", "fallback"]
+ReplyType = Literal[
+    "kb_answer", "price_records", "chat", "doc_qa", "deep_agent", "safety", "fallback"
+]
 
 # 节点 branch → 回复类型
 _BRANCH_TO_REPLY: Dict[str, ReplyType] = {
@@ -21,6 +23,10 @@ _BRANCH_TO_REPLY: Dict[str, ReplyType] = {
     "price_inquiry": "price_records",
     "general_chat": "chat",
     "doc_qa": "doc_qa",
+    # 第 3 项上线（CAPABILITY_ENABLED=deep_agent）后新增：**必须有独立类型** ——
+    # 否则会落到 `.get(branch, "fallback")` 的兜底，前端把「agent 成功作答」
+    # 当降级提示渲染（实测：intent=deep_agent、error_code=None，reply_type 却是 fallback）。
+    "deep_agent": "deep_agent",
     "safety": "safety",
     "fallback": "fallback",
 }
