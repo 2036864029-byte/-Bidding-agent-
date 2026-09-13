@@ -1,0 +1,231 @@
+{
+  "description": "带文件问答金标集（第 3 项门禁用）。用途：测「上传文件场景下的工具选择与跨源编排」。词表={read_file, kb_search_tool, price_query}。files 为 fixture 文件名（eval/fixtures/ 下），上传时的显示名 = 去掉末尾 .md（如 'xx.pdf.md' → 上传名 'xx.pdf'）。说明：① 本集**主指标是工具序列与路由**（命中率/误入率），answer_contains_any 只作粗粒度正确性检查；② fixture 刻意只 13~17 块（真实标书更长），长文档检索质量由 C1 自己的验证覆盖（60 块实测）；③ 采购人/企业名为虚构，故 price_query 侧只验**工具是否被调用**，不验结果内容（库里不会有这些主体）。",
+  "review_status": "draft",
+  "annotated_at": "2026-09-13",
+  "items": [
+    {
+      "q": "我上传的这份标书要求交多少投标保证金？怎么交？",
+      "query_type": "file_only",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["投标保证金", "捌拾万元"],
+      "answer_contains_any": [["捌拾万", "80万", "800,000", "800000"]],
+      "rationale": "答案完全在文件内（第三章），纯文件问答，不需要查法规或业务库。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书里项目的计划工期是多少天？",
+      "query_type": "file_only",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["计划工期", "180日历天"],
+      "answer_contains_any": [["180", "一百八十"]],
+      "rationale": "第五章明确写了工期，单源可解。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书的评标委员会由几名成员组成？专家占比有要求吗？",
+      "query_type": "file_only",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["评标委员会", "七名成员", "专家不少于五名"],
+      "answer_contains_any": [["七名", "七人", "7名", "7人"]],
+      "rationale": "第四章有答案；问的是文件怎么写，不是问是否合法。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书里质量保证金按多少比例预留？缺陷责任期是多久？",
+      "query_type": "file_only",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["质量保证金", "3%", "二十四个月"],
+      "answer_contains_any": [["百分之三", "3%"], ["二十四个月", "24个月", "24 个月"]],
+      "rationale": "第五章。**干扰项设计**：文件里同时有投标保证金（第三章）与履约保证金（第九章），检索必须区分三处「保证金」。⚠️ 初版漏了「这份标书里」的锚定 → 实测被判为法规问题走了 kb_search（agent 的行为是合理的，是提问有歧义）——已修正。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "医疗设备那个项目的预算金额是多少？",
+      "query_type": "file_only",
+      "files": ["某三甲医院医疗设备采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["预算金额", "肆佰伍拾万元"],
+      "answer_contains_any": [["450万", "肆佰伍拾万", "4,500,000", "4500000"]],
+      "rationale": "跨文件辨别：与智慧园区项目是**不同领域**，防止「读错文件却答得出」被误判为正确。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份医疗设备招标文件里，设备的质保期是几年？",
+      "query_type": "file_only",
+      "files": ["某三甲医院医疗设备采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file"],
+      "expected_tools": ["read_file"],
+      "key_entities": ["质保期", "五年"],
+      "answer_contains_any": [["五年", "5年", "5 年"]],
+      "rationale": "第五章：自验收合格之日起五年（含球管等易损件）。",
+      "source": "file_golden_v1"
+    },
+
+    {
+      "q": "这份标书规定的投标保证金金额，符合招标投标法对投标保证金的要求吗？",
+      "query_type": "file_kb",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["投标保证金", "招标投标法", "上限比例"],
+      "answer_contains_any": [["捌拾万", "80万", "800,000", "800000"]],
+      "rationale": "跨源合规判断：文件给事实（第三章 80 万），法规给上限依据 → 必须两个工具都调。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书要求的评标委员会构成，有没有违反招标投标法的规定？",
+      "query_type": "file_kb",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["评标委员会", "法定人数", "专家比例"],
+      "answer_contains_any": [],
+      "rationale": "同上：文件事实（7 人 / 专家≥5）+ 法规法定要求。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书里关于质疑和投诉时限的约定，是否符合政府采购相关规定？",
+      "query_type": "file_kb",
+      "files": ["某三甲医院医疗设备采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["质疑", "七个工作日", "投诉", "十五个工作日"],
+      "answer_contains_any": [["七个工作日", "7个工作日"]],
+      "rationale": "文件第十一章写时限（7/7/15 个工作日），需法规佐证。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书列出的废标情形，和法规规定的应当废标情形一致吗？有没有遗漏？",
+      "query_type": "file_kb",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["废标", "无效投标", "法定废标情形"],
+      "answer_contains_any": [],
+      "rationale": "文件第七章列了 6 条无效投标 + 3 条废标；需与法规条文对照才有「是否遗漏」的结论。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书约定的履约保证金比例和质保金比例，法律上有上限要求吗？",
+      "query_type": "file_kb",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["履约保证金", "5%", "质量保证金", "3%"],
+      "answer_contains_any": [["百分之五", "5%"], ["百分之三", "3%"]],
+      "rationale": "第九章 5% + 第五章 3%，双事实 + 法规上限（再次考察对多处「保证金」的区分）。",
+      "source": "file_golden_v1"
+    },
+
+    {
+      "q": "这份标书的采购人有没有行政处罚或者不良记录？",
+      "query_type": "file_price",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "price_query"],
+      "expected_tools": ["read_file", "price_query"],
+      "key_entities": ["某市大数据管理局", "行政处罚", "不良记录"],
+      "answer_contains_any": [],
+      "rationale": "文件给出采购人名称，企业主体信息在结构化库里 → 两工具都该调。**注**：主体为虚构，库里查不到属正常，本项只验工具选择。⚠️ 提问里**不能出现主体名**（初版误写「某市大数据管理局」，那样 agent 不读文件也知道查谁，read_file 就成了多余调用——已修正）。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书里项目的预算金额是多少？跟同类智慧园区项目的中标价相比，处于什么水平？",
+      "query_type": "file_price",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "price_query"],
+      "expected_tools": ["read_file", "price_query"],
+      "key_entities": ["预算金额", "中标金额", "行业水平"],
+      "answer_contains_any": [["1286万", "壹仟贰佰捌拾陆万", "12,860,000", "12860000"]],
+      "rationale": "「我们这个项目预算多少、行业水平如何」这类真实问法 → 文件给预算 + 库里给同类中标价。初版写成纯行业问题（文件非必需），已改为必须读文件。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "这份标书的采购人过往的采购项目有没有中标记录？",
+      "query_type": "file_price",
+      "files": ["某三甲医院医疗设备采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "price_query"],
+      "expected_tools": ["read_file", "price_query"],
+      "key_entities": ["某市第一人民医院", "中标记录"],
+      "answer_contains_any": [],
+      "rationale": "同上：主体名只出现在文件第一章，必须读文件才知道查谁。初版把「某市第一人民医院」写进了提问，已修正。",
+      "source": "file_golden_v1"
+    },
+
+    {
+      "q": "招标方式有哪几种？",
+      "query_type": "no_file_needed",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["招标方式", "公开招标", "邀请招标"],
+      "answer_contains_any": [],
+      "rationale": "**误入案例**：会话里有文件，但这是纯法规问题，答案不在文件里 —— 若 agent 去读文件即为多余调用（误入）。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "投标保证金的法定上限是多少？",
+      "query_type": "no_file_needed",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["投标保证金", "法定上限"],
+      "answer_contains_any": [],
+      "rationale": "**强误入案例**：话题与文件重叠（文件里也有投标保证金），但问的是「法定上限」——法规问题。这是最容易误读文件的一类，专门用来压误入率。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "中标通知书发出后，招标人和中标人应当在多少日内签订书面合同？",
+      "query_type": "no_file_needed",
+      "files": ["某三甲医院医疗设备采购项目招标文件.pdf.md"],
+      "expected_sequence": ["kb_search_tool"],
+      "expected_tools": ["kb_search_tool"],
+      "key_entities": ["中标通知书", "签订合同", "三十日"],
+      "answer_contains_any": [],
+      "rationale": "误入案例（医疗文件在场，但问题与文件无关）。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "近期中标金额超过一千万元的智能化工程类项目有哪些？",
+      "query_type": "no_file_needed",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["price_query"],
+      "expected_tools": ["price_query"],
+      "key_entities": ["中标金额", "智能化工程"],
+      "answer_contains_any": [],
+      "rationale": "误入案例：纯业务库查询，读文件无用。",
+      "source": "file_golden_v1"
+    },
+
+    {
+      "q": "我最近在跟进某市大数据管理局的智慧园区智慧化改造项目，他们发的招标文件我看了一遍，里面有几点想确认：第一，他们要求投标保证金捌拾万元，这个金额相对于一千两百八十六万的项目预算来说，比例合规吗？第二，他们要求评标委员会七个人、专家不少于五个，这个构成符合法定要求吗？第三，这家采购人过往有没有被行政处罚或者列入不良记录的情况？我这边正在准备投标，想把这些风险点先摸清楚再决定报价策略，麻烦你帮我逐条分析一下。",
+      "query_type": "file_multi",
+      "files": ["智慧园区智慧化改造项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool", "price_query"],
+      "expected_tools": ["read_file", "kb_search_tool", "price_query"],
+      "key_entities": ["投标保证金比例", "评标委员会构成", "采购人处罚记录"],
+      "answer_contains_any": [["捌拾万", "80万", "800,000", "800000"]],
+      "rationale": "**长多子问 + 三源**（约 340 字，3 个子问分属文件/法规/业务库）：这是第 3 项要验的核心场景。3 步计划应一次排完（现有 PLAN 支持），不需要重规划。",
+      "source": "file_golden_v1"
+    },
+    {
+      "q": "我在看某市第一人民医院的医学影像设备采购项目，招标文件里有几个地方拿不准。一是交货期要求合同签订后九十天内完成供货安装调试，质保期五年，这个质保期长度在医疗器械采购里算合理吗，有没有法规或者惯例上的最低要求？二是文件里写的逾期交货违约金是每逾期一日按合同价款千分之零点五计算、累计不超过百分之十，这个违约金标准合规吗，会不会被认定为过高？三是这个项目明确写了接受进口产品投标，进口产品在政府采购里需要额外履行什么审批程序吗？麻烦结合规定帮我说明一下。",
+      "query_type": "file_multi",
+      "files": ["某三甲医院医疗设备采购项目招标文件.pdf.md"],
+      "expected_sequence": ["read_file", "kb_search_tool"],
+      "expected_tools": ["read_file", "kb_search_tool"],
+      "key_entities": ["质保期五年", "逾期交货违约金", "进口产品审批"],
+      "answer_contains_any": [["九十", "90"], ["百分之十", "10%"]],
+      "rationale": "**长多子问 + 双源**（约 330 字，3 个子问都在文件+法规两个源内）：验证「一次排出多步计划」而非逐步试探。",
+      "source": "file_golden_v1"
+    }
+  ]
+}

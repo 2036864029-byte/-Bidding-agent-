@@ -32,7 +32,12 @@ def main() -> None:
     parser.add_argument("--dataset", default="complex_20.jsonl",
                         help="金标集文件名（含 question / query_type）")
     parser.add_argument("--golden", action="store_true",
-                        help=f"改用 E1-4 agent 金标（{GOLDEN_FILE.name}，标注真值）")
+                        help=f"改用标注金标（默认 {GOLDEN_FILE.name}，配 --golden-file 换）")
+    parser.add_argument("--golden-file", type=Path, default=GOLDEN_FILE,
+                        help="标注金标文件；带文件集用 eval/file_golden_set.json "
+                             "（其 items 带 files 字段 → 自动装载 fixture 会话）")
+    parser.add_argument("--query-type", default="",
+                        help="只跑指定 query_type（如 no_file_needed 专门压误入率）")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--workers", type=int, default=3,
                         help="并发（deep_agent 工具链打 SiliconFlow，过大触发 429）")
@@ -42,12 +47,14 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.golden:
-        cases = load_agent_golden(GOLDEN_FILE)
-        src = f"E1-4 金标（{GOLDEN_FILE.name}）"
+        cases = load_agent_golden(args.golden_file)
+        src = f"金标（{args.golden_file.name}，标注真值）"
     else:
         samples = load_jsonl(DATA_DIR / args.dataset)
         cases = [{"question": s.question, "query_type": s.query_type} for s in samples]
         src = args.dataset
+    if args.query_type:
+        cases = [c for c in cases if c.get("query_type") == args.query_type]
     if args.limit:
         cases = cases[: args.limit]
     print(f"样本 {len(cases)} 条（{src}），workers={args.workers}", flush=True)
@@ -76,6 +83,15 @@ def main() -> None:
         print(f"  工具序列(E1-4 金标 n={tq['n_gold']}): "
               f"有序覆盖={tq['ordered_coverage_rate']:.1%} "
               f"严格等序={tq['exact_sequence_rate']:.1%}")
+    ah = summary.get("answer_hit") or {}
+    if ah.get("rate") is not None:
+        print(f"  答案命中(n={ah['n']}): {ah['hit']}/{ah['n']} = {ah['rate']:.1%}")
+    bt = summary.get("by_query_type") or {}
+    if bt:
+        print("  按 query_type:")
+        for qt, b in sorted(bt.items()):
+            rate = "—" if b["answer_hit_rate"] is None else f"{b['answer_hit_rate']:.0%}"
+            print(f"    {qt:16s} n={b['n']:2d} 失败={b['errors']} 答案命中={rate}")
 
 
 if __name__ == "__main__":
