@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +68,69 @@ class CapabilityRegistry:
         return list(self._capabilities.keys())
 
     def enabled_specs(self) -> List[CapabilitySpec]:
-        """路由候选集 / graph 接线集：仅 enabled 且按登记顺序。"""
-        return [s for s in self._capabilities.values() if s.enabled]
+        """路由候选集 / graph 接线集：仅 enabled 且按登记顺序。
+
+        `enabled` 取 **spec 的声明默认值 + Settings 覆盖**（见 `is_capability_enabled`）：
+        本方法是路由候选与 graph 接线**共用的唯一 chokepoint**，覆盖放在这里
+        才能保证"路由到它"与"图里挂了它"不会脱节。
+        """
+        return [
+            s for s in self._capabilities.values()
+            if is_capability_enabled(s)
+        ]
+
+
+def _split_ids(value: str) -> frozenset:
+    """逗号（半角/全角）分隔的能力 id → 集合。"""
+    return frozenset(
+        x.strip() for x in (value or "").replace("，", ",").split(",") if x.strip()
+    )
+
+
+_overrides: Optional[Tuple[frozenset, frozenset]] = None
+
+
+def _enabled_overrides() -> Tuple[frozenset, frozenset]:
+    """Settings 的能力开关覆盖 → ``(强制启用集, 强制停用集)``（首次调用后缓存）。
+
+    为什么读 Settings 而不是直接 os.getenv：与全项目配置单源一致，
+    且测试可用 monkeypatch.setenv 注入（配 `reset_capability_overrides`）。
+    配置不可用时返回空集 —— 退化为只用 spec 的声明默认值。
+    """
+    global _overrides
+    if _overrides is None:
+        try:
+            from core.config.settings import Settings
+
+            s = Settings()
+            _overrides = (
+                _split_ids(getattr(s, "capability_enabled", "")),
+                _split_ids(getattr(s, "capability_disabled", "")),
+            )
+        except Exception as exc:  # noqa: BLE001  配置不可用 → 只用声明默认值
+            logger.warning("能力开关配置不可用，退化为声明默认值: %s", exc)
+            _overrides = (frozenset(), frozenset())
+    return _overrides
+
+
+def reset_capability_overrides() -> None:
+    """清空覆盖缓存（测试 / 运行时改配置后重载用）。"""
+    global _overrides
+    _overrides = None
+
+
+def is_capability_enabled(spec: CapabilitySpec) -> bool:
+    """能力的实际启用状态：**Settings 覆盖 > spec 声明默认值**。
+
+    ``CAPABILITY_ENABLED=deep_agent`` 强制启用（无需改代码）；
+    ``CAPABILITY_DISABLED=doc_agent,tool_agent`` 强制停用。两者都未列出 → 用声明默认值。
+    """
+    on, off = _enabled_overrides()
+    if spec.id in on:
+        return True
+    if spec.id in off:
+        return False
+    return spec.enabled
 
 
 def seed_builtins(registry: CapabilityRegistry) -> CapabilityRegistry:
@@ -155,8 +216,11 @@ def _seed_echo_demo() -> CapabilitySpec:
 
 
 def _seed_doc_agent() -> CapabilitySpec:
-    """doc_agent（P6 Step 3 工具化复用验证；enabled=False 预留）。
+    """doc_agent（**验证性产物**：P6 Step 3 工具化复用验证，enabled=False 预留）。
 
+    ⚠️ 定位：这是早期"工具化能不能复用"的**可行性验证**，不是待上线能力
+    （Phase G-5 决策：明确标注为验证性产物，避免继续投入）。它的 doc 能力已被
+    `read_file` 工具 + `deep_agent` 覆盖。
     工具形态复用 kb_search_as_tool + price_query_as_tool；路由给真实用户需先
     数据清理 + router golden 重生成（见附录 H 执行状态）。
     """
@@ -177,39 +241,37 @@ def _seed_doc_agent() -> CapabilitySpec:
 def _seed_deep_agent() -> CapabilitySpec:
     """deep_agent（W3-3 Plan-and-Solve + Reflection）。
 
-    路由判据 = **原子性**（E5）：问题是否含「多个需分别查证的事项」（多原子）。
-    多原子 → 本能力（先拆解子问题、分别检索、再综合）；单原子 → 既有能力。
+    **触发面（2026-09-13 第 3 项落地后）**：主触发是 supervisor 的**确定性闸门**
+    ——「带文件 + 跨源关键词」→ 直接路由本能力（见 `routing_rules.yaml` 的
+    `agent_gate`，实测误入 3.8% / 漏答 0~13%）。
 
-    依据：多跳/长复合问题在单跳链路上召回腰斩（0.35），分解后翻倍（0.70）；
-    而 deep_agent 原触发面写的是「跨源（数据+法规）」，多跳知识题零触发
-    （10/10 → knowledge_qa）。故触发维度由「跨源」改为「多原子」。
+    下面的 route_desc / route_tool_doc 是给 **L3 LLM 路由**看的兜底文案，
+    刻意写成**只描述带文件场景**：启用后本能力会同时进入 L3 候选集，
+    若文案写宽（旧版写的是"多原子"），无文件的纯文本复合问就会被 L3 拉进来
+    ——那正是 E5 实测天花板 ~73%、Phase G-5 明确不走的「口径 B」。
+
+    历史：原触发维度曾由「跨源（数据+法规）」改为「多原子」（E5）；现在**两条
+    文本判据都不用**，改为确定性闸门（唯一未撞墙的信号是"是否带文件"）。
     """
     return CapabilitySpec(
         id="deep_agent", node="deep_agent",
-        description="深度综合 agent（多原子问题：拆解→分别检索→综合→反思）",
+        description="深度综合 agent（带文件 + 跨源：拆解→分别检索→综合→反思）",
         route_desc=(
-            "深度综合问答（多原子，优先级高于知识问答）：问题包含**两个及以上需要分别查证"
-            "的事项**——不同法规、不同文件、不同制度、不同环节或不同情形，各自需要独立依据，"
-            "须先拆解成子问题、分别检索后再综合回答"
+            "深度综合问答（**仅用于用户本轮上传了文件的场景**）：需要把文件内容"
+            "与法规知识库 / 结构化业务数据**交叉比对**才能回答（如「这份标书这样约定"
+            "符合规定吗」「这个采购人有没有不良记录」）。**未上传文件时不要选本能力。**"
         ),
         route_tool_doc=(
-            "深度综合问答（多原子）：问题包含**两个及以上需要分别查证的事项**，须先拆解成"
-            "子问题、分别检索、再综合回答。\n\n"
-            "    触发（只要含多个不同事项即选本能力，**即使全部是法规知识问题**）：一句话里"
-            "并列两个及以上各自独立的事项/情形/环节，常见信号——「同时…」「另外…」「此外…」"
-            "「分别说明A与B」「其一…其二…」「（1）（2）（3）」「若…又该如何」「结合资料1与"
-            "资料2/结合两条规定」；**即使只有一个问号**，若要求对多个不同对象/方面分别作答"
-            "（如「组成人数、成员来源及回避义务分别有何要求」「分别由谁负责、各自在什么时间"
-            "进行」），也触发——但若这些方面只是**同一制度/同一流程的构成要素**（如某流程的"
-            "时间、条件、材料、后果），则不触发。\n"
-            "    不触发（选 knowledge_qa）：只问一件事，或多个问句都在追问**同一件事**的不同"
-            "细节——同一流程的时间/条件/材料/后果、同一文件的细节、同一制度的构成要素；"
-            "即使问题较长、带「请结合相关规定说明理由」等修饰语也不选本能力。"
+            "深度综合问答（带文件 + 跨源）：用户上传了文件，且问题需要文件内容与"
+            "法规知识库或结构化业务数据交叉比对。\n\n"
+            "    触发：带文件 + 合规判断/法规依据/企业记录等跨源需求。\n"
+            "    不触发（选 knowledge_qa）：**未上传文件**的纯法规问题；\n"
+            "    不触发（选 doc_qa）：带文件，但问题只需在该文件内查找。"
         ),
         examples=[
-            "某企业中标后不签合同会有什么后果？同时，被列入不良记录名单还能不能投标？请分别说明。",
-            "采购进口产品需要履行哪些审核程序？若供应商在采购活动中违法，又应当依据什么处理？",
-            "先查一下某公司的中标记录，再结合法规说明中标后不签合同的法律责任。",
+            "这份标书要求的投标保证金比例，符合招标投标法吗？",
+            "这份标书的采购人有没有行政处罚或者不良记录？",
+            "这份标书的资质要求是不是过严？依据是什么？",
         ],
         model_slots=["deep_agent"], tools=["kb_search", "price_query", "read_file"],
         enabled=False,

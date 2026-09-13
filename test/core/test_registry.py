@@ -91,3 +91,71 @@ def test_builtin_nodespecs_have_callable_entries():
         assert isinstance(spec, NodeSpec)
         assert callable(spec.entry)
         assert spec.fallback == "fallback"
+
+
+# ── 能力开关可配置（enabled 从硬编码改为 Settings 覆盖）──────────────
+
+
+def test_capability_enabled_override_forces_on(monkeypatch):
+    """CAPABILITY_ENABLED 可把声明为 disabled 的能力拉起来（不改代码）。"""
+    from agent.registry import (
+        get_default_registry, reset_capability_overrides, reset_default_registry,
+    )
+
+    monkeypatch.setenv("CAPABILITY_ENABLED", "deep_agent")
+    reset_capability_overrides()
+    reset_default_registry()
+    try:
+        ids = [s.id for s in get_default_registry().enabled_specs()]
+        assert "deep_agent" in ids
+        # spec 的声明默认值不变（覆盖只影响"实际启用"，不篡改声明）
+        assert get_default_registry().get("deep_agent").enabled is False
+    finally:
+        reset_capability_overrides()
+        reset_default_registry()
+
+
+def test_capability_disabled_override_forces_off(monkeypatch):
+    """CAPABILITY_DISABLED 可停用内置能力（应急开关）。"""
+    from agent.registry import (
+        get_default_registry, reset_capability_overrides, reset_default_registry,
+    )
+
+    monkeypatch.setenv("CAPABILITY_DISABLED", "price_inquiry")
+    reset_capability_overrides()
+    reset_default_registry()
+    try:
+        assert "price_inquiry" not in [s.id for s in get_default_registry().enabled_specs()]
+    finally:
+        reset_capability_overrides()
+        reset_default_registry()
+
+
+def test_capability_override_full_width_comma(monkeypatch):
+    """全角逗号也要能分隔（中文配置里很常见）。"""
+    from agent.registry import (
+        get_default_registry, reset_capability_overrides, reset_default_registry,
+    )
+
+    monkeypatch.setenv("CAPABILITY_ENABLED", "deep_agent，doc_agent")
+    reset_capability_overrides()
+    reset_default_registry()
+    try:
+        ids = [s.id for s in get_default_registry().enabled_specs()]
+        assert {"deep_agent", "doc_agent"} <= set(ids)
+    finally:
+        reset_capability_overrides()
+        reset_default_registry()
+
+
+def test_capability_override_takes_precedence_over_disabled_list(monkeypatch):
+    """同时在两个名单里时，启用优先（避免配置矛盾导致意外停用）。"""
+    from agent.registry import is_capability_enabled, CapabilitySpec, reset_capability_overrides
+
+    monkeypatch.setenv("CAPABILITY_ENABLED", "x")
+    monkeypatch.setenv("CAPABILITY_DISABLED", "x")
+    reset_capability_overrides()
+    try:
+        assert is_capability_enabled(CapabilitySpec(id="x", enabled=False)) is True
+    finally:
+        reset_capability_overrides()

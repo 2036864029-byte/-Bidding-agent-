@@ -527,6 +527,22 @@ class Settings:
     )
 
     # ============================================================
+    # 能力开关覆盖（registry 的 enabled 从硬编码改为可配置）
+    # ============================================================
+    # 语义：**Settings 覆盖 > spec 的声明默认值**。
+    #   CAPABILITY_ENABLED=deep_agent       → 强制启用（不改代码即可上线）
+    #   CAPABILITY_DISABLED=doc_agent,foo   → 强制停用
+    # 未列出者用 spec 声明的 enabled（见 agent/registry.py 的 is_capability_enabled）。
+    # 逗号分隔，半角/全角均可。读取后进程内缓存，改配置需重启（或调
+    # reset_capability_overrides）。
+    capability_enabled: str = field(
+        default_factory=lambda: os.getenv("CAPABILITY_ENABLED", "")
+    )
+    capability_disabled: str = field(
+        default_factory=lambda: os.getenv("CAPABILITY_DISABLED", "")
+    )
+
+    # ============================================================
     # 租户私有文档索引（C1）— doc_qa 由「全文塞入」改「检索模式」
     # ============================================================
     # 上传时对解析产物分块 + 向量化，存入与会话文件同一存储层（复用

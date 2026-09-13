@@ -569,3 +569,22 @@ def test_reflect_uses_marker_format_end_to_end():
     assert out["trace"]["reflection"]["verdict"] == "revised"
     assert out["answer"].startswith("修订版")
     assert "依法签约" in out["answer"]
+
+
+def test_registered_node_entry_builds(monkeypatch):
+    """回归：经 registry 接线的节点入口原先**没传 llm_factory** → 一执行就抛
+    `ValueError: llm 与 llm_factory 至少提供一个`，被 `_with_fallback` 吞成降级
+    话术，因 `enabled=False` 长期未暴露（端到端验收才抓到）。
+    """
+    import agent.nodes.deep_agent as da
+    from agent.nodes.base import get_node_spec
+
+    monkeypatch.setattr(da, "_slot_llm_factory", lambda: object())
+    da.reset_deep_agent()
+    try:
+        node = da._get_deep_agent_node()
+        assert callable(node)
+        # registry 登记的 entry 就是它（保证测的是生产那条路径）
+        assert get_node_spec("deep_agent").entry is da.node_deep_agent
+    finally:
+        da.reset_deep_agent()

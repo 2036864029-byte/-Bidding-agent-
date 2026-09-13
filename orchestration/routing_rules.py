@@ -41,9 +41,28 @@ class HandoffRule:
 
 
 @dataclass(frozen=True)
+class AgentGateRule:
+    """「带文件时是否升级给 deep_agent」的闸门（第 3 项）。
+
+    只在**会话确实有文件**时被咨询（`带文件` 是唯一确定性前置，见 Phase G-5）。
+    命中 → 路由 deep_agent（跨源编排）；不命中 → 维持单节点 doc_qa。
+    """
+
+    enabled: bool = False
+    #: 命中下列任一关键词才升级（偏宽松版：实测误入 3.8% / 漏答 0~13%）
+    keywords: tuple[str, ...] = field(default_factory=tuple)
+    #: 是否额外要求「问题指向本文档」（这份/本文件/文件里/上传的…）
+    #: 收紧方向：可把误入压到 0%，代价是漏答升到 17~30%（实测）
+    require_doc_ref: bool = False
+    #: 「指向本文档」的正则（require_doc_ref=True 时用）
+    doc_ref_pattern: Optional[Pattern[str]] = None
+
+
+@dataclass(frozen=True)
 class RoutingRules:
     l1: List[L1Rule] = field(default_factory=list)
     handoff: List[HandoffRule] = field(default_factory=list)
+    agent_gate: AgentGateRule = field(default_factory=AgentGateRule)
 
 
 _cache: Optional[RoutingRules] = None
@@ -87,7 +106,17 @@ def load_rules(path: Optional[Path] = None) -> RoutingRules:
         )
         for item in (raw.get("handoff") or [])
     ]
-    return RoutingRules(l1=l1, handoff=handoff)
+    gate_raw = raw.get("agent_gate") or {}
+    agent_gate = AgentGateRule(
+        enabled=bool(gate_raw.get("enabled", False)),
+        keywords=tuple(gate_raw.get("keywords") or ()),
+        require_doc_ref=bool(gate_raw.get("require_doc_ref", False)),
+        doc_ref_pattern=(
+            _compile(gate_raw["doc_ref_pattern"], gate_raw.get("flags"))
+            if gate_raw.get("doc_ref_pattern") else None
+        ),
+    )
+    return RoutingRules(l1=l1, handoff=handoff, agent_gate=agent_gate)
 
 
 def load_rules_cached() -> RoutingRules:
@@ -105,6 +134,7 @@ def reset_rules_cache() -> None:
 
 
 __all__ = [
+    "AgentGateRule",
     "L1Rule",
     "HandoffRule",
     "RoutingRules",

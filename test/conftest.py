@@ -31,6 +31,16 @@ def _reset_mineru_version_memo():
 
 
 @pytest.fixture(autouse=True)
+def _reset_capability_overrides():
+    """能力开关覆盖（`CAPABILITY_ENABLED/DISABLED`）读后进程内缓存 → 跨用例会串。"""
+    from agent.registry import reset_capability_overrides
+
+    reset_capability_overrides()
+    yield
+    reset_capability_overrides()
+
+
+@pytest.fixture(autouse=True)
 def _reset_inflight_gate():
     """C1：在飞闸门是进程级单例，跨用例会残留计数与配置 → 每个用例前后重置。"""
     from core.concurrency.limits import reset_inflight_gate

@@ -25,7 +25,11 @@ from typing import Any, Callable, List, Optional
 from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 
-from agent.registry import CapabilityRegistry, get_default_registry
+from agent.registry import (
+    CapabilityRegistry,
+    get_default_registry,
+    is_capability_enabled,
+)
 
 from .handoff import HandoffMeta, build_sub_question
 from .registry_wiring import agent_ids
@@ -146,6 +150,55 @@ def _build_llm_router(llm, registry: Optional[CapabilityRegistry] = None) -> Cal
 
 # ── 三级级联 ──────────────────────────────────────────────────
 
+AGENT_UPGRADE_ROUTE = "deep_agent"
+
+
+def should_upgrade_to_agent(
+    question: str,
+    *,
+    rules: Optional[RoutingRules] = None,
+    registry: Optional[CapabilityRegistry] = None,
+) -> bool:
+    """闸门判定：**会话已有文件时**，是否把问题升级给 deep_agent（第 3 项）。
+
+    纯确定性，零 LLM：关键词命中（可选再要求"问题指向本文档"）。
+    规则与词表在 `routing_rules.yaml` 的 `agent_gate` 段 —— 采到真实数据后
+    **只改 YAML**，不动代码。
+
+    **调用方必须先确认"有文件"**：`带文件` 是唯一未撞墙的确定性信号（Phase G-5），
+    本函数只管"有文件时再判什么"。实测（49 条带文件金标集，见
+    `scripts/diag_gate_criteria.py`）：偏宽松配置误入 3.8% / 漏答 0~13%；
+    开启 `require_doc_ref` 可把误入压到 0%、漏答升到 17~30%。
+    """
+    gate = (rules or load_rules_cached()).agent_gate
+    if not gate.enabled or not gate.keywords:
+        return False
+    # deep_agent 未接线时不得放行 —— 否则会把图路由到不存在的节点
+    reg = registry or get_default_registry()
+    spec = reg.get(AGENT_UPGRADE_ROUTE)
+    if spec is None or not is_capability_enabled(spec):
+        return False
+    if not any(kw in question for kw in gate.keywords):
+        return False
+    if gate.require_doc_ref:
+        if gate.doc_ref_pattern is None or not gate.doc_ref_pattern.search(question):
+            return False
+    return True
+
+
+def _doc_route(
+    question: str,
+    *,
+    rules: Optional[RoutingRules] = None,
+    registry: Optional[CapabilityRegistry] = None,
+) -> str:
+    """带文件时的落点：闸门命中且 deep_agent 可用 → 升级；否则单节点文档问答。"""
+    if should_upgrade_to_agent(question, rules=rules, registry=registry):
+        logger.info("supervisor 闸门命中 → 升级 %s（带文件 + 跨源信号）", AGENT_UPGRADE_ROUTE)
+        return AGENT_UPGRADE_ROUTE
+    return DOC_CONTEXT_ROUTE
+
+
 def route_question(
     messages: List[BaseMessage],
     *,
@@ -161,6 +214,9 @@ def route_question(
       - **自动附着**（服务端按会话带上文件）→ 让过 L1 强规则后再生效，
         否则「上传过文件的会话」里问项目编号/公司会被强行拉进 doc_qa。
 
+    **两条 L0 都可升级 deep_agent**（第 3 项）：带文件 + 闸门命中 → `deep_agent`
+    （跨源编排）；否则 `doc_qa`（单节点，够快）。判据见 `should_upgrade_to_agent`。
+
     Args:
         messages: 对话消息（末条为用户问题；L3 走完整 history 与既有 router 一致）。
         llm: L3 用 LLM（llm_router 缺省时经 build_router_node 构建）。
@@ -169,23 +225,26 @@ def route_question(
         llm_router: 注入的 L3 分类器（(state)->{"router_intent": str}）；离线测试注入。
     """
     question = str(messages[-1].content) if messages else ""
+    rules = load_rules_cached()
 
     # L0（强）：客户端显式带了文件，是最强意图信号——交给关键词/LLM 判断会把它推翻
     # （实测：带 file_ids 问法规问题错走 knowledge_qa，文件被完全忽略）。
     kind = _doc_context_kind(messages, registry)
     if kind == "explicit":
-        logger.info("supervisor L0（显式文件）路由 → %s", DOC_CONTEXT_ROUTE)
-        return DOC_CONTEXT_ROUTE
+        target = _doc_route(question, rules=rules, registry=registry)
+        logger.info("supervisor L0（显式文件）路由 → %s", target)
+        return target
 
-    rule_hit = classify_rules(question)
+    rule_hit = classify_rules(question, rules)
     if rule_hit:
         logger.info("supervisor L1 规则路由 → %s", rule_hit)
         return rule_hit
 
-    # L0（弱）：本会话有自动附着的文件，且没有 L1 强信号 → 按文档答。
+    # L0（弱）：本会话有自动附着的文件，且没有 L1 强信号 → 按文档答（同样可升级）。
     if kind == "session":
-        logger.info("supervisor L0（会话文件）路由 → %s", DOC_CONTEXT_ROUTE)
-        return DOC_CONTEXT_ROUTE
+        target = _doc_route(question, rules=rules, registry=registry)
+        logger.info("supervisor L0（会话文件）路由 → %s", target)
+        return target
 
     semantic_hit = classify_semantic(question, registry, embedder)
     if semantic_hit:

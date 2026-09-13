@@ -543,7 +543,11 @@ def _get_deep_agent_node():
     if _node is None:
         with _lock:
             if _node is None:
-                _node = build_deep_agent_node()
+                # ⚠️ 必须传 llm_factory：`build_deep_agent_node()` 无 llm 来源会直接
+                # 抛 ValueError。此前长期传空 → 本节点经 registry 接线后**从未能执行**
+                # （被 `_with_fallback` 吞成降级话术），因 `enabled=False` 从未暴露。
+                # 端到端验收（走完整 AgentGraph）才发现，见第 3 项验收记录。
+                _node = build_deep_agent_node(llm_factory=_slot_llm_factory)
     return _node
 
 
