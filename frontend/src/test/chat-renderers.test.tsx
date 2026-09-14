@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { chatResponseAdapter } from '@/adapters/chatAdapter';
+import { deriveColumns } from '@/components/chat/PriceRecordsTable';
 import { ReplyRenderer } from '@/components/chat/renderers/ReplyRenderer';
 import { mockChatFixtures } from '@/mock/mockChat';
 import type { ChatMessage, ReplyType } from '@/types/chat';
@@ -146,5 +147,40 @@ describe('ReplyRenderer 注册表', () => {
       </MemoryRouter>
     );
     expect(screen.getByText('正在生成中的片段…')).toBeInTheDocument();
+  });
+});
+
+/* records 是通用容器，列集随子路由变化 —— 表格必须自适应（写死列会让企业查询整表都是「—」）。 */
+
+describe('PriceRecordsTable 列自适应', () => {
+  it('招投标记录 → 项目列', () => {
+    const cols = deriveColumns([
+      { project_name: '某项目', purchaser: '某单位', winning_amount: '100', winning_date: '2026-01-01' },
+    ]);
+    expect(cols).toEqual(['project_name', 'purchaser', 'winning_amount', 'winning_date']);
+  });
+
+  it('企业记录 → 企业列（不再是一排「—」）', () => {
+    const cols = deriveColumns([
+      { company_name: '某公司', credit_code: '9133...', legal_person: '张三', registered_capital: '1000万' },
+    ]);
+    expect(cols).toContain('company_name');
+    expect(cols).toContain('legal_person');
+    expect(cols).not.toContain('project_name');
+  });
+
+  it('整列为空的列被丢掉', () => {
+    const cols = deriveColumns([{ project_name: '甲', purchaser: '', winning_amount: null }]);
+    expect(cols).toEqual(['project_name']);
+  });
+
+  it('列数封顶，避免变成字段倾倒', () => {
+    const wide: Record<string, string> = {};
+    for (let i = 0; i < 20; i += 1) wide[`f${i}`] = `v${i}`;
+    expect(deriveColumns([wide]).length).toBeLessThanOrEqual(6);
+  });
+
+  it('空记录不产生列（组件据此不渲染表格）', () => {
+    expect(deriveColumns([])).toEqual([]);
   });
 });
