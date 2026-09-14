@@ -1,4 +1,8 @@
 import { create } from 'zustand';
+import type { ChatMessage } from '@/types/chat';
+
+/** 会话消息类型下沉到领域契约层（@/types/chat）；此处 re-export 保持既有引用稳定。 */
+export type { ChatMessage } from '@/types/chat';
 
 /**
  * chat-window —— 落地页对话浮窗状态机（D6）。
@@ -10,14 +14,9 @@ import { create } from 'zustand';
  *
  * 会话纪律：× = 收起，非销毁。messages 随收起保留，胶囊点击恢复同一会话。
  * Phase 4 接真后端：submit() 的「占位回复」替换为 SSE 流式 + reply_type 渲染，
- * 状态机与消息列表形状不变（设计文档 §4.2 的接缝即在此）。
+ * 状态机与消息列表形状不变（设计文档 §4.2 的接缝即在此）；
+ * ChatMessage 已预留 replyType / citations / data / pending 字段。
  */
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'agent';
-  content: string;
-}
 
 type PanelStatus = 'idle' | 'open' | 'minimized';
 
