@@ -40,7 +40,8 @@ export function ModulePageLayout({
       <main className="mx-auto w-full max-w-[72rem] flex-1 px-6 py-8">
         <div className="mb-8">
           <p className="mono-label mb-2">{eyebrow}</p>
-          <div className="flex items-center gap-3">
+          {/* flex-wrap：窄屏下徽章换到下一行，别把标题挤成两行断词 */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <h1 className="text-2xl font-semibold tracking-[-0.02em] text-[var(--color-ink)]">
               {name}
             </h1>

@@ -165,6 +165,8 @@ export function ChatFocusPanel() {
 }
 
 function MessageRow({ message }: { message: ChatMessage }) {
+  const retry = useChatWindowStore((s) => s.retry);
+  const busy = useChatWindowStore((s) => s.busy);
   const isUser = message.role === 'user';
 
   if (isUser) {
@@ -183,8 +185,8 @@ function MessageRow({ message }: { message: ChatMessage }) {
     <div className="flex justify-start">
       <div
         className={cn(
-          'w-full rounded-2xl border border-[var(--color-rule)] bg-[var(--color-paper-2)] px-4 py-3 text-[13.5px] text-[var(--color-ink-2)]',
-          streaming && 'border-[var(--color-rule-2)]'
+          'w-full rounded-2xl border bg-[var(--color-paper-2)] px-4 py-3 text-[13.5px] text-[var(--color-ink-2)]',
+          message.failed ? 'border-[oklch(85%_0.08_25)]' : 'border-[var(--color-rule)]'
         )}
       >
         {message.content || !streaming ? (
@@ -192,6 +194,21 @@ function MessageRow({ message }: { message: ChatMessage }) {
             <ReplyRenderer message={message} />
           </div>
         ) : null}
+
+        {message.failed && (
+          <div className="mt-2.5 flex items-center gap-2 border-t border-[var(--color-rule)] pt-2.5">
+            <button
+              type="button"
+              onClick={() => retry(message.id)}
+              disabled={busy}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] text-[var(--color-accent)] transition-colors duration-[var(--dur-micro)] ease-out hover:bg-[var(--color-accent-soft)] disabled:opacity-45"
+            >
+              <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+              重试
+            </button>
+            <span className="text-[12px] text-[var(--color-neutral)]">这条回答没取到，可以重来一次</span>
+          </div>
+        )}
       </div>
     </div>
   );

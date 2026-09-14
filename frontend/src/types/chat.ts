@@ -165,6 +165,10 @@ export interface ChatMessage {
   errorCode?: string | null;
   /** true = 等待中（agent 慢路径 9~15s 占位） */
   pending?: boolean;
+  /** true = 这条回答失败了（可重试；主动停止不算失败） */
+  failed?: boolean;
+  /** 触发这条回答的**原始提问**（联动跳转时把上下文带过去用） */
+  sourceQuestion?: string;
 }
 
 /** 后端原始响应（snake_case，未归一化）—— 适配器输入 / backend 客户端返回。 */

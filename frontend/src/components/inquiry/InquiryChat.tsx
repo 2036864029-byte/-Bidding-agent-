@@ -32,9 +32,10 @@ const WELCOME: ChatMessage = {
     '描述你要采购的物资或服务，我来调取历史中标数据给你价格参考。也可以直接问某家公司近期的中标记录。',
 };
 
-export function InquiryChat() {
+export function InquiryChat({ initialQuestion = '' }: { initialQuestion?: string }) {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
-  const [input, setInput] = useState('');
+  // 从对话模块联动过来时预填原问题（上下文不丢），由用户决定是否发送
+  const [input, setInput] = useState(initialQuestion);
   const [pending, setPending] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 

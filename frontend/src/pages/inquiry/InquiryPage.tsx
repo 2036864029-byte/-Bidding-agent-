@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { Calculator, WifiOff } from 'lucide-react';
+import { useSearchParams } from 'react-router';
+import { Calculator, MessageSquareQuote, WifiOff, X } from 'lucide-react';
 import { ModulePageLayout } from '@/components/layout/ModulePageLayout';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +27,16 @@ const STATUS_LABEL: Record<InquiryStatus, string> = {
 export function InquiryPage() {
   const { data, error, loading } = useAsyncData(() => api.inquiry.getSummary());
   const [active, setActive] = useState<{ item: InquiryItem; quote: InquiryQuote } | null>(null);
+
+  // 对话模块联动入口：/inquiry?from=chat&q=<原始提问>
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [bannerOpen, setBannerOpen] = useState(true);
+  const fromChat = searchParams.get('from') === 'chat';
+  const carriedQuestion = searchParams.get('q') ?? '';
+  const dismissBanner = () => {
+    setBannerOpen(false);
+    setSearchParams({}, { replace: true }); // 清掉参数，刷新不再弹
+  };
 
   const badge = (
     <Badge variant="accent">
@@ -73,8 +84,33 @@ export function InquiryPage() {
 
   return shell(
     <>
+      {fromChat && bannerOpen && (
+        <div className="mb-4 flex items-start gap-3 rounded-2xl border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-4 py-3">
+          <MessageSquareQuote className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-accent)]" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium text-[var(--color-ink)]">来自对话</p>
+            {carriedQuestion && (
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-[var(--color-muted)]">
+                「{carriedQuestion}」
+              </p>
+            )}
+            <p className="mt-1 text-[12px] text-[var(--color-neutral)]">
+              已把这个问题带到左侧需求描述区，可直接发送继续询价。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={dismissBanner}
+            aria-label="关闭提示"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--color-neutral)] transition-colors duration-[var(--dur-micro)] ease-out hover:bg-[var(--color-paper)] hover:text-[var(--color-ink)]"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-        <InquiryChat />
+        <InquiryChat initialQuestion={carriedQuestion} />
 
         <div className="space-y-4">
           {/* 询价单抬头 */}

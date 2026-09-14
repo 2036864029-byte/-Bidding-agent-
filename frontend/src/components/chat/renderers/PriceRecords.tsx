@@ -26,8 +26,13 @@ export function PriceRecords({ message }: { message: ChatMessage }) {
         <div className="mt-3.5">
           <PriceRecordsTable records={records} />
           <div className="mt-2.5 flex justify-end">
+            {/* 联动跳转**带上原始提问**，让询价页接得上上下文（不丢） */}
             <Link
-              to="/inquiry"
+              to={
+                message.sourceQuestion
+                  ? `/inquiry?from=chat&q=${encodeURIComponent(message.sourceQuestion)}`
+                  : '/inquiry?from=chat'
+              }
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] text-[var(--color-accent)] transition-colors duration-[var(--dur-micro)] ease-out hover:bg-[var(--color-accent-soft)]"
             >
               在询价模块查看详情

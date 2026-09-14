@@ -53,4 +53,24 @@ describe('智能询价页', () => {
     // price_records fixture 的采购人只出现在表里
     expect(await screen.findByText('广州开发区智慧园区管理委员会')).toBeInTheDocument();
   });
+
+  it('从对话联动进入：显示来源横幅 + 预填原问题（上下文不丢）', async () => {
+    const q = '海康威视中标了哪些项目？';
+    render(
+      <MemoryRouter initialEntries={[`/inquiry?from=chat&q=${encodeURIComponent(q)}`]}>
+        <InquiryPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('来自对话')).toBeInTheDocument();
+    expect(screen.getByText(`「${q}」`)).toBeInTheDocument();
+    // 原问题被带进需求描述区（用户可直接发送继续）
+    expect(screen.getByDisplayValue(q)).toBeInTheDocument();
+  });
+
+  it('无联动参数时不显示来源横幅', async () => {
+    renderPage();
+    await screen.findByText('智慧园区安防与信息化设备采购');
+    expect(screen.queryByText('来自对话')).toBeNull();
+  });
 });

@@ -19,6 +19,7 @@ import { mockChatFixtures } from '@/mock/mockChat';import { mockInquiryRaw } fro
 import { mockKanbanRaw } from '@/mock/mockKanban';
 import { mockSupplierRaw } from '@/mock/mockSupplier';
 import * as backend from '@/services/backend';
+import { BackendError } from '@/services/backend';
 import type { ChatRawResponse, ChatResponse, ReplyType } from '@/types/chat';
 import type { InquirySummary } from '@/types/inquiry';
 import type { KanbanOverview } from '@/types/kanban';
@@ -57,6 +58,8 @@ export interface ChatSendOptions {
   signal?: AbortSignal;
   /** Mock 模式：指定展示哪一种 reply_type 的 fixture（演示/测试） */
   replyType?: ReplyType;
+  /** 429/503 退避重试回调（给用户「正在重试」提示） */
+  onRetry?: (attempt: number, waitMs: number) => void;
 }
 
 /** 流式回调（**Domain 形状** —— 原始 payload 的归一在适配器里做）。 */
@@ -171,7 +174,15 @@ async function realUpload(
     try {
       raw = await backend.getFileStatus(fileId);
     } catch (err) {
-      onUpdate({ id: key, fileId, name: file.name, status: 'error', error: (err as Error).message });
+      // 404 = 上传记录已过期（TTL 1 小时）→ 给「重新上传」而不是笼统报错
+      const expired = err instanceof BackendError && err.status === 404;
+      onUpdate({
+        id: key,
+        fileId,
+        name: file.name,
+        status: 'error',
+        error: expired ? '文件已过期（上传超过 1 小时），请重新上传' : (err as Error).message,
+      });
       return;
     }
     const status = String(raw.status ?? '');

@@ -62,13 +62,28 @@ describe('ReplyRenderer 注册表', () => {
     expect(screen.getByText(/招标分为公开招标和邀请招标/)).toBeInTheDocument();
   });
 
-  it('price_records：渲染中标记录表 + 询价模块联动入口', () => {
-    renderReply('price_records');
-    expect(screen.getByText('智慧园区安防系统集成项目')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /在询价模块查看详情/ })).toHaveAttribute(
-      'href',
-      '/inquiry'
+  it('price_records：渲染中标记录表 + 询价模块联动入口（带上原始提问）', () => {
+    const res = chatResponseAdapter(mockChatFixtures.price_records);
+    render(
+      <MemoryRouter>
+        <ReplyRenderer
+          message={{
+            id: 'pr',
+            role: 'agent',
+            content: res.answer,
+            replyType: res.replyType,
+            data: res.data,
+            sourceQuestion: '海康威视中标了哪些项目？',
+          }}
+        />
+      </MemoryRouter>
     );
+    expect(screen.getByText('智慧园区安防系统集成项目')).toBeInTheDocument();
+
+    // 联动跳转必须把上下文带过去（不丢）
+    const link = screen.getByRole('link', { name: /在询价模块查看详情/ });
+    expect(link.getAttribute('href')).toContain('/inquiry?from=chat');
+    expect(link.getAttribute('href')).toContain(encodeURIComponent('海康威视中标了哪些项目？'));
   });
 
   it('doc_qa：来源列表 + retrieval.notes 显式兜底提示', () => {

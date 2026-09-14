@@ -127,3 +127,54 @@ describe('chat-window 状态机', () => {
     expect(loadSessionId()).toBeNull();
   });
 });
+
+/* Phase 5：边界打磨（接口清单 §6）。 */
+
+describe('chat-window 边界打磨', () => {
+  beforeEach(resetStore);
+
+  it('上传前预校验：类型不符直接提示，且不产生 chip（不白跑一趟后端）', () => {
+    useChatWindowStore.getState().uploadFiles([new File(['x'], 'evil.exe')]);
+    const s = useChatWindowStore.getState();
+    expect(s.notice).toContain('不支持的文件类型');
+    expect(s.files).toHaveLength(0);
+  });
+
+  it('上传回带的会话被采纳（先传文件后提问的关键，否则附件归属会丢）', async () => {
+    useChatWindowStore.getState().uploadFiles([new File(['x'], '招标文件.md')]);
+    await vi.waitFor(() => {
+      expect(useChatWindowStore.getState().files[0]?.status).toBe('done');
+    });
+    expect(useChatWindowStore.getState().sessionId).toBe('mock-session');
+  });
+
+  it('移除文件 chip', async () => {
+    useChatWindowStore.getState().uploadFiles([new File(['x'], 'a.md')]);
+    await vi.waitFor(() => expect(useChatWindowStore.getState().files).toHaveLength(1));
+    useChatWindowStore.getState().removeFile(useChatWindowStore.getState().files[0].id);
+    expect(useChatWindowStore.getState().files).toHaveLength(0);
+  });
+
+  it('retry 丢弃失败消息并重发它前面的那条提问', async () => {
+    useChatWindowStore.setState({
+      messages: [
+        { id: 'u1', role: 'user', content: '招标方式有哪些？' },
+        { id: 'a1', role: 'agent', content: '抱歉，这次没能取到回答：请求失败', failed: true },
+      ],
+    });
+
+    useChatWindowStore.getState().retry('a1');
+
+    const msgs = useChatWindowStore.getState().messages;
+    expect(msgs.some((m) => m.failed)).toBe(false); // 失败那条已丢弃
+    expect(msgs[msgs.length - 1].pending).toBe(true); // 重新排队了回答
+
+    await vi.waitFor(() => expect(agentMessage().pending).toBe(false));
+    expect(agentMessage().content).toContain('公开招标');
+  });
+
+  it('retry 对不存在的消息 id 无副作用', () => {
+    useChatWindowStore.getState().retry('nope');
+    expect(useChatWindowStore.getState().messages).toHaveLength(0);
+  });
+});

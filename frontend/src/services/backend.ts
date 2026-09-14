@@ -28,12 +28,58 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' };
 /** 后端/网络异常（含状态码；status=0 表示网络层失败）。 */
 export class BackendError extends Error {
   readonly status: number;
+  /** 服务端下发的 Retry-After（毫秒）；仅 429/503 有意义 */
+  readonly retryAfterMs?: number;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, retryAfterMs?: number) {
     super(message);
     this.name = 'BackendError';
     this.status = status;
+    this.retryAfterMs = retryAfterMs;
   }
+}
+
+/** 解析 Retry-After（秒数或 HTTP 日期；拿不到返回 undefined）。 */
+export function parseRetryAfter(res: Response): number | undefined {
+  const raw = res.headers?.get?.('Retry-After');
+  if (!raw) return undefined;
+  const secs = Number(raw);
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
+}
+
+const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 429（限流）/ 503（过载）**退避重试**。
+ *
+ * 优先用服务端下发的 `Retry-After`，没有则指数退避（400ms → 800ms）。
+ * 只重试这两种状态：其它错误重试没有意义，反而放大故障。
+ * 注：SSE 在 `onopen` 阶段失败（429/503 正是如此）时**尚未产生任何 token**，重试不会重复输出。
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  {
+    attempts = 3,
+    onRetry,
+  }: { attempts?: number; onRetry?: (attempt: number, waitMs: number) => void } = {}
+): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const status = err instanceof BackendError ? err.status : 0;
+      const retriable = status === 429 || status === 503;
+      if (!retriable || i === attempts - 1) throw err;
+      const wait = (err as BackendError).retryAfterMs ?? 400 * 2 ** i;
+      onRetry?.(i + 1, wait);
+      await sleepMs(wait);
+    }
+  }
+  throw lastErr;
 }
 
 /** 统一请求：非 2xx 解析错误信封 → BackendError。 */
@@ -45,7 +91,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new BackendError(0, '网络请求失败，请确认后端服务已启动');
   }
   if (!res.ok) {
-    throw new BackendError(res.status, await describeError(res));
+    throw new BackendError(res.status, await describeError(res), parseRetryAfter(res));
   }
   return (await res.json()) as T;
 }
@@ -101,6 +147,8 @@ export interface ChatOptions {
   sessionId?: string;
   fileIds?: string[];
   signal?: AbortSignal;
+  /** 退避重试回调（用于给用户「请求较多，正在重试…」提示） */
+  onRetry?: (attempt: number, waitMs: number) => void;
 }
 
 /**
@@ -111,12 +159,16 @@ export async function sendChat(question: string, opts: ChatOptions = {}): Promis
   const body: Record<string, unknown> = { question, stream: false };
   if (opts.sessionId) body.session_id = opts.sessionId;
   if (opts.fileIds?.length) body.file_ids = opts.fileIds;
-  return request<ChatRawResponse>('/chat', {
-    method: 'POST',
-    headers: JSON_HEADERS,
-    body: JSON.stringify(body),
-    signal: opts.signal,
-  });
+  return withRetry(
+    () =>
+      request<ChatRawResponse>('/chat', {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify(body),
+        signal: opts.signal,
+      }),
+    { onRetry: opts.onRetry }
+  );
 }
 
 /** 流式事件回调（原始形状；Domain 归一在 services/api.ts 做）。 */
@@ -146,7 +198,20 @@ export async function streamChat(
   if (opts.sessionId) body.session_id = opts.sessionId;
   if (opts.fileIds?.length) body.file_ids = opts.fileIds;
 
-  await fetchEventSource(`${BASE}/chat/stream`, {
+  // 429/503 会在 onopen 阶段就失败（此时**还没产生任何 token**），重试不会重复输出
+  await withRetry(
+    () => openChatStream(question, body, opts, handlers),
+    { onRetry: opts.onRetry }
+  );
+}
+
+function openChatStream(
+  _question: string,
+  body: Record<string, unknown>,
+  opts: ChatOptions,
+  handlers: RawStreamHandlers
+): Promise<void> {
+  return fetchEventSource(`${BASE}/chat/stream`, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
@@ -155,8 +220,8 @@ export async function streamChat(
 
     async onopen(res) {
       if (res.ok) return;
-      // 过载/限流走 HTTP 错误码（业务错误才走 200 + error_code）
-      throw new BackendError(res.status, await describeError(res));
+      // 过载/限流走 HTTP 错误码（业务错误才走 200 + error_code）；带 Retry-After 供退避
+      throw new BackendError(res.status, await describeError(res), parseRetryAfter(res));
     },
 
     onmessage(ev) {
@@ -219,11 +284,13 @@ export async function uploadFile(
   form.append('file', file);
   const path = opts.async === false ? '/files/upload' : '/files/upload/async';
   const qs = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
-  const raw = await request<Record<string, unknown>>(`${path}${qs}`, {
-    method: 'POST',
-    body: form,
-    signal: opts.signal,
-  });
+  const raw = await withRetry(() =>
+    request<Record<string, unknown>>(`${path}${qs}`, {
+      method: 'POST',
+      body: form,
+      signal: opts.signal,
+    })
+  );
   return {
     fileId: String(raw.file_id ?? ''),
     sessionId: String(raw.session_id ?? sessionId ?? ''),
