@@ -1,0 +1,202 @@
+/*
+ * Hallmark · genre: modern-minimal · macrostructure: Console-Hub (user-fixed 上/中/下 三段式) · theme: cobalt-tuned · enrichment: none · nav: N1 minimal
+ *
+ * 流派：modern-minimal（B2B 企业 AI 工具）
+ * 主题：Cobalt-tuned —— 冷工程纸面 · 电钴蓝强调（唯一信号，<5% 视口）· Space Grotesk + Inter + JetBrains Mono
+ * 结构调整：容器大圆角（用户显式偏好 rounded-2xl/3xl），控件 10px 适中；发丝线定义边界，无玻璃拟态/渐变文字/纯黑纯白
+ * 三态纪律：easing 三曲线 / 时长三档 / 动画只动 transform+opacity；prefers-reduced-motion 降级为透明度淡入
+ */
+
+@import "tailwindcss";
+
+@theme {
+  /* ── 色彩：冷锚点 hue ≈ 250–258 ───────────────────────────── */
+  --color-paper:         oklch(98.5% 0.004 250);   /* 冷工程近白纸面（非 #fff） */
+  --color-paper-2:       oklch(96.2% 0.006 250);   /* 抬升面板 / 悬停面 */
+  --color-paper-3:       oklch(93.5% 0.008 251);   /* 按下 / 内嵌面 */
+  --color-rule:          oklch(90% 0.010 252);     /* 发丝线边框 */
+  --color-rule-2:        oklch(82% 0.012 254);     /* 强边框 / 输入框 */
+  --color-neutral:       oklch(60% 0.014 253);     /* 次级文本 / 图标 */
+  --color-muted:         oklch(43% 0.016 255);     /* 弱化文本 */
+  --color-ink:           oklch(24% 0.02 258);      /* 冷炭墨（非 #000） */
+  --color-ink-2:         oklch(34% 0.018 257);     /* 正文（比墨轻一档） */
+  --color-accent:        oklch(58% 0.20 256);      /* 电钴蓝 —— 唯一信号 */
+  --color-accent-ink:    oklch(97% 0.01 255);      /* 信号上的近白 */
+  --color-accent-soft:   oklch(93% 0.045 256);     /* 信号浅底（选中 chip） */
+  --color-focus:         oklch(55% 0.19 256);      /* 焦点环（≥3:1） */
+  --color-graphite:      oklch(22% 0.016 260);     /* 暗带（对话窗口深色区） */
+  --color-graphite-ink:  oklch(92% 0.008 255);     /* 暗带上文本 */
+  --color-success:       oklch(58% 0.13 150);      /* 语义：成功/正常 */
+  --color-warning:       oklch(65% 0.17 60);       /* 语义：偏离/预警（询价高亮） */
+  --color-danger:        oklch(58% 0.21 25);       /* 语义：风险/错误 */
+
+  /* ── 字体：显示 / 正文 / 等宽（CJK 回退系统字体） ─────────── */
+  --font-display: "Space Grotesk", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-body:    "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+
+  /* ── 圆角：控件 10px，卡片 16px，大容器 24px（用户大圆角偏好） ── */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   16px;
+  --radius-xl:   24px;
+
+  /* ── 字号：大三度 1.25（16px 基准） ──────────────────────── */
+  --text-xs:   0.75rem;   /* 12px 等宽标签 */
+  --text-sm:   0.875rem;  /* 14px */
+  --text-base: 1rem;      /* 16px 正文 */
+  --text-md:   1.25rem;   /* 20px */
+  --text-lg:   1.5625rem; /* 25px */
+  --text-xl:   1.9531rem; /* 31px */
+  --text-2xl:  2.4414rem; /* 39px */
+  --text-3xl:  3.0518rem; /* 49px */
+  --text-display: clamp(2rem, 3vw + 1rem, 3.25rem);
+
+  /* ── 缓动（Hallmark 三曲线）与投影（克制，无发光） ─────────── */
+  --ease-out:     cubic-bezier(0.16, 1, 0.3, 1);    /* 入场 */
+  --ease-in:      cubic-bezier(0.7, 0, 0.84, 0);    /* 出场 */
+  --ease-in-out:  cubic-bezier(0.65, 0, 0.35, 1);   /* 状态切换 */
+  --shadow-lift:  0 1px 2px oklch(24% 0.02 258 / 0.05);
+  --shadow-float: 0 12px 48px -12px oklch(24% 0.02 258 / 0.18), 0 2px 8px oklch(24% 0.02 258 / 0.06);
+}
+
+:root {
+  color-scheme: light;
+  /* 时长三档 */
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long:  420ms;
+}
+
+/* ── 基础 ─────────────────────────────────────────────── */
+html,
+body {
+  overflow-x: clip; /* Hallmark 移动端门禁：横向永不溢出，不用 hidden */
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink-2);
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 展示字：紧凑字距；标题用重量对比，不用斜体 */
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--color-ink);
+}
+
+/* 等宽标签（machine-readout voice）：UPPERCASE 小标签 */
+.mono-label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-neutral);
+}
+
+/* 数据数字：等宽制表 */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 渐变发光边缘（D5/D6）：直接作用在元素自身边缘，无外层容器 ──
+ * 渐变描边加粗加亮（2px）+ 柔和外发光晕（多层 box-shadow，非硬框）。
+ * 用法：把 .gradient-edge 加到要做渐变边缘的元素上（圆角由组件自定）。 */
+.gradient-edge {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--color-paper), var(--color-paper)) padding-box,
+    linear-gradient(
+        115deg,
+        oklch(55% 0.24 256),
+        oklch(75% 0.22 256) 28%,
+        oklch(46% 0.24 258) 52%,
+        oklch(82% 0.20 256) 78%,
+        oklch(55% 0.24 256)
+      )
+      border-box;
+  background-size: auto, 300% 300%;
+  animation: gradient-drift 9s var(--ease-in-out) infinite;
+  box-shadow:
+    0 0 10px oklch(58% 0.22 256 / 0.45),
+    0 0 26px oklch(58% 0.22 256 / 0.25),
+    0 0 48px oklch(58% 0.22 256 / 0.12);
+}
+@keyframes gradient-drift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* ── 模块卡 hover 发光（D4：边框变钴蓝 + 轻发光，非旋转渐变） ── */
+.card-glow {
+  transition:
+    transform var(--dur-short) var(--ease-out),
+    border-color var(--dur-short) var(--ease-out),
+    box-shadow var(--dur-short) var(--ease-out),
+    background-color var(--dur-short) var(--ease-out);
+}
+.card-glow:hover {
+  transform: translateY(-4px);
+  border-color: var(--color-accent);
+  box-shadow:
+    0 0 0 1px var(--color-accent),
+    0 18px 48px -18px oklch(58% 0.20 256 / 0.35);
+}
+
+/* 焦点环：出现必须即时（永不淡入），≥3:1 */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 输入框聚焦：去掉外圈焦点环（文本输入框的光标本身就是焦点指示） */
+.gradient-edge:focus-visible {
+  outline: none;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-ink);
+}
+
+/* 入场动画：一次编排，DOM 序错峰 ≤ 500ms */
+.reveal {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: reveal var(--dur-long) var(--ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+@keyframes reveal {
+  to { opacity: 1; transform: none; }
+}
+
+/* 减动效：一切空间动效折叠为 ≤150ms 透明度 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 150ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 150ms !important;
+  }
+  .reveal {
+    animation: reveal-reduced 150ms linear forwards;
+  }
+  @keyframes reveal-reduced {
+    to { opacity: 1; transform: none; }
+  }
+
+  /* 签名渐变退化为静态（常亮不驱动动画） */
+  .gradient-edge {
+    animation: none;
+  }
+}
