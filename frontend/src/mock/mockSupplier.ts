@@ -3,8 +3,9 @@ import type { SupplierRawOverview } from '@/types/supplier';
 /**
  * 供应商全景 —— 高保真 Mock（**raw 形态**，模拟未来 read 端点）。
  *
- * 评分口径 ⚠️ 待定（设计文档 §8）：此处为前端自定的一套 0~100 分口径，
- * 仅用于 Phase 3 出视觉效果；真口径（前端算 or 后端给）确定后换 adapters/supplierAdapter.ts。
+ * 评分口径（2026-09-14 用户拍板）：**由后端给** —— 此处 `score` 与 `radar.dimensions`
+ * 即"后端端点会返回的字段"，前端只透传；雷达轴 = 技术能力/交付能力/售后服务/价格竞争力/财务状况。
+ * 汇总金额单位「万元」（新表口径）。
  */
 export const mockSupplierRaw: SupplierRawOverview = {
   filters: {
@@ -46,10 +47,10 @@ export const mockSupplierRaw: SupplierRawOverview = {
         bid_win_rate: 43.8,
         active_years: 12,
         price_history: [
-          { year: 2022, avg_amount: 4_120_000, count: 18 },
-          { year: 2023, avg_amount: 4_680_000, count: 22 },
-          { year: 2024, avg_amount: 5_240_000, count: 26 },
-          { year: 2025, avg_amount: 5_960_000, count: 31 },
+          { year: 2022, avg_amount: 412, count: 18 },
+          { year: 2023, avg_amount: 468, count: 22 },
+          { year: 2024, avg_amount: 524, count: 26 },
+          { year: 2025, avg_amount: 596, count: 31 },
         ],
       },
     },
@@ -78,10 +79,10 @@ export const mockSupplierRaw: SupplierRawOverview = {
         bid_win_rate: 40.8,
         active_years: 11,
         price_history: [
-          { year: 2022, avg_amount: 3_640_000, count: 15 },
-          { year: 2023, avg_amount: 4_020_000, count: 19 },
-          { year: 2024, avg_amount: 4_560_000, count: 21 },
-          { year: 2025, avg_amount: 5_180_000, count: 24 },
+          { year: 2022, avg_amount: 364, count: 15 },
+          { year: 2023, avg_amount: 402, count: 19 },
+          { year: 2024, avg_amount: 456, count: 21 },
+          { year: 2025, avg_amount: 518, count: 24 },
         ],
       },
     },
@@ -110,10 +111,10 @@ export const mockSupplierRaw: SupplierRawOverview = {
         bid_win_rate: 29.6,
         active_years: 9,
         price_history: [
-          { year: 2022, avg_amount: 2_180_000, count: 6 },
-          { year: 2023, avg_amount: 2_460_000, count: 8 },
-          { year: 2024, avg_amount: 2_720_000, count: 7 },
-          { year: 2025, avg_amount: 3_040_000, count: 9 },
+          { year: 2022, avg_amount: 218, count: 6 },
+          { year: 2023, avg_amount: 246, count: 8 },
+          { year: 2024, avg_amount: 272, count: 7 },
+          { year: 2025, avg_amount: 304, count: 9 },
         ],
       },
     },
@@ -142,10 +143,10 @@ export const mockSupplierRaw: SupplierRawOverview = {
         bid_win_rate: 39.7,
         active_years: 10,
         price_history: [
-          { year: 2022, avg_amount: 5_260_000, count: 12 },
-          { year: 2023, avg_amount: 5_880_000, count: 16 },
-          { year: 2024, avg_amount: 6_420_000, count: 18 },
-          { year: 2025, avg_amount: 7_150_000, count: 20 },
+          { year: 2022, avg_amount: 526, count: 12 },
+          { year: 2023, avg_amount: 588, count: 16 },
+          { year: 2024, avg_amount: 642, count: 18 },
+          { year: 2025, avg_amount: 715, count: 20 },
         ],
       },
     },
@@ -174,10 +175,10 @@ export const mockSupplierRaw: SupplierRawOverview = {
         bid_win_rate: 35.8,
         active_years: 14,
         price_history: [
-          { year: 2022, avg_amount: 6_840_000, count: 9 },
-          { year: 2023, avg_amount: 7_260_000, count: 11 },
-          { year: 2024, avg_amount: 7_980_000, count: 10 },
-          { year: 2025, avg_amount: 8_640_000, count: 13 },
+          { year: 2022, avg_amount: 684, count: 9 },
+          { year: 2023, avg_amount: 726, count: 11 },
+          { year: 2024, avg_amount: 798, count: 10 },
+          { year: 2025, avg_amount: 864, count: 13 },
         ],
       },
     },
@@ -206,10 +207,10 @@ export const mockSupplierRaw: SupplierRawOverview = {
         bid_win_rate: 36.4,
         active_years: 16,
         price_history: [
-          { year: 2022, avg_amount: 3_920_000, count: 8 },
-          { year: 2023, avg_amount: 4_280_000, count: 10 },
-          { year: 2024, avg_amount: 4_760_000, count: 11 },
-          { year: 2025, avg_amount: 5_320_000, count: 12 },
+          { year: 2022, avg_amount: 392, count: 8 },
+          { year: 2023, avg_amount: 428, count: 10 },
+          { year: 2024, avg_amount: 476, count: 11 },
+          { year: 2025, avg_amount: 532, count: 12 },
         ],
       },
     },
@@ -238,10 +239,10 @@ export const mockSupplierRaw: SupplierRawOverview = {
         bid_win_rate: 28.0,
         active_years: 8,
         price_history: [
-          { year: 2022, avg_amount: 1_960_000, count: 5 },
-          { year: 2023, avg_amount: 2_140_000, count: 6 },
-          { year: 2024, avg_amount: 2_380_000, count: 7 },
-          { year: 2025, avg_amount: 2_620_000, count: 8 },
+          { year: 2022, avg_amount: 196, count: 5 },
+          { year: 2023, avg_amount: 214, count: 6 },
+          { year: 2024, avg_amount: 238, count: 7 },
+          { year: 2025, avg_amount: 262, count: 8 },
         ],
       },
     },

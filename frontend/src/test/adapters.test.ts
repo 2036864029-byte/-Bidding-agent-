@@ -21,17 +21,17 @@ describe('kanbanAdapter', () => {
     expect(JSON.stringify(mockKanbanRaw)).toBe(before);
   });
 
-  it('snake_case → camelCase 映射正确', () => {
+  it('snake_case → camelCase 映射正确（金额单位：万元）', () => {
     const r = kanbanAdapter(mockKanbanRaw);
     expect(r.summary.totalProjects).toBe(1243);
-    expect(r.summary.totalAmount).toBe(8_642_000_000);
-    expect(r.summary.activeProjects).toBe(512);
+    expect(r.summary.totalAmount).toBe(864_200);
+    expect(r.summary.avgCompetition).toBe(6.8);
     expect(r.filters.regions).toContain('广东省');
-    expect(r.heatmap[0]).toEqual({ region: '广东省', count: 218, amount: 1_642_000_000 });
+    expect(r.heatmap[0]).toEqual({ region: '广东省', count: 218, amount: 164_200 });
     expect(r.trend).toHaveLength(11);
   });
 
-  it('金额缺失保留 null（区别于 0），汇总缺省按总量兜底', () => {
+  it('金额缺失保留 null（区别于 0），汇总缺省回落', () => {
     const empty = kanbanAdapter({
       summary: { total_projects: 5, total_amount: null },
       filters: { regions: [], industries: [], categories: [] },
@@ -40,7 +40,6 @@ describe('kanbanAdapter', () => {
       trend: [],
     });
     expect(empty.summary.totalAmount).toBeNull();
-    expect(empty.summary.activeProjects).toBe(5);
     expect(empty.summary.avgCompetition).toBe(1);
   });
 });

@@ -14,11 +14,14 @@ export function ModulePageLayout({
   name,
   eyebrow,
   description,
+  badge,
   children,
 }: {
   name: string;
   eyebrow: string;
   description: string;
+  /** 标题右侧徽章；不传则默认显示「Phase 3 建设中」占位 */
+  badge?: ReactNode;
   children: ReactNode;
 }) {
   const navigate = useNavigate();
@@ -41,10 +44,12 @@ export function ModulePageLayout({
             <h1 className="text-2xl font-semibold tracking-[-0.02em] text-[var(--color-ink)]">
               {name}
             </h1>
-            <Badge variant="neutral">
-              <Wrench className="h-3 w-3" aria-hidden />
-              Phase 3 建设中
-            </Badge>
+            {badge ?? (
+              <Badge variant="neutral">
+                <Wrench className="h-3 w-3" aria-hidden />
+                Phase 3 建设中
+              </Badge>
+            )}
           </div>
           <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-[var(--color-muted)]">
             {description}

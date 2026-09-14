@@ -2,7 +2,10 @@
  * 智能询价领域契约（Domain Model）。
  *
  * 基准：规划方案 §4.1 的 InquiryItem / InquirySummary；本契约增补
- * 偏离高亮所需字段（budgetThreshold / deviationRate）。金额单位一律为元（§5.3 口径）。
+ * 偏离高亮所需字段（budgetThreshold / deviationRate）。
+ *
+ * 金额单位：**单价与报价用「元」**（摄像机 850 元/台 这类单价用万元会变成 0.085，不合理）——
+ * 这是对「汇总金额用万元」的**有意例外**，招投标系统常规做法；每个字段都显式标注单位。
  *
  * ⚠️ 「询价单 / 对比明细」是未来域模型：当前 /chat 的 price_records 返回的是
  * 「中标记录表」，不是本契约的 InquirySummary（见设计文档 §1 修正 4）。
