@@ -19,7 +19,7 @@ import { mockInquiryRaw } from '@/mock/mockInquiry';
 import { mockKanbanRaw } from '@/mock/mockKanban';
 import { mockSupplierRaw } from '@/mock/mockSupplier';
 import * as backend from '@/services/backend';
-import type { ChatResponse, ReplyType } from '@/types/chat';
+import type { ChatRawResponse, ChatResponse, ReplyType } from '@/types/chat';
 import type { InquirySummary } from '@/types/inquiry';
 import type { KanbanOverview } from '@/types/kanban';
 import type { SupplierOverview } from '@/types/supplier';
@@ -57,6 +57,20 @@ export interface ChatSendOptions {
   replyType?: ReplyType;
 }
 
+/**
+ * Mock 模式的「假路由」：按问题关键词挑 fixture，模拟后端 router 的分支选择——
+ * 否则演示时不管问什么都会回同一段知识问答。Phase 4 翻 `api` 后本函数不再被调用。
+ */
+function pickMockFixture(question: string): ChatRawResponse {
+  if (/价格|报价|中标|多少钱|金额|预算|均价|采购|询价/.test(question)) {
+    return mockChatFixtures.price_records;
+  }
+  if (/保证金|条款|依据|评分办法|工期|招标文件/.test(question)) {
+    return mockChatFixtures.doc_qa;
+  }
+  return mockChatFixtures.kb_answer;
+}
+
 export const api = {
   kanban: {
     async getOverview(): Promise<KanbanOverview> {
@@ -82,7 +96,9 @@ export const api = {
   chat: {
     async send(question: string, opts: ChatSendOptions = {}): Promise<ChatResponse> {
       if (dataConfig.chat === 'mock') {
-        const fixture = opts.replyType ? mockChatFixtures[opts.replyType] : mockChatFixtures.kb_answer;
+        const fixture = opts.replyType
+          ? mockChatFixtures[opts.replyType]
+          : pickMockFixture(question);
         return chatResponseAdapter(fixture);
       }
       return chatResponseAdapter(await backend.sendChat(question, opts));

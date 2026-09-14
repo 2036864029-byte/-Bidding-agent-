@@ -43,6 +43,17 @@ describe('数据源开关 Mock ↔ API', () => {
     expect(res.data.kind).toBe('deep_agent');
   });
 
+  it('chat mock 态：无 replyType 时按关键词路由（价格类 → price_records）', async () => {
+    const res = await api.chat.send('高清网络摄像机的历史中标均价大概多少？');
+    expect(res.replyType).toBe('price_records');
+    expect(res.data.kind).toBe('price_records');
+  });
+
+  it('chat mock 态：知识类问题落到 kb_answer', async () => {
+    const res = await api.chat.send('招标方式有哪些？');
+    expect(res.replyType).toBe('kb_answer');
+  });
+
   it('chat 翻到 api：路由到 backend（POST /api/chat）并回填 Domain', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(mockChatFixtures.doc_qa));
     vi.stubGlobal('fetch', fetchMock);
