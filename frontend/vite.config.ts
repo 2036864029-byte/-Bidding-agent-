@@ -22,6 +22,19 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // 手动分包：Recharts / markdown / 动效各自成块，避免主包被图表库撑爆
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router'],
+          charts: ['recharts'],
+          markdown: ['react-markdown', 'remark-gfm'],
+          motion: ['framer-motion'],
+        },
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,

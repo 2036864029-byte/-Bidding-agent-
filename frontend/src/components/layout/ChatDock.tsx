@@ -8,7 +8,7 @@ import { ChatResumePill } from '@/components/chat/ChatResumePill';
  * 浮窗打开时隐藏输入（输入移入浮窗）；收起后输入条回归 + 「对话中」胶囊。
  */
 export function ChatDock() {
-  const { status, messages, input, setInput, submit } = useChatWindowStore();
+  const { status, messages, input, setInput, submit, uploadFiles, busy } = useChatWindowStore();
 
   if (status === 'open') return null; // 聚焦浮窗持输入
 
@@ -18,6 +18,8 @@ export function ChatDock() {
         value={input}
         onChange={setInput}
         onSend={submit}
+        onUpload={uploadFiles}
+        busy={busy}
         placeholder="输入你的问题，例如：招标方式有哪些？"
       />
       {status === 'minimized' && messages.length > 0 && (

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { ChatInputRow } from '@/components/chat/ChatInputRow';
-import { PriceRecordsTable } from '@/components/inquiry/PriceRecordsTable';
+import { PriceRecordsTable } from '@/components/chat/PriceRecordsTable';
 import { cn } from '@/lib/utils';
 import { api } from '@/services/api';
 import type { ChatMessage } from '@/types/chat';

@@ -17,7 +17,16 @@ function renderLanding() {
 
 describe('落地页四层结构', () => {
   beforeEach(() => {
-    useChatWindowStore.setState({ status: 'idle', messages: [], input: '' });
+    // 完整复位：busy/sessionId 也要清，否则上一条测试在飞的流会挡住下一次 submit
+    useChatWindowStore.setState({
+      status: 'idle',
+      messages: [],
+      input: '',
+      files: [],
+      busy: false,
+      sessionId: null,
+      notice: null,
+    });
   });
 
   it('渲染吸顶导航 + 介绍带 + 三卡片 + 输入条', () => {
@@ -42,18 +51,20 @@ describe('落地页四层结构', () => {
     expect(screen.getByPlaceholderText(/输入你的问题/)).toBeInTheDocument();
   });
 
-  it('发送 → 浮窗打开（背景遮罩）→ × 收起为胶囊 → 点击恢复同一会话', () => {
+  it('发送 → 浮窗打开（背景遮罩）→ × 收起为胶囊 → 点击恢复同一会话', async () => {
     renderLanding();
 
     const input = screen.getByPlaceholderText(/输入你的问题/);
     fireEvent.change(input, { target: { value: '招标方式有哪些？' } });
     fireEvent.click(screen.getByRole('button', { name: '发送' }));
 
-    // 浮窗打开：用户消息 + 占位回复可见；dock 输入条隐藏（输入移入浮窗）
+    // 浮窗打开：用户消息可见；dock 输入条隐藏（输入移入浮窗）
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByText('招标方式有哪些？')).toBeInTheDocument();
-    expect(screen.getByText(/已收到/)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/输入你的问题/)).toBeNull();
+
+    // 流式回答到达（Phase 4：mock 流式按片吐 token，终态 result 覆盖）
+    expect((await screen.findAllByText(/招标投标法/)).length).toBeGreaterThan(0);
 
     // 收起（非销毁）
     fireEvent.click(screen.getByRole('button', { name: '收起对话' }));
@@ -81,6 +92,7 @@ describe('落地页四层结构', () => {
     await new Promise((r) => setTimeout(r, 3500));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByText('你好')).toBeInTheDocument();
-    expect(screen.getByText(/已收到/)).toBeInTheDocument();
+    // 且回答已就位（不是空转）
+    expect(screen.getAllByText(/招标投标法/).length).toBeGreaterThan(0);
   });
 });
