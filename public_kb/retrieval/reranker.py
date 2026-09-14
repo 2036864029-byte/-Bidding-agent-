@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Protocol, Tuple
 import requests
 
 from core.contracts import RerankerStatus
+from core.net import ensure_no_proxy_for_loopback, is_loopback_url
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,10 @@ class SiliconFlowReranker:
         self._model = model
         self._api_key = api_key
         self._base_url = base_url.rstrip("/") if base_url else "https://api.siliconflow.cn/v1"
+        # 环回端点（本机隧道）绕开环境代理，否则 requests 会把 127.0.0.1 也发给代理
+        # → 连接必然失败，且 curl 手测是通的，极易误判（见 core/net.py）
+        if is_loopback_url(self._base_url) and ensure_no_proxy_for_loopback():
+            logger.info("Reranker 端点为环回地址，已加入 NO_PROXY（避免被系统代理劫持）")
         self._http_client = http_client
         self._timeout = timeout
         self._max_retries = max_retries

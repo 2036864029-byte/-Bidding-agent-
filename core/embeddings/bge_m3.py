@@ -17,6 +17,7 @@ from typing import Optional
 from langchain_openai import OpenAIEmbeddings
 
 from ..config.settings import Settings
+from ..net import ensure_no_proxy_for_loopback, is_loopback_url, loopback_direct_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,15 @@ def create_embeddings(settings: Settings) -> OpenAIEmbeddings:
     # 若有自定义 base_url 则传入（如 SiliconFlow / CloseAI）
     if settings.embedding_base_url:
         kwargs["base_url"] = settings.embedding_base_url
+        if is_loopback_url(settings.embedding_base_url):
+            # 环回端点（本机隧道）必须绕开环境代理：代理够不到客户端的 localhost，
+            # 否则表现为 APIConnectionError 而 curl 手测却是通的（见 core/net.py）。
+            ensure_no_proxy_for_loopback()
+            client = loopback_direct_http_client(timeout=float(settings.embedding_timeout))
+            if client is not None:
+                # 显式 mount 才是在长驻进程里真正可靠的那条路
+                kwargs["http_client"] = client
+            logger.info("Embedding 端点为环回地址：已注入直连 httpx client + NO_PROXY")
 
     logger.info(
         "初始化 Embedding: model=%s, base_url=%s, timeout=%ds, max_retries=%d",

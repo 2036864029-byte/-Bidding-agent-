@@ -82,7 +82,11 @@ class HybridRetriever:
 
         started = time.perf_counter()
         result = self._attach_parent_context(self._retrieve_impl(raw_question), started)
-        if cache is not None:
+        # 只缓存「健康」结果：降级结果（依赖抖动导致 hybrid_error / 集合缺失）一旦入缓存，
+        # 会把这个问题毒化到 TTL 过期 —— 依赖恢复了也照样答不出来（实测踩过）。
+        # 用 getattr 取标记：形状不符合 RetrievalResult 的（测试替身等）保持原行为，不炸。
+        fallback_reason = getattr(getattr(result, "diagnostics", None), "fallback_reason", None)
+        if cache is not None and fallback_reason is None:
             cache.set(cache_key, result)
         return result
 
