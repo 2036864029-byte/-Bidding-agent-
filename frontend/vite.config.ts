@@ -23,17 +23,12 @@ export default defineConfig({
     },
   },
   build: {
-    // 手动分包：Recharts / markdown / 动效各自成块，避免主包被图表库撑爆
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          react: ['react', 'react-dom', 'react-router'],
-          charts: ['recharts'],
-          markdown: ['react-markdown', 'remark-gfm'],
-          motion: ['framer-motion'],
-        },
-      },
-    },
+    // 分包交给 Rollup 自动处理：路由级懒加载（见 App.tsx）已能让图表库按需拉取。
+    // 曾用 manualChunks 对象式硬分「charts / markdown / motion」，结果 Rollup 把
+    // 入口共用的符号也抬进 charts chunk，反而使**入口静态 import 图表库**
+    // （modulepreload 提前拉 438KB）—— 与懒加载的初衷相反。
+    // 显式把 chunk 体积上限抬高，警告只对真正异常的膨胀发声。
+    chunkSizeWarningLimit: 600,
   },
   test: {
     environment: 'jsdom',

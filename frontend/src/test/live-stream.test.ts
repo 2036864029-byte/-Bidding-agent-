@@ -42,4 +42,24 @@ describe.skipIf(!LIVE)('真实后端 · 流式链路', () => {
     // 的生成节点调用 emit_token），所以这里不断言 tokens > 0。
     expect(tokens).toBeGreaterThanOrEqual(0);
   }, 90_000);
+
+  it('知识问答：流式拿回带引用的回答（需要向量检索依赖在线）', async () => {
+    setDataSource('chat', 'api');
+
+    let result: ChatResponse | null = null;
+    // 用一条**没被缓存过**的问题，避免命中旧缓存掩盖真实链路
+    await api.chat.stream(
+      `评标委员会的人数要求是什么？${Date.now()}`,
+      {},
+      { onResult: (r) => (result = r) }
+    );
+
+    expect(result).not.toBeNull();
+    // 依赖不可用时后端会降级成 biz_1003（检索为空）—— 那种情况这条用例就该红，
+    // 因为它恰恰是「知识问答端到端可用」的验收。
+    expect(result!.errorCode).toBeNull();
+    expect(result!.replyType).toBe('kb_answer');
+    expect(result!.citations.length).toBeGreaterThan(0);
+    expect(result!.answer.length).toBeGreaterThan(20);
+  }, 120_000);
 });
