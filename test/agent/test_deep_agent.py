@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage
+from pydantic import BaseModel, Field
 
 from agent.nodes.deep_agent import build_deep_agent_node, run_deep_agent
 
@@ -28,17 +29,26 @@ class _RecTool:
 
 
 class _FakeDeepLLM:
-    """fake LLM：invoke 按 prompt 分派规划/反思 JSON，stream 返回草稿 token。"""
+    """fake LLM：invoke 按 prompt 分派规划/补检索/反思 JSON，stream 返回草稿 token。
 
-    def __init__(self, plan_json, draft="综合草稿回答。", reflection_json=None):
+    ⚠️ REPLAN 提示词的首句与 PLAN 同前缀（都自称"深度规划 agent"），故用
+    REPLAN 独有的标记串 `已经执行完毕` 判别，且**必须排在 "深度规划" 之前**判。
+    """
+
+    def __init__(self, plan_json, draft="综合草稿回答。", reflection_json=None, replan_json="[]"):
         self._plan_json = plan_json
         self._draft = draft
         self._reflection_json = reflection_json
+        self._replan_json = replan_json
         self.calls = 0
+        self.replan_calls = 0
 
     def invoke(self, messages):
         self.calls += 1
         prompt = messages[0].content
+        if "已经执行完毕" in prompt:          # REPLAN（顺序必须在"深度规划"之前）
+            self.replan_calls += 1
+            return AIMessage(content=self._replan_json)
         if "深度规划" in prompt:
             return AIMessage(content=self._plan_json)
         if "审校" in prompt:
@@ -113,7 +123,7 @@ def test_reflection_revises_answer():
 
 
 def test_no_reflection_mode():
-    """reflect=False → 只到 Plan-and-Solve（mode 标记 + reflection 为空）。"""
+    """reflect=False → 只到 Plan-and-Execute（mode 标记 + reflection 为空）。"""
     llm = _FakeDeepLLM(
         plan_json='[{"objective": "查法规", "tool": "kb_search_tool", "query": "q"}]',
         draft="草稿。",
@@ -122,7 +132,7 @@ def test_no_reflection_mode():
     out = run_deep_agent("q", llm=llm, tools=[_RecTool("kb_search_tool", {"chunks": []})], reflect=False)
 
     assert out["answer"] == "草稿。"
-    assert out["trace"]["mode"] == "plan_and_solve"
+    assert out["trace"]["mode"] == "plan_execute"
     assert out["trace"]["reflection"] is None
 
 
@@ -621,3 +631,266 @@ def test_step_record_carries_sources():
 
     src = out["trace"]["steps"][0]["sources"]
     assert src and "招标投标法" in src[0]
+
+
+# ── Phase 1：参数契约（LLM 可决定工具参数）──────────────────────
+
+class _KbArgs(BaseModel):
+    """kb_search_tool 的参数契约（用于验证「系统调优旋钮不被 LLM 覆盖」）。"""
+
+    question: str = Field(..., description="查询问题")
+    top_k: int = Field(5, description="返回块数")
+    summary: bool = Field(True, description="是否压缩为摘要")
+
+
+class _ReadArgs(BaseModel):
+    """read_file 的参数契约（`file_name` 是白名单内、允许 LLM 指定的参数）。"""
+
+    question: str = Field(..., description="要查什么")
+    file_name: str = Field("", description="目标文件名")
+    top_k: int = Field(0, description="段落数上限")
+
+
+class _SchemaTool:
+    """带 args_schema 的工具（`_RecTool` 无 schema，走的是「不过滤」旧路径）。"""
+
+    def __init__(self, name, result, schema):
+        self.name = name
+        self.args_schema = schema
+        self._result = result
+        self.calls: list[dict] = []
+
+    def invoke(self, args):
+        self.calls.append(dict(args))
+        return self._result
+
+
+def _schema_tool():
+    return _SchemaTool(
+        "kb_search_tool",
+        {"chunks": [{"content": "中标人应当依法签订合同", "doc_name": "招标投标法"}]},
+        _KbArgs,
+    )
+
+
+def _read_tool():
+    return _SchemaTool(
+        "read_file",
+        {"chunks": [{"content": "投标保证金不得超过招标项目估算价的2%", "doc_name": "某标书.pdf"}]},
+        _ReadArgs,
+    )
+
+
+def test_llm_can_choose_whitelisted_arg():
+    """白名单内的参数（read_file.file_name）必须真的传进工具并落进轨迹。"""
+    tool = _read_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "读标书", "tool": "read_file", "query": "保证金比例",'
+                  ' "args": {"file_name": "某标书.pdf"}}]'
+    )
+
+    out = run_deep_agent("这份标书的保证金合规吗", llm=llm, tools=[tool], reflect=False)
+
+    assert tool.calls[0]["file_name"] == "某标书.pdf"
+    assert tool.calls[0]["question"] == "保证金比例"
+    assert out["trace"]["steps"][0]["args"]["file_name"] == "某标书.pdf"
+
+
+def test_non_whitelisted_args_are_dropped():
+    """系统调优旋钮（kb 的 summary/top_k）必须**拒绝** LLM 覆盖。
+
+    实测教训：放开后 LLM 8/16 次把 summary 改成 False、9/16 次把 top_k 调到 8，
+    引用覆盖率 0.948→0.894（n=3 vs n=8，两组不重叠）。这是本用例的存在理由。
+    """
+    tool = _schema_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "查法规", "tool": "kb_search_tool", "query": "公开招标",'
+                  ' "args": {"top_k": 8, "summary": false}}]'
+    )
+
+    out = run_deep_agent("招标方式有哪些", llm=llm, tools=[tool], reflect=False)
+
+    assert tool.calls[0]["top_k"] == 5            # _TOOL_DEFAULTS 的确定性默认值
+    assert tool.calls[0]["summary"] is True
+    assert out["trace"]["steps"][0]["args"]["top_k"] == 5
+
+
+def test_plan_without_args_keeps_defaults():
+    """不写 args（旧格式计划）→ 行为与改造前一致。"""
+    tool = _schema_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "查法规", "tool": "kb_search_tool", "query": "q"}]'
+    )
+
+    run_deep_agent("q", llm=llm, tools=[tool], reflect=False)
+
+    assert tool.calls[0]["top_k"] == 5
+
+
+def test_whitelisted_arg_unknown_to_schema_is_dropped():
+    """白名单 + 存在性双过滤：LLM 编造的参数名必须剔除，否则工具抛 unexpected keyword。"""
+    tool = _read_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "读文件", "tool": "read_file", "query": "q",'
+                  ' "args": {"file_name": "a.pdf", "bogus": 1}}]'
+    )
+
+    out = run_deep_agent("q", llm=llm, tools=[tool], reflect=False)
+
+    assert tool.calls[0]["file_name"] == "a.pdf"
+    assert "bogus" not in tool.calls[0]
+    assert "bogus" not in out["trace"]["steps"][0]["args"]
+
+
+def test_plan_args_cannot_override_question():
+    """args 里的 question 必须被丢弃——它一旦生效，工具会拿到错的问题文本。"""
+    tool = _read_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "读文件", "tool": "read_file", "query": "正确的问题",'
+                  ' "args": {"question": "被污染的问题"}}]'
+    )
+
+    run_deep_agent("q", llm=llm, tools=[tool], reflect=False)
+
+    assert tool.calls[0]["question"] == "正确的问题"
+
+
+def test_duck_typed_tool_gets_no_llm_args():
+    """未登记白名单的工具（含鸭子类型）一律不接受 LLM 传参——确定性优先。"""
+    from agent.nodes.deep_agent import _clean_step_args
+
+    duck = _RecTool("custom", {})
+    assert _clean_step_args("custom", {"任意": 1}, [duck]) == {}
+    assert _clean_step_args("kb_search_tool", {"top_k": 9}, [duck]) == {}
+
+
+def test_plan_args_non_dict_falls_back_to_empty():
+    """args 不是对象（LLM 给了字符串/数组）→ 退化为无参数，不阻断。"""
+    tool = _read_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "读文件", "tool": "read_file", "query": "q",'
+                  ' "args": "file_name=a.pdf"}]'
+    )
+
+    run_deep_agent("q", llm=llm, tools=[tool], reflect=False)
+
+    assert "file_name" not in tool.calls[0]      # 非 dict → 不注入，退回工具自身默认
+
+
+# ── Phase 2：observation 回灌（Plan-and-Execute）────────────────
+
+def test_replan_adds_second_round_when_gap():
+    """首轮观察不足以回答 → 补检索轮执行，轨迹标 round=2 且 step_id 全局唯一。"""
+    kb = _kb_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "首轮查法规", "tool": "kb_search_tool", "query": "公开招标"}]',
+        draft="综合回答。",
+        replan_json='[{"objective": "补查实施条例", "tool": "kb_search_tool", "query": "招标投标法实施条例"}]',
+    )
+
+    out = run_deep_agent("q", llm=llm, tools=[kb])
+
+    steps = out["trace"]["steps"]
+    assert [s["round"] for s in steps] == [1, 2]          # 两轮
+    assert [s["step_id"] for s in steps] == [1, 2]        # id 接续，不撞号
+    assert steps[1]["query"] == "招标投标法实施条例"
+    assert out["trace"]["rounds"] == 2
+    assert out["trace"]["mode"] == "plan_execute_reflect"
+    assert len(kb.calls) == 2
+
+
+def test_replan_empty_terminates_after_one_round():
+    """补检索返回空数组 = 观察已足够（正常终止），不产生第二轮。"""
+    kb = _kb_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "查法规", "tool": "kb_search_tool", "query": "q"}]',
+        draft="回答。",
+        replan_json="[]",
+    )
+
+    out = run_deep_agent("q", llm=llm, tools=[kb])
+
+    assert len(out["trace"]["steps"]) == 1
+    assert out["trace"]["steps"][0]["round"] == 1
+    assert out["trace"]["rounds"] == 1
+    assert llm.replan_calls == 1                          # 问过，答"不用补"
+    assert len(kb.calls) == 1
+
+
+def test_replan_disabled_skips_replan_entirely():
+    """replan_enabled=False → 完全不问补检索（回滚路径，一次 LLM 调用都不多花）。"""
+    kb = _kb_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "查法规", "tool": "kb_search_tool", "query": "q"}]',
+        draft="回答。",
+    )
+
+    out = run_deep_agent("q", llm=llm, tools=[kb], replan_enabled=False)
+
+    assert llm.replan_calls == 0
+    assert len(out["trace"]["steps"]) == 1
+    assert out["trace"]["rounds"] == 1
+    assert out["trace"]["mode"] == "plan_and_solve_reflect"   # 退回旧 mode 标记
+
+
+def test_max_exec_rounds_one_equals_old_behaviour():
+    """max_exec_rounds=1 → 与改造前的"一次性计划"完全等价。"""
+    kb = _kb_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "查法规", "tool": "kb_search_tool", "query": "q"}]',
+        draft="回答。",
+    )
+
+    out = run_deep_agent("q", llm=llm, tools=[kb], max_exec_rounds=1)
+
+    assert llm.replan_calls == 0
+    assert out["trace"]["rounds"] == 1
+
+
+def test_replan_gap_respects_round_cap():
+    """补检索**至多一轮**：即使它一直说有缺口，也不会无限加轮。"""
+    kb = _kb_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "首轮", "tool": "kb_search_tool", "query": "q1"}]',
+        draft="回答。",
+        replan_json='[{"objective": "补", "tool": "kb_search_tool", "query": "q2"}]',
+    )
+
+    out = run_deep_agent("q", llm=llm, tools=[kb], max_exec_rounds=2)
+
+    assert out["trace"]["rounds"] == 2
+    assert len(kb.calls) == 2              # 首轮 1 次 + 补检索 1 次，不再多
+    assert llm.replan_calls == 1           # 第 2 轮跑完即到上限，不再问
+
+
+def test_replan_parse_failure_degrades_gracefully():
+    """补检索输出非法 → 视为"观察已足够"，不阻断本轮、不影响答案。"""
+    kb = _kb_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective": "查法规", "tool": "kb_search_tool", "query": "q"}]',
+        draft="降级回答。",
+        replan_json="这不是JSON",
+    )
+
+    out = run_deep_agent("q", llm=llm, tools=[kb])
+
+    assert out["answer"] == "降级回答。"
+    assert out["trace"]["rounds"] == 1
+    assert len(out["trace"]["steps"]) == 1
+
+
+def test_replan_only_lists_extra_steps_not_repeats():
+    """补检索的步骤 id 必须接在已执行步骤之后（否则轨迹里 step_id 会撞号）。"""
+    kb = _kb_tool()
+    llm = _FakeDeepLLM(
+        plan_json='[{"objective":"a","tool":"kb_search_tool","query":"q1"},'
+                  '{"objective":"b","tool":"kb_search_tool","query":"q2"}]',
+        draft="回答。",
+        replan_json='[{"objective":"c","tool":"kb_search_tool","query":"q3"}]',
+    )
+
+    out = run_deep_agent("q", llm=llm, tools=[kb])
+
+    ids = [s["step_id"] for s in out["trace"]["steps"]]
+    assert ids == [1, 2, 3]
+    assert len(set(ids)) == len(ids)                       # 无重复

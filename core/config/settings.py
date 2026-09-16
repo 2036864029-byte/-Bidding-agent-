@@ -475,6 +475,20 @@ class Settings:
     )
 
     # ============================================================
+    # deep_agent 执行轮次（Phase 2 — Plan-and-Execute 的 observation 回灌）
+    # ============================================================
+    # 首轮按计划并发执行后，把观察回灌给 LLM 判断是否要补检索（某步空结果 /
+    # 缺法规依据 / 缺结构化数据）。**有界**：默认 2 轮 = 首轮计划 + 至多一轮补充。
+    # 设 1 或 replan_enabled=False 即退回"一次性计划"的旧行为（一行配置回滚）。
+    deep_agent_max_exec_rounds: int = field(
+        default_factory=lambda: int(os.getenv("DEEP_AGENT_MAX_EXEC_ROUNDS", "2"))
+    )
+    deep_agent_replan_enabled: bool = field(
+        default_factory=lambda: os.getenv("DEEP_AGENT_REPLAN_ENABLED", "true").lower()
+        in {"1", "true", "yes"}
+    )
+
+    # ============================================================
     # 检索结果缓存（W4-2）— 版本化 TTL 缓存
     # ============================================================
     # 只缓存"事实层"（KB 检索结果 / price 查询记录），不缓存 LLM 最终答案。

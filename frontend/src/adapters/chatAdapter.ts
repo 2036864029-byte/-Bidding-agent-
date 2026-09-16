@@ -171,10 +171,15 @@ function mapDocRetrieval(v: unknown): DocQaRetrieval | null {
 function mapTraceStep(v: unknown): TraceStep {
   const o = asObj(v);
   const status = str(o.status);
+  const args = asObj(o.args);
+  const round = Number(pick(o.round));
   return {
     stepId: num(pick(o.step_id, o.stepId)),
     tool: str(o.tool),
     query: str(o.query),
+    // 旧后端无 args/round → 省略字段，渲染层按可选处理
+    ...(Object.keys(args).length ? { args } : {}),
+    ...(Number.isFinite(round) && round > 0 ? { round } : {}),
     status: status === 'empty' || status === 'error' ? status : 'ok',
     observationHead: str(pick(o.observation_head, o.observationHead)),
     recordsCount: num(pick(o.records_count, o.recordsCount)),

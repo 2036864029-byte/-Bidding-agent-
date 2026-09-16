@@ -51,7 +51,9 @@ export function DeepAgent({ message }: { message: ChatMessage }) {
           />
           <span className="text-[12.5px] font-medium text-[var(--color-ink)]">思考过程</span>
           <span className="mono-label">
-            {trace.plan.length} 步规划 · {trace.steps.length} 步执行
+            {trace.plan.length > 0
+              ? `${trace.plan.length} 步规划 · ${trace.steps.length} 步执行`
+              : `${trace.steps.length} 步执行`}
             {trace.rounds > 1 && ` · ${trace.rounds} 轮`}
           </span>
         </button>
@@ -127,6 +129,9 @@ function StepRow({ step }: { step: TraceStep }) {
         <Icon className={cn('h-3.5 w-3.5 shrink-0', meta.className)} aria-hidden />
         <span className={cn('text-[12px] font-medium', meta.className)}>{meta.label}</span>
         <span className="font-mono text-[11px] text-[var(--color-neutral)]">{step.tool}</span>
+        {step.round !== undefined && step.round > 1 && (
+          <span className="text-[11px] text-[var(--color-neutral)]">第{step.round}轮补检索</span>
+        )}
         <span className="tnum text-[11px] text-[var(--color-neutral)]">
           {step.recordsCount} 条
           {step.latencyMs !== null && ` · ${step.latencyMs}ms`}

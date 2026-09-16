@@ -28,6 +28,11 @@ class PlanStep(BaseModel):
     objective: str = Field(..., description="本步要达成的目标（自然语言）")
     tool: str = Field(..., description="本步调用的工具名")
     query: str = Field("", description="本步传入工具的查询/参数")
+    #: 规划期由 LLM 给出的**显式工具参数**（优先于 `_TOOL_DEFAULTS` 兜底）。
+    #: 这是"参数由谁决定"的证据：与 StepRecord.args 不一致 = 兜底值生效了。
+    args: Dict[str, Any] = Field(
+        default_factory=dict, description="LLM 规划时给出的工具参数（不含 question）"
+    )
     depends_on: List[int] = Field(default_factory=list, description="前置步骤 id（预留）")
 
 
@@ -37,6 +42,11 @@ class StepRecord(BaseModel):
     step_id: int = Field(..., description="对应 PlanStep.id")
     tool: str = Field(..., description="实际调用工具名")
     query: str = Field("", description="实际传入查询/参数")
+    #: **实际调用**时传给工具的参数（已合并兜底默认值，剔除 question）。
+    #: 与 PlanStep.args 比对即可知哪些参数是 LLM 定的、哪些走了兜底。
+    args: Dict[str, Any] = Field(default_factory=dict, description="实际调用参数（不含 question）")
+    #: 第几轮执行（Plan-and-Execute：1 = 首轮计划，2+ = observation 回灌后的补检索轮）。
+    round: int = Field(1, description="执行轮次（1 起）")
     status: str = Field("ok", description="ok / empty / error")
     observation_head: str = Field("", description="观察摘要（前 OBSERVATION_HEAD_CHARS 字）")
     records_count: int = Field(0, description="结果条数（0=无结果）")

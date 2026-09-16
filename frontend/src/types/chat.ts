@@ -103,6 +103,10 @@ export interface TraceStep {
   stepId: number;
   tool: string;
   query: string;
+  /** 实际调用参数（不含 question）——与 plan[].args 比对可知哪些走了兜底默认值 */
+  args?: Record<string, unknown>;
+  /** 执行轮次（1 = 首轮计划，2+ = observation 回灌后的补检索轮） */
+  round?: number;
   status: 'ok' | 'empty' | 'error';
   /** 观察摘要（截断） */
   observationHead: string;
