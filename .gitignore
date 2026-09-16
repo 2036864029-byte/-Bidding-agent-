@@ -2,7 +2,9 @@
 .env
 .env.local
 .env.*.local
-.env.bak*                          # .env 的备份（含真实密钥，勿提交）
+# .env 的备份（含真实密钥，勿提交）——注意规则必须单独一行，
+# 与注释同行会被 git 当带尾部空格的 pattern，静默失效
+.env.bak*
 *.pem
 *.key
 *.secret
@@ -93,3 +95,9 @@ milvus/volumes-v26/
 
 # ===== 数据分析/试点产物（基线脚本、PaddleOCR 模型缓存 2GB+，不入仓） =====
 analysis_out/
+
+# ===== 交付包与本地运行时数据卷（成员各自获取 / 运行生成，不入仓） =====
+delivery_package/
+docker/infra/pg_data/
+docker/infra/redis_data/
+.hallmark/

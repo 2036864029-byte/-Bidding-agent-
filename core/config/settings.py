@@ -602,6 +602,13 @@ class Settings:
     mysql_clean_db: str = field(
         default_factory=lambda: os.getenv("MYSQL_CLEAN_DB", "ztb_clean")
     )
+    # 交付包（delivery_package/）导入的新库：11 张表 + 统一宽表 project_unified。
+    # 与 ztb_clean 并存而非替代 —— ztb_clean 是 2018~2025 的历史切片，
+    # bidding 是 2026-09 起的增量，两者 project_number 零重叠（见
+    # docs/plan1/数据层入库与新旧合并执行方案_20260915.md）。
+    mysql_bidding_db: str = field(
+        default_factory=lambda: os.getenv("MYSQL_BIDDING_DB", "bidding")
+    )
     # 连接池上限（W0-10）：无上限时并发下池会无限增长（审计 A5）。
     # B10 配套：query/sql 池提到 32 后，本项若停在 16 会成为新的瓶颈，且失败形态
     # 更差（池满 → 等待超时 → 报错，而非优雅排队）。故同步提到 32。

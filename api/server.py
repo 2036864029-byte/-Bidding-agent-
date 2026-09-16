@@ -53,6 +53,7 @@ from .middleware import (
     RateLimitMiddleware,
     RequestContextMiddleware,
 )
+from .modules import build_kanban_overview, build_supplier_overview
 from .schemas import ChatRequest, ChatResponse
 
 logger = logging.getLogger(__name__)
@@ -425,6 +426,33 @@ def create_app(
     def metrics() -> Response:
         """Prometheus 文本格式指标（W2-2）。"""
         return Response(content=render_metrics(), media_type=content_type())
+
+    @app.get("/kanban/overview")
+    def kanban_overview(region: Optional[str] = None, industry: Optional[str] = None) -> dict:
+        """商机看板聚合（读 `bidding` 库）。
+
+        返回**原始形状**（snake_case），字段映射交前端 `kanbanAdapter`——
+        与 `price_records` 的分层一致（见 docs/前端接口清单.md §3.2）。
+        """
+        return build_kanban_overview(settings, region=region, industry=industry)
+
+    @app.get("/suppliers/overview")
+    def suppliers_overview(
+        province: Optional[str] = None,
+        industry: Optional[str] = None,
+        keyword: Optional[str] = None,
+        limit: int = 60,
+        offset: int = 0,
+    ) -> dict:
+        """供应商全景（读 `bidding.company_unified`）。
+
+        按**地区 / 行业**筛选，返回基本信息 + 中标情况；默认按中标次数倒序分页。
+        ⚠️ 工商字段只有 LEGACY 侧有，CCGP 侧那 1,058 家为 null，按地区/行业筛选不会出现。
+        """
+        return build_supplier_overview(
+            settings, province=province, industry=industry, keyword=keyword,
+            limit=limit, offset=offset,
+        )
 
     @app.post("/files/upload")
     async def upload_file(
