@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { ChatInputRow } from '@/components/chat/ChatInputRow';
+import { FileChips } from '@/components/chat/FileChips';
 import { PriceRecordsTable } from '@/components/chat/PriceRecordsTable';
+import { validateUpload } from '@/lib/chat';
 import { cn } from '@/lib/utils';
-import { api } from '@/services/api';
-import type { ChatMessage } from '@/types/chat';
+import { api, type UploadedFileState } from '@/services/api';
+import type { ChatMessage, ChatResponse } from '@/types/chat';
 
 /**
  * InquiryChat —— 对话式需求描述区（设计文档 §4.4 左栏）。
@@ -13,7 +15,8 @@ import type { ChatMessage } from '@/types/chat';
  * 演示态下 `dataConfig.chat='mock'`，mock 侧按关键词路由到 `price_records` fixture；
  * Phase 4 翻成 `api` 后本组件**零改动**。
  *
- * 返回 `price_records` 时渲染历史中标记录表 —— 这就是「调双库查历史中标金额给价格参考」。
+ * 返回 `price_records` 时渲染历史中标记录表，并通过 `onResult` **把结果交给右栏**
+ * —— 右栏的报价参考就是由这一次结果派生的（见 pages/inquiry/InquiryPage.tsx）。
  */
 
 let seq = 0;
@@ -29,15 +32,29 @@ const WELCOME: ChatMessage = {
   id: 'welcome',
   role: 'agent',
   content:
-    '描述你要采购的物资或服务，我来调取历史中标数据给你价格参考。也可以直接问某家公司近期的中标记录。',
+    '描述项目概况，或上传招标文件/图片让我解析，我来找相似项目的中标价给你参考。也可以直接问某家公司近期的中标记录。',
 };
 
-export function InquiryChat({ initialQuestion = '' }: { initialQuestion?: string }) {
+export function InquiryChat({
+  initialQuestion = '',
+  onResult,
+}: {
+  initialQuestion?: string;
+  /** 每次成功拿到结果时回调（右栏报价参考的数据源）；question 用于给参考卡做标题。 */
+  onResult?: (res: ChatResponse, question: string) => void;
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
   // 从对话模块联动过来时预填原问题（上下文不丢），由用户决定是否发送
   const [input, setInput] = useState(initialQuestion);
   const [pending, setPending] = useState(false);
+  const [files, setFiles] = useState<UploadedFileState[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  /**
+   * 本栏的会话 id。上传可能**先于**提问开出一个会话，必须采纳它——
+   * 否则后续提问落到另一个会话，`file_id` 归属对不上（后端会拒）。
+   */
+  const sessionRef = useRef<string | null>(null);
 
   // 跟随最新消息滚到底（用 scrollTop 赋值而非 scrollTo：后者在 jsdom 等环境不存在）
   useEffect(() => {
@@ -45,15 +62,54 @@ export function InquiryChat({ initialQuestion = '' }: { initialQuestion?: string
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, pending]);
 
+  const upload = (picked: File[]) => {
+    // 预校验：不通过的直接提示，**不产生 chip**（免得用户对着不可用的文件提问）
+    const accepted = picked.filter((f) => {
+      const err = validateUpload(f);
+      if (err) setNotice(err);
+      return !err;
+    });
+    if (!accepted.length) return;
+    setNotice(null);
+
+    // 串行上传：同一客户端连传会撞限流（429），串行最省事也最稳
+    void (async () => {
+      for (const file of accepted) {
+        const key = `f_${file.name}_${file.size}_${Date.now()}`;
+        setFiles((s) => [...s, { id: key, name: file.name, status: 'pending' }]);
+        try {
+          await api.chat.upload(file, key, sessionRef.current, (u) => {
+            if (u.sessionId && !sessionRef.current) sessionRef.current = u.sessionId;
+            setFiles((s) => s.map((x) => (x.id === u.id ? u : x)));
+          });
+        } catch (err) {
+          setFiles((s) =>
+            s.map((x) =>
+              x.id === key ? { ...x, status: 'error' as const, error: (err as Error).message } : x
+            )
+          );
+        }
+      }
+    })();
+  };
+
   const ask = async (question: string) => {
     const q = question.trim();
     if (!q || pending) return;
+
+    // 只带**解析完成**的文件（解析中的 file_id 后端还没有内容）
+    const fileIds = files.filter((f) => f.status === 'done' && f.fileId).map((f) => f.fileId!);
+
     setInput('');
     setMessages((m) => [...m, { id: uid(), role: 'user', content: q }]);
     setPending(true);
 
     try {
-      const res = await api.chat.send(q);
+      const res = await api.chat.send(q, {
+        fileIds,
+        sessionId: sessionRef.current ?? undefined,
+      });
+      if (res.sessionId) sessionRef.current = res.sessionId;
       setMessages((m) => [
         ...m,
         {
@@ -66,6 +122,7 @@ export function InquiryChat({ initialQuestion = '' }: { initialQuestion?: string
           errorCode: res.errorCode,
         },
       ]);
+      onResult?.(res, q);
     } catch (err) {
       setMessages((m) => [
         ...m,
@@ -83,9 +140,9 @@ export function InquiryChat({ initialQuestion = '' }: { initialQuestion?: string
   return (
     <div className="flex h-[38rem] flex-col rounded-2xl border border-[var(--color-rule)] bg-[var(--color-paper)] lg:sticky lg:top-6">
       <header className="border-b border-[var(--color-rule)] px-5 py-3.5">
-        <p className="mono-label mb-1">需求描述</p>
+        <p className="mono-label mb-1">项目概况</p>
         <p className="text-[13px] text-[var(--color-muted)]">
-          用自然语言说清楚要买什么、什么规格，我来查历史中标价给你参考
+          说清楚要采购什么、什么规格，或上传招标文件/图片，我来找相似项目的中标价
         </p>
       </header>
 
@@ -98,7 +155,7 @@ export function InquiryChat({ initialQuestion = '' }: { initialQuestion?: string
           <div className="flex justify-start" aria-live="polite">
             <div className="flex items-center gap-2 rounded-2xl border border-[var(--color-rule)] bg-[var(--color-paper-2)] px-4 py-2.5 text-[13px] text-[var(--color-muted)]">
               <Sparkles className="h-3.5 w-3.5 animate-pulse text-[var(--color-accent)]" aria-hidden />
-              正在检索历史中标数据…
+              正在检索相似项目…
             </div>
           </div>
         )}
@@ -119,11 +176,19 @@ export function InquiryChat({ initialQuestion = '' }: { initialQuestion?: string
         )}
       </div>
 
-      <div className="border-t border-[var(--color-rule)] px-3.5 py-3">
+      <div className="space-y-2 border-t border-[var(--color-rule)] px-3.5 py-3">
+        {notice && (
+          <p role="alert" className="px-1 text-[12px] text-[var(--color-danger)]">
+            {notice}
+          </p>
+        )}
+        <FileChips files={files} onRemove={(id) => setFiles((s) => s.filter((f) => f.id !== id))} />
         <ChatInputRow
           value={input}
           onChange={setInput}
           onSend={() => ask(input)}
+          onUpload={upload}
+          busy={pending}
           placeholder="例如：采购 120 台 400 万像素网络摄像机"
         />
       </div>
@@ -133,7 +198,7 @@ export function InquiryChat({ initialQuestion = '' }: { initialQuestion?: string
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
-  const records = message.data?.kind === 'price_records' ? message.data.records : [];
+  const price = message.data?.kind === 'price_records' ? message.data : null;
 
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
@@ -148,7 +213,9 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         >
           {message.content}
         </div>
-        {records.length > 0 && <PriceRecordsTable records={records} />}
+        {price && price.records.length > 0 && (
+          <PriceRecordsTable records={price.records} columns={price.columns} />
+        )}
       </div>
     </div>
   );

@@ -39,13 +39,61 @@ type RawObj = Record<string, unknown>;
 const asObj = (v: unknown): RawObj => (v && typeof v === 'object' ? (v as RawObj) : {});
 const asArr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
-/** 表行归一：null/undefined 保留 null，标量保留，其余转字符串。 */
+/**
+ * `price_records.records` 的**列名归一表**。
+ *
+ * ⚠️ 实测（2026-09-15，真后端）：`ztb_clean.bid_project` 子路由返回的列名是**中文**
+ * （`项目名称` / `中标金额` / `省份` …），不是 snake_case —— 而 Domain、mock、
+ * `PriceRecordsTable` 的列序与表头映射全都按英文键写的。此前没人发现，是因为
+ * `PriceRecordsTable` 对未知列会**回落到原始键名**，中文键名恰好就是能读的中文表头。
+ *
+ * 归一只在这一处做：UI 与 lib 只认英文键。英文键原样透传（兼容 mock 与后续契约变更）。
+ */
+const RECORD_KEY_ALIASES: Record<string, string> = {
+  // 招投标（bid_project）
+  项目名称: 'project_name',
+  项目编号: 'project_number',
+  中标金额: 'winning_amount',
+  中标价: 'winning_amount',
+  中标日期: 'winning_date',
+  采购人: 'purchaser',
+  中标供应商: 'successful_bidder',
+  标的物: 'subject_matter',
+  代理机构: 'agent',
+  项目阶段: 'project_stage',
+  项目类别: 'project_category',
+  预算金额: 'budget_amount',
+  省份: 'province',
+  城市: 'city',
+  区县: 'district',
+  发布日期: 'publish_date',
+  // 企业工商（company_info）
+  企业名称: 'company_name',
+  统一社会信用代码: 'credit_code',
+  法定代表人: 'legal_person',
+  注册资本: 'registered_capital',
+  成立日期: 'establish_date',
+  经营状态: 'business_status',
+  所属行业: 'industry',
+  企业类型: 'company_type',
+  企业等级: 'company_level',
+  企业地址: 'address',
+  经营范围: 'business_scope',
+  // 行政处罚（company_penalty）
+  处罚日期: 'penalty_date',
+  违法行为: 'illegal_behavior',
+  处罚结果: 'penalty_result',
+  执法单位: 'law_enforcement_unit',
+};
+
+/** 表行归一：列名中→英，值 null/undefined 保留 null，标量保留，其余转字符串。 */
 function normalizeRow(row: unknown): PriceRecordRow {
   const out: PriceRecordRow = {};
   for (const [k, v] of Object.entries(asObj(row))) {
-    if (v === null || v === undefined) out[k] = null;
-    else if (typeof v === 'number' || typeof v === 'string') out[k] = v;
-    else out[k] = String(v);
+    const key = RECORD_KEY_ALIASES[k] ?? k;
+    if (v === null || v === undefined) out[key] = null;
+    else if (typeof v === 'number' || typeof v === 'string') out[key] = v;
+    else out[key] = String(v);
   }
   return out;
 }
@@ -183,6 +231,9 @@ function mapData(replyType: ReplyType, data: RawObj): ChatData {
       return {
         kind: 'price_records',
         records: asArr(data.records).map(normalizeRow),
+        columns: asArr(data.columns)
+          .map((c) => ({ key: str(asObj(c).key), label: str(asObj(c).label) }))
+          .filter((c) => c.key !== ''),
         tables: strArray(data.tables),
         intent: mapPriceIntent(data.intent),
         meta: mapPriceMeta(data.meta),

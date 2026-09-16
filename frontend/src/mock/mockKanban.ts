@@ -1,83 +1,107 @@
 import type { KanbanRawOverview } from '@/types/kanban';
 
 /**
- * 商机看板 —— 高保真 Mock（**raw 形态**，模拟未来只读聚合端点）。
+ * 商机看板 —— 高保真 Mock（**raw 形态**，模拟 `/kanban/overview` 的真实返回）。
  *
  * 纪律：本文件存的是「后端会返回的原始形状」（snake_case），不是 UI 消费的
  * Domain 形态 —— 换真数据时只改 adapters/kanbanAdapter.ts + services/api.ts 开关。
  *
- * 口径（2026-09-14 用户拍板）：**金额一律「万元」**；月粒度（按中标日期）；
- * 省级地区；项目类别；不做「进行中/已截止」状态。
+ * ⚠️ 样例结构必须与真实端点一致，否则 mock 期间看不出问题：
+ *   - 热力图来自 `trade_stat_fact`（省级交易统计），带 `heatmap_month`
+ *   - 行业走势也是**交易类型** × 月，且**最多 3 条**（all-vs-all 的 CVD 硬约束）
+ *   - 没有 `trend`（商机走势已撤，被 2023-10 异常月压平）、没有 `product_rank`（分布无信号）
  */
 export const mockKanbanRaw: KanbanRawOverview = {
   summary: {
-    total_projects: 1243,
-    total_amount: 864_200, // 万元（≈ 86.42 亿元）
-    avg_competition: 6.8,
+    total_projects: 18497,
+    recent_projects: 755,
+    regions: 32,
+    industries: 30,
   },
   filters: {
     regions: [
-      '广东省',
-      '江苏省',
-      '浙江省',
-      '山东省',
-      '河南省',
-      '四川省',
-      '湖北省',
-      '福建省',
-      '湖南省',
-      '安徽省',
-      '北京市',
       '上海市',
+      '四川省',
+      '浙江省',
+      '广东省',
+      '山东省',
+      '安徽省',
+      '江苏省',
+      '河北省',
+      '辽宁省',
+      '江西省',
+      '黑龙江省',
+      '福建省',
     ],
     industries: [
-      '信息技术服务',
-      '医疗卫生',
-      '教育科研',
-      '市政工程',
-      '交通运输',
-      '新能源',
-      '公共安全',
-      '环境治理',
+      '学校',
+      '政府',
+      '货物',
+      '服务',
+      '政府采购',
+      '工程',
+      '房屋建筑',
+      '医院',
+      '市政',
+      '项目管理',
+      '公路',
+      '水利',
     ],
-    categories: ['信息化设备', '工程施工', '咨询服务', '医疗设备', '物业服务', '系统集成'],
+    categories: ['学校', '政府', '货物', '服务', '政府采购', '工程'],
   },
   heatmap: [
-    { region: '广东省', count: 218, amount: 164_200 },
-    { region: '江苏省', count: 176, amount: 128_600 },
-    { region: '浙江省', count: 158, amount: 110_500 },
-    { region: '山东省', count: 132, amount: 89_200 },
-    { region: '河南省', count: 108, amount: 67_100 },
-    { region: '四川省', count: 96, amount: 64_800 },
-    { region: '湖北省', count: 84, amount: 55_600 },
-    { region: '福建省', count: 76, amount: 51_200 },
-    { region: '湖南省', count: 71, amount: 46_800 },
-    { region: '安徽省', count: 63, amount: 42_100 },
-    { region: '北京市', count: 37, amount: 26_300 },
-    { region: '上海市', count: 24, amount: 17_800 },
+    { region: '上海市', count: 4698 },
+    { region: '四川省', count: 4104 },
+    { region: '浙江省', count: 2748 },
+    { region: '广东省', count: 2353 },
+    { region: '山东省', count: 2046 },
+    { region: '安徽省', count: 1845 },
+    { region: '江苏省', count: 1660 },
+    { region: '河北省', count: 1640 },
+    { region: '辽宁省', count: 1380 },
+    { region: '江西省', count: 1275 },
+    { region: '黑龙江省', count: 1268 },
+    { region: '福建省', count: 1230 },
   ],
+  heatmap_month: '2026-09-01',
   composition: [
-    { industry: '信息技术服务', count: 321, amount: 241_800, pct: 25.8 },
-    { industry: '医疗卫生', count: 208, amount: 153_600, pct: 16.7 },
-    { industry: '市政工程', count: 187, amount: 174_200, pct: 15.0 },
-    { industry: '教育科研', count: 164, amount: 90_200, pct: 13.2 },
-    { industry: '交通运输', count: 128, amount: 106_800, pct: 10.3 },
-    { industry: '新能源', count: 98, amount: 60_400, pct: 7.9 },
-    { industry: '公共安全', count: 79, amount: 24_600, pct: 6.4 },
-    { industry: '环境治理', count: 58, amount: 12_600, pct: 4.7 },
+    { industry: '学校', count: 3246, pct: 20.1 },
+    { industry: '政府', count: 2602, pct: 16.1 },
+    { industry: '货物', count: 2251, pct: 13.9 },
+    { industry: '服务', count: 2178, pct: 13.5 },
+    { industry: '政府采购', count: 2125, pct: 13.1 },
+    { industry: '工程', count: 909, pct: 5.6 },
+    { industry: '房屋建筑', count: 836, pct: 5.2 },
+    { industry: '医院', count: 575, pct: 3.6 },
   ],
-  trend: [
-    { month: '2025-10', count: 88, amount: 59_200 },
-    { month: '2025-11', count: 96, amount: 66_800 },
-    { month: '2025-12', count: 134, amount: 102_400 },
-    { month: '2026-01', count: 82, amount: 48_600 },
-    { month: '2026-02', count: 64, amount: 35_800 },
-    { month: '2026-03', count: 118, amount: 79_600 },
-    { month: '2026-04', count: 126, amount: 88_400 },
-    { month: '2026-05', count: 132, amount: 91_800 },
-    { month: '2026-06', count: 141, amount: 104_200 },
-    { month: '2026-07', count: 128, amount: 94_600 },
-    { month: '2026-08', count: 134, amount: 92_800 },
-  ],
-  updated_at: '2026-09-14T09:00:00+08:00',
+  // 交易类型 × 月（最多 3 条）；数值取自真实端点的实测输出
+  industry_trend: {
+    months: [
+      '2025-11',
+      '2026-01',
+      '2026-02',
+      '2026-03',
+      '2026-04',
+      '2026-05',
+      '2026-06',
+      '2026-07',
+      '2026-08',
+      '2026-09',
+    ],
+    series: [
+      {
+        name: '政府采购',
+        values: [53044, 38857, 23813, 35476, 44655, 46796, 53788, 56325, 50962, 18920],
+      },
+      {
+        name: '其他',
+        values: [31139, 25788, 20756, 58533, 148251, 47594, 34495, 29297, 12207, 9681],
+      },
+      {
+        name: '工程建设',
+        values: [22097, 19467, 13088, 18916, 17527, 19467, 18750, 20307, 17560, 7109],
+      },
+    ],
+  },
+  updated_at: '2026-09-15T14:01:13',
 };

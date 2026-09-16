@@ -36,6 +36,20 @@ export interface Citation {
 /** price_records 表行（列集由子路由决定：bid_project / company_info …）。 */
 export type PriceRecordRow = Record<string, string | number | null | undefined>;
 
+/**
+ * price_records 列定义（**服务端下发**）—— `key` 是机器名，`label` 是中文表头。
+ *
+ * 为什么不前端硬编码映射：后端曾把中文标签**直接当行键**下发，前端只能靠中文字面量
+ * 认字段，后端一换标签前端就静默失效（无编译错、无测试失败）。列定义随行下发后，
+ * 前端拿到的是服务端的权威映射，本地表头映射只作旧后端的回落。
+ */
+export interface PriceColumn {
+  /** 机器名（= PriceRecordRow 的键），如 `winning_amount` */
+  key: string;
+  /** 中文表头，如「中标金额」 */
+  label: string;
+}
+
 /** price_records 的意图元信息。 */
 export interface PriceIntent {
   subRoute?: string;
@@ -123,6 +137,8 @@ export type ChatData =
   | {
       kind: 'price_records';
       records: PriceRecordRow[];
+      /** 服务端列定义（key + label）；旧后端可能缺失 → 适配器回落 [] */
+      columns: PriceColumn[];
       tables: string[];
       intent: PriceIntent | null;
       meta: PriceMeta | null;

@@ -1,9 +1,13 @@
-import type { PriceRecordRow } from '@/types/chat';
+import type { PriceColumn, PriceRecordRow } from '@/types/chat';
 
 /**
  * PriceRecordsTable —— 对话里渲染 `price_records` 的结果表。
  *
- * ⚠️ 后端的 `records` 是**通用容器**，列集随子路由变化：
+ * **列优先用服务端下发的 `columns`**（`{key, label}`，顺序即 display_order）——
+ * 那是权威映射，后端增删字段/改表头前端自动跟随，不需要改这里的代码。
+ * 服务端没给（旧后端 / 老 mock）时才回落到下面的启发式。
+ *
+ * ⚠️ 回落启发式：`records` 是**通用容器**，列集随子路由变化：
  *   bidding_query → 项目名称/采购人/中标供应商/中标金额/中标日期
  *   company_query → 企业名称/信用代码/法定代表人/注册资本/经营状态…
  *   penalty 联查   → 处罚日期/违法行为/处罚结果
@@ -84,25 +88,50 @@ export function deriveColumns(records: PriceRecordRow[]): string[] {
   return ordered.filter((k) => records.some((r) => hasValue(r[k]))).slice(0, MAX_COLUMNS);
 }
 
-export function PriceRecordsTable({ records }: { records: PriceRecordRow[] }) {
+/**
+ * 定列：**服务端 `columns` 优先**（权威，且已按 display_order 排好），
+ * 缺失或与实际数据完全对不上时回落 `deriveColumns` + 本地 LABELS。
+ */
+export function resolveColumns(
+  records: PriceRecordRow[],
+  columns?: PriceColumn[]
+): PriceColumn[] {
+  if (columns?.length) {
+    const used = columns.filter((c) => records.some((r) => hasValue(r[c.key])));
+    if (used.length) {
+      return used
+        .map((c) => ({ key: c.key, label: c.label || LABELS[c.key] || c.key }))
+        .slice(0, MAX_COLUMNS);
+    }
+  }
+  return deriveColumns(records).map((k) => ({ key: k, label: LABELS[k] ?? k }));
+}
+
+export function PriceRecordsTable({
+  records,
+  columns,
+}: {
+  records: PriceRecordRow[];
+  columns?: PriceColumn[];
+}) {
   if (!records.length) return null;
-  const columns = deriveColumns(records);
-  if (!columns.length) return null;
+  const cols = resolveColumns(records, columns);
+  if (!cols.length) return null;
 
   return (
     <div className="overflow-x-auto rounded-xl border border-[var(--color-rule)]">
       <table className="w-full min-w-[28rem] border-collapse text-[12.5px]">
         <thead>
           <tr className="bg-[var(--color-paper-2)]">
-            {columns.map((c) => (
+            {cols.map((c) => (
               <th
-                key={c}
+                key={c.key}
                 scope="col"
                 className={`whitespace-nowrap px-3 py-2 font-medium text-[var(--color-neutral)] ${
-                  NUMERIC.has(c) ? 'text-right' : 'text-left'
+                  NUMERIC.has(c.key) ? 'text-right' : 'text-left'
                 }`}
               >
-                {LABELS[c] ?? c}
+                {c.label}
               </th>
             ))}
           </tr>
@@ -110,14 +139,14 @@ export function PriceRecordsTable({ records }: { records: PriceRecordRow[] }) {
         <tbody>
           {records.map((r, i) => (
             <tr key={i} className="border-t border-[var(--color-rule)]">
-              {columns.map((c) => (
+              {cols.map((c) => (
                 <td
-                  key={c}
+                  key={c.key}
                   className={`px-3 py-2 text-[var(--color-ink-2)] ${
-                    NUMERIC.has(c) ? 'tnum whitespace-nowrap text-right' : ''
+                    NUMERIC.has(c.key) ? 'tnum whitespace-nowrap text-right' : ''
                   }`}
                 >
-                  {hasValue(r[c]) ? String(r[c]) : '—'}
+                  {hasValue(r[c.key]) ? String(r[c.key]) : '—'}
                 </td>
               ))}
             </tr>

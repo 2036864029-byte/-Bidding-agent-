@@ -1,9 +1,18 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { SupplierPage } from '@/pages/supplier/SupplierPage';
+import { setDataSource } from '@/services/api';
 
-/* 供应商全景页集成：卡片网格 / 筛选 / 对比席位上限 / 详情弹窗。 */
+/* 供应商全景页（2026-09-15 重塑后）：
+ * ① 卡片展示工商基本信息 + 中标概况；
+ * ② 按地区/行业筛选走服务端（mock 侧同语义过滤）；
+ * ③ 详情浮窗给「工商信息 + 近期中标项目」；
+ * ④ CCGP 来源（无工商数据）要**明说没有**，而不是留空。
+ *
+ * 数据源固定在 mock：本文件测页面渲染，真实端点由 api-switch.test.ts 覆盖。 */
+
+beforeEach(() => setDataSource('supplier', 'mock'));
 
 function renderPage() {
   return render(
@@ -13,50 +22,56 @@ function renderPage() {
   );
 }
 
-const HEIKANG = '杭州海康威视数字技术股份有限公司';
+const LEGACY = '安徽海纳信息科技有限公司';
+const CCGP = '湖北楚天智能交通股份有限公司';
 
 describe('供应商全景页', () => {
-  it('渲染供应商卡片网格', async () => {
+  it('渲染供应商卡片（含中标次数与总额）', async () => {
     renderPage();
-    expect(await screen.findByText(HEIKANG)).toBeInTheDocument();
-    expect(screen.getAllByRole('checkbox')).toHaveLength(7);
+    expect(await screen.findByText(LEGACY)).toBeInTheDocument();
+    expect(screen.getByText(CCGP)).toBeInTheDocument();
+    // 中标次数 12 次
+    expect(screen.getByText('12')).toBeInTheDocument();
+    // 新的筛选行（按地区 / 行业）在位
+    expect(screen.getByLabelText('按地区筛选')).toBeInTheDocument();
+    expect(screen.getByLabelText('按行业筛选')).toBeInTheDocument();
   });
 
-  it('筛选标签按维度过滤结果', async () => {
+  it('按地区筛选（服务端语义）：只剩该省企业', async () => {
     renderPage();
-    await screen.findByText(HEIKANG);
+    await screen.findByText(LEGACY);
 
-    fireEvent.click(screen.getByRole('button', { name: '辽宁省' }));
-    expect(screen.getByText('东软集团股份有限公司')).toBeInTheDocument();
-    expect(screen.queryByText(HEIKANG)).toBeNull();
+    fireEvent.change(screen.getByLabelText('按地区筛选'), { target: { value: '安徽省' } });
 
-    // 重置后恢复
-    fireEvent.click(screen.getByRole('button', { name: '重置筛选' }));
-    expect(screen.getByText(HEIKANG)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(CCGP)).toBeNull();
+    });
+    expect(screen.getByText(LEGACY)).toBeInTheDocument();
   });
 
-  it('勾选 3 家后出现对比面板，第 4 家被禁用（规范上限）', async () => {
-    renderPage();
-    const boxes = await screen.findAllByRole('checkbox');
-
-    expect(screen.queryByText('多方对比')).toBeNull();
-    fireEvent.click(boxes[0]);
-    fireEvent.click(boxes[1]);
-    fireEvent.click(boxes[2]);
-
-    expect(screen.getByText('多方对比')).toBeInTheDocument();
-    expect(boxes[0]).toBeChecked(); // 已选中的仍可操作（点它是移除）
-    expect(boxes[0]).not.toBeDisabled();
-    expect(boxes[3]).toBeDisabled(); // 已达上限：未选中的不能再加
-  });
-
-  it('点「查看详情」打开详情弹窗，含价格分布', async () => {
+  it('点「查看详情」→ 工商信息 + 近期中标项目', async () => {
     renderPage();
     const buttons = await screen.findAllByRole('button', { name: /查看详情/ });
     fireEvent.click(buttons[0]);
 
     const dialog = await screen.findByRole('dialog', { name: /供应商详情/ });
-    expect(within(dialog).getByText('中标历史价格分布')).toBeInTheDocument();
-    expect(within(dialog).getByText('履约能力雷达')).toBeInTheDocument();
+    expect(within(dialog).getByText('工商信息')).toBeInTheDocument();
+    expect(within(dialog).getByText('软件和信息技术服务业')).toBeInTheDocument();
+    expect(within(dialog).getByText('郭振')).toBeInTheDocument();
+    expect(within(dialog).getByText('近期中标项目')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText('宿州市政务服务中心安防监控系统升级项目')
+    ).toBeInTheDocument();
+  });
+
+  it('⚠️ CCGP 来源（无工商数据）详情里明说「暂无工商信息」，不装作有', async () => {
+    renderPage();
+    await screen.findByText(CCGP);
+    const buttons = await screen.findAllByRole('button', { name: /查看详情/ });
+    // mock 里 CCGP 那家排在最后
+    fireEvent.click(buttons[buttons.length - 1]);
+
+    const dialog = await screen.findByRole('dialog', { name: /供应商详情/ });
+    expect(within(dialog).getByText(/暂无工商信息/)).toBeInTheDocument();
   });
 });

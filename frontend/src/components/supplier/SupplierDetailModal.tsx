@@ -1,18 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { X } from 'lucide-react';
-import { RiskTags } from '@/components/supplier/RiskTags';
-import { ScoreMeter } from '@/components/supplier/ScoreMeter';
-import { SupplierRadar } from '@/components/supplier/SupplierRadar';
-import { fmtInt } from '@/lib/format';
+import { fmtAmountYuan, fmtInt } from '@/lib/format';
 import type { Supplier } from '@/types/supplier';
 
 /**
- * SupplierDetailModal —— 供应商详情（设计文档 §4.5）。
+ * SupplierDetailModal —— 供应商详情：**工商信息 + 中标情况**。
  *
- * 中标历史价格分布是**单序列**（一家供应商逐年）→ 用品牌色即可，不需要分类色。
- * 分类色只在该模块「多家对比」时才出场。
+ * 2026-09-15 重塑：去掉履约能力雷达 / 评分 / 成功率（无数据源），
+ * 改为展示可核验的工商档案与中标记录。
  */
 export function SupplierDetailModal({
   supplier,
@@ -67,7 +63,7 @@ export function SupplierDetailModal({
                   {supplier.name}
                 </h2>
                 <p className="mono-label mt-1">
-                  {supplier.region} · {supplier.creditCode}
+                  {supplier.creditCode ?? '信用代码未收录'}
                 </p>
               </div>
               <button
@@ -81,99 +77,85 @@ export function SupplierDetailModal({
             </header>
 
             <div className="space-y-6 px-6 py-5">
-              <p className="text-[13px] leading-relaxed text-[var(--color-muted)]">
-                {supplier.coreCapability}
-              </p>
-
-              <div className="flex flex-wrap gap-1.5">
-                {supplier.categories.map((c) => (
-                  <span
-                    key={c}
-                    className="rounded-full bg-[var(--color-accent-soft)] px-2.5 py-1 text-[12px] text-[var(--color-accent)]"
-                  >
-                    {c}
-                  </span>
-                ))}
-                <RiskTags tags={supplier.riskTags} />
-              </div>
-
-              {/* 履约统计 */}
+              {/* 中标概况 */}
               <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Stat label="历史合作评分" value={String(supplier.score)} suffix="分" />
+                <Stat label="中标次数" value={fmtInt(supplier.winCount)} suffix="次" />
                 <Stat
-                  label="参与投标成功率"
-                  value={supplier.stats.bidWinRate.toFixed(1)}
-                  suffix="%"
+                  label="中标总额"
+                  value={fmtAmountYuan(supplier.winAmountTotal > 0 ? supplier.winAmountTotal : null).value}
+                  suffix={fmtAmountYuan(supplier.winAmountTotal > 0 ? supplier.winAmountTotal : null).unit}
                 />
-                <Stat label="累计投标" value={fmtInt(supplier.stats.totalBids)} suffix="次" />
-                <Stat label="合作年限" value={String(supplier.stats.activeYears)} suffix="年" />
+                <Stat label="首次中标" value={supplier.firstWinDate ?? '—'} suffix="" />
+                <Stat label="最近中标" value={supplier.lastWinDate ?? '—'} suffix="" />
               </section>
 
-              <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-                <div>
-                  <p className="mb-1 text-[13px] font-medium text-[var(--color-ink-2)]">
-                    履约能力雷达
-                  </p>
-                  <p className="mb-2 text-[12px] text-[var(--color-neutral)]">五维评分（0~100）</p>
-                  <SupplierRadar suppliers={[supplier]} height={230} />
-                </div>
-                <div>
-                  <p className="mb-1 text-[13px] font-medium text-[var(--color-ink-2)]">
-                    中标历史价格分布
-                  </p>
-                  <p className="mb-2 text-[12px] text-[var(--color-neutral)]">年均中标金额（万元）</p>
-                  <ResponsiveContainer width="100%" height={230}>
-                    <BarChart
-                      data={supplier.stats.priceHistory.map((p) => ({
-                        year: String(p.year),
-                        value: p.avgAmount,
-                      }))}
-                      margin={{ top: 12, right: 8, bottom: 0, left: 0 }}
-                    >
-                      <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
-                      <XAxis
-                        dataKey="year"
-                        tickLine={false}
-                        axisLine={{ stroke: 'var(--chart-axis)' }}
-                        tick={{ fill: 'var(--color-neutral)', fontSize: 11 }}
-                      />
-                      <YAxis
-                        tickFormatter={(v: number) => fmtInt(v)}
-                        tickLine={false}
-                        axisLine={false}
-                        width={48}
-                        tick={{ fill: 'var(--color-neutral)', fontSize: 11 }}
-                      />
-                      <Tooltip
-                        cursor={{ fill: 'var(--color-paper-2)' }}
-                        contentStyle={{
-                          borderRadius: 10,
-                          border: '1px solid var(--color-rule)',
-                          background: 'var(--color-paper)',
-                          fontSize: 12,
-                        }}
-                        labelStyle={{ color: 'var(--color-neutral)', fontSize: 11 }}
-                        labelFormatter={(l) => `${l} 年`}
-                        formatter={(v) => [`${fmtInt(Number(v))} 万元`, '年均中标额']}
-                      />
-                      <Bar
-                        dataKey="value"
-                        fill="var(--chart-series)"
-                        radius={[4, 4, 0, 0]}
-                        barSize={24}
-                        isAnimationActive={false}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </section>
-
+              {/* 工商信息 */}
               <section>
-                <p className="mb-2 text-[12px] text-[var(--color-neutral)]">参与投标成功率</p>
-                <ScoreMeter
-                  score={supplier.stats.bidWinRate}
-                  ariaLabel="参与投标成功率"
-                />
+                <p className="mb-2 text-[13px] font-medium text-[var(--color-ink-2)]">工商信息</p>
+                {supplier.province || supplier.industry ? (
+                  <dl className="divide-y divide-[var(--color-rule)] rounded-xl border border-[var(--color-rule)]">
+                    <Row label="注册地" value={[supplier.province, supplier.city, supplier.district].filter(Boolean).join(' ') || '—'} />
+                    <Row label="所属行业" value={supplier.industry ?? '—'} />
+                    <Row label="法定代表人" value={supplier.legalPerson ?? '—'} />
+                    <Row label="注册资本" value={supplier.registeredCapital ?? '—'} />
+                    <Row label="成立日期" value={supplier.establishDate ?? '—'} />
+                    <Row label="经营状态" value={supplier.businessStatus ?? '—'} />
+                    <Row label="企业类型" value={supplier.companyType ?? '—'} />
+                    <Row label="企业规模" value={supplier.companyLevel ?? '—'} />
+                    <Row label="注册地址" value={supplier.address ?? '—'} />
+                    <Row label="经营范围" value={supplier.businessScope ?? '—'} />
+                  </dl>
+                ) : (
+                  <p className="rounded-xl border border-dashed border-[var(--color-rule-2)] px-3.5 py-4 text-[12.5px] text-[var(--color-neutral)]">
+                    暂无工商信息 —— 该企业来自新采集公告（CCGP 侧），尚未并入工商档案。
+                    新数据里的企业普遍缺少工商字段，这是数据来源的限制，不是展示问题。
+                  </p>
+                )}
+              </section>
+
+              {/* 中标记录 */}
+              <section>
+                <p className="mb-1 text-[13px] font-medium text-[var(--color-ink-2)]">
+                  近期中标项目
+                </p>
+                <p className="mb-2.5 text-[12px] text-[var(--color-neutral)]">
+                  共 {fmtInt(supplier.winCount)} 条，此处显示最近 {supplier.recentWins.length} 条
+                </p>
+                {supplier.recentWins.length ? (
+                  <ul className="divide-y divide-[var(--color-rule)] rounded-xl border border-[var(--color-rule)]">
+                    {supplier.recentWins.map((w) => (
+                      <li
+                        key={`${w.projectNo}|${w.winningDate}`}
+                        className="flex items-baseline gap-3 px-3.5 py-2.5"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className="truncate text-[13px] text-[var(--color-ink-2)]"
+                            title={w.projectName}
+                          >
+                            {w.projectName}
+                          </p>
+                          <p className="mt-0.5 text-[11.5px] text-[var(--color-neutral)]">
+                            {w.region}
+                            {w.category ? ` · ${w.category}` : ''} · {w.winningDate}
+                          </p>
+                        </div>
+                        <span className="tnum shrink-0 text-[13px] text-[var(--color-ink-2)]">
+                          {w.winningAmount === null
+                            ? '金额未公开'
+                            : (() => {
+                                const a = fmtAmountYuan(w.winningAmount);
+                                return `${a.value} ${a.unit}`;
+                              })()}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="rounded-xl border border-dashed border-[var(--color-rule-2)] px-3.5 py-4 text-[12.5px] text-[var(--color-neutral)]">
+                    暂无公开中标记录。
+                  </p>
+                )}
               </section>
             </div>
           </motion.div>
@@ -188,11 +170,22 @@ function Stat({ label, value, suffix }: { label: string; value: string; suffix: 
     <div className="rounded-xl border border-[var(--color-rule)] px-3.5 py-3">
       <p className="text-[12px] text-[var(--color-neutral)]">{label}</p>
       <p className="mt-1 flex items-baseline gap-1">
-        <span className="text-[19px] font-semibold leading-none text-[var(--color-ink)]">
+        <span className="text-[17px] font-semibold leading-none text-[var(--color-ink)]">
           {value}
         </span>
-        <span className="text-[12px] text-[var(--color-neutral)]">{suffix}</span>
+        {suffix && <span className="text-[12px] text-[var(--color-neutral)]">{suffix}</span>}
       </p>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-3 px-3.5 py-2.5">
+      <dt className="w-20 shrink-0 text-[12.5px] text-[var(--color-neutral)]">{label}</dt>
+      <dd className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-[var(--color-ink-2)]">
+        {value}
+      </dd>
     </div>
   );
 }

@@ -39,7 +39,7 @@ export function RegionHeatmap({ cells }: { cells: KanbanHeatmapCell[] }) {
               key={c.region}
               className="flex flex-col justify-between rounded-lg px-3 py-2.5"
               style={{ background: bin.fill, color: bin.ink }}
-              title={`${c.region}：${fmtInt(c.count)} 个项目 · ${fmtInt(Math.round(c.amount))} 万元`}
+              title={`${c.region}：${fmtInt(c.count)} 个项目`}
             >
               <span className="text-[12px] font-medium opacity-90">{c.region}</span>
               <span className="mt-1.5 text-[17px] font-semibold leading-none">{fmtInt(c.count)}</span>

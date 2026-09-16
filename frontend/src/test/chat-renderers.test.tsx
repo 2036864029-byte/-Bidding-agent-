@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { chatResponseAdapter } from '@/adapters/chatAdapter';
-import { deriveColumns } from '@/components/chat/PriceRecordsTable';
+import { deriveColumns, resolveColumns } from '@/components/chat/PriceRecordsTable';
 import { ReplyRenderer } from '@/components/chat/renderers/ReplyRenderer';
 import { mockChatFixtures } from '@/mock/mockChat';
 import type { ChatMessage, ReplyType } from '@/types/chat';
@@ -80,6 +80,10 @@ describe('ReplyRenderer 注册表', () => {
       </MemoryRouter>
     );
     expect(screen.getByText('智慧园区安防系统集成项目')).toBeInTheDocument();
+    // 表头来自**服务端下发的 columns**（前端不再硬编码「机器名 ↔ 中文」）
+    expect(screen.getByRole('columnheader', { name: '项目名称' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '中标金额' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '中标供应商' })).toBeInTheDocument();
 
     // 联动跳转必须把上下文带过去（不丢）
     const link = screen.getByRole('link', { name: /在询价模块查看详情/ });
@@ -182,5 +186,48 @@ describe('PriceRecordsTable 列自适应', () => {
 
   it('空记录不产生列（组件据此不渲染表格）', () => {
     expect(deriveColumns([])).toEqual([]);
+  });
+});
+
+/* 服务端下发 columns 后，前端不再需要自己硬编码「机器名 ↔ 中文表头」。 */
+
+describe('resolveColumns 优先用服务端列定义', () => {
+  const records = [
+    { project_name: '某项目', winning_amount: '100', project_number: 'ZB-1' },
+  ];
+
+  it('服务端给了 columns：按它的顺序与表头走（覆盖本地启发式的排序）', () => {
+    const cols = resolveColumns(records, [
+      { key: 'project_number', label: '项目编号' },
+      { key: 'project_name', label: '项目名称' },
+      { key: 'winning_amount', label: '中标金额' },
+    ]);
+    expect(cols).toEqual([
+      { key: 'project_number', label: '项目编号' },
+      { key: 'project_name', label: '项目名称' },
+      { key: 'winning_amount', label: '中标金额' },
+    ]);
+  });
+
+  it('服务端标签为空时回落本地映射（不至于显示成裸机器名）', () => {
+    const cols = resolveColumns(records, [{ key: 'project_name', label: '' }]);
+    expect(cols).toEqual([{ key: 'project_name', label: '项目名称' }]);
+  });
+
+  it('服务端列与数据完全对不上 → 回落启发式', () => {
+    const cols = resolveColumns(records, [{ key: 'not_in_data', label: '无关列' }]);
+    expect(cols.map((c) => c.key)).toEqual(['project_name', 'project_number', 'winning_amount']);
+  });
+
+  it('旧后端没给 columns → 启发式 + 本地表头', () => {
+    const cols = resolveColumns(records);
+    expect(cols[0]).toEqual({ key: 'project_name', label: '项目名称' });
+  });
+
+  it('仍然封顶 6 列', () => {
+    const wide: Record<string, string> = {};
+    for (let i = 0; i < 20; i += 1) wide[`f${i}`] = `v${i}`;
+    const server = Array.from({ length: 20 }, (_, i) => ({ key: `f${i}`, label: `列${i}` }));
+    expect(resolveColumns([wide], server).length).toBeLessThanOrEqual(6);
   });
 });

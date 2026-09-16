@@ -14,7 +14,7 @@ import type { ChatMessage } from '@/types/chat';
  */
 export function PriceRecords({ message }: { message: ChatMessage }) {
   const data = message.data;
-  const records = data?.kind === 'price_records' ? data.records : [];
+  const price = data?.kind === 'price_records' ? data : null;
   const warn = errorText(message.errorCode);
 
   return (
@@ -22,9 +22,9 @@ export function PriceRecords({ message }: { message: ChatMessage }) {
       <Markdown>{message.content}</Markdown>
       {warn && <Notice>{warn}</Notice>}
 
-      {records.length > 0 && (
+      {price && price.records.length > 0 && (
         <div className="mt-3.5">
-          <PriceRecordsTable records={records} />
+          <PriceRecordsTable records={price.records} columns={price.columns} />
           <div className="mt-2.5 flex justify-end">
             {/* 联动跳转**带上原始提问**，让询价页接得上上下文（不丢） */}
             <Link

@@ -1,103 +1,50 @@
 /**
- * 智能询价领域契约（Domain Model）。
+ * 智能询价领域契约 —— 「项目概况 → 报价参考」。
  *
- * 基准：规划方案 §4.1 的 InquiryItem / InquirySummary；本契约增补
- * 偏离高亮所需字段（budgetThreshold / deviationRate）。
+ * 语义：用户在左栏描述/上传项目情况，系统检索相似历史招标项目，
+ * 右栏给出**中标价区间 + 相似项目清单**。
  *
- * 金额单位：**单价与报价用「元」**（摄像机 850 元/台 这类单价用万元会变成 0.085，不合理）——
- * 这是对「汇总金额用万元」的**有意例外**，招投标系统常规做法；每个字段都显式标注单位。
+ * ⚠️ 本契约**不是**一次独立的后端取数结果，而是**一次查询的派生视图**：
+ * 数据源是左侧 `/chat` 返回的 `price_records.records`（真实来源 `ztb_clean.bid_project`），
+ * 经 `lib/inquiry.ts` 的 `buildReference()` 纯函数换算。因此这里没有 `XxxRaw` 宽容形状
+ * ——也就没有「后端字段漂移」这一层，字段映射只在 `buildReference` 一处。
  *
- * ⚠️ 「询价单 / 对比明细」是未来域模型：当前 /chat 的 price_records 返回的是
- * 「中标记录表」，不是本契约的 InquirySummary（见设计文档 §1 修正 4）。
+ * 字段一一对应 `bid_project` 的列（见 `PriceRecordsTable` 的列集）：
+ *   project_number / project_name / province / project_category /
+ *   purchaser / successful_bidder / winning_amount / winning_date
+ *
+ * 金额单位：**元**（与 `price_records` 一致），展示用 `fmtAmountYuan`。
  */
 
-/** 供应商报价（单项）。 */
-export interface InquiryQuote {
-  supplierId: string;
-  supplierName: string;
-  /** 报价单价（元） */
-  unitPrice: number;
-  /** 报价总价（元）= 单价 × 目标数量 */
-  totalPrice: number;
-  /** 是否为推荐方案 */
-  isRecommended: boolean;
-  /** 偏离度 %：相对基准单价（负 = 低于基准，正 = 超基准） */
-  deviationRate: number;
-  /** 推荐理由 / 备注 */
-  reason?: string;
+/** 相似项目（一条历史中标记录）。 */
+export interface QuoteReferenceProject {
+  /** 项目编号（← project_number） */
+  projectId: string;
+  projectName: string;
+  /** 地区，省级（← province） */
+  region: string;
+  /** 项目类别（← project_category） */
+  category?: string;
+  /** 采购人（← purchaser） */
+  purchaser?: string;
+  /** 中标供应商（← successful_bidder） */
+  winningBidder?: string;
+  /** 中标金额（元）；0 = 金额未公开（见 buildReference） */
+  winningAmount: number;
+  winningDate: string;
 }
 
-/** 询价单项。 */
-export interface InquiryItem {
-  itemId: string;
-  itemName: string;
-  /** 规格型号 */
-  specifications: string;
-  unit: string;
-  targetQuantity: number;
-  /** 内部测算基准单价（元） */
-  benchmarkUnitPrice: number;
-  /** 偏离阈值（单价，元）—— 超阈值 → 偏离高亮 */
-  budgetThreshold: number;
-  quotes: InquiryQuote[];
-}
-
-export type InquiryStatus = 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED';
-
-/** 询价单。 */
-export interface InquirySummary {
-  inquiryId: string;
+/** 报价参考 —— 右栏的完整呈现模型。 */
+export interface QuoteReference {
+  /** 来源提问（截断后作卡片标题） */
   title: string;
-  status: InquiryStatus;
-  /** 预算总额（元） */
-  totalBudget: number;
-  createdAt: string;
-  items: InquiryItem[];
-}
-
-/** 原始单项报价（字段键双写：规划方案 §4.2 的宽容映射示例）。 */
-export interface InquiryRawQuote {
-  supplier_id?: string;
-  supplierId?: string;
-  supplier_name?: string;
-  supplierName?: string;
-  price?: number;
-  unitPrice?: number;
-  is_best?: boolean;
-  isRecommended?: boolean;
-  deviation?: number;
-  deviationRate?: number;
-  reason?: string;
-}
-
-/** 原始询价单项。 */
-export interface InquiryRawItem {
-  item_id?: string;
-  itemId?: string;
-  name?: string;
-  itemName?: string;
-  spec?: string;
-  specifications?: string;
-  unit?: string;
-  qty?: number;
-  targetQuantity?: number;
-  base_price?: number;
-  benchmarkUnitPrice?: number;
-  budget_threshold?: number;
-  supplier_quotes?: InquiryRawQuote[];
-  /** 备用键名（规划方案 §4.2 宽容映射示例：`item.supplier_quotes || item.quotes`） */
-  quotes?: InquiryRawQuote[];
-}
-
-/** 后端原始询价单（未来询价业务提供；字段键可漂移）。 */
-export interface InquiryRawSummary {
-  id?: string;
-  inquiryId?: string;
-  title?: string;
-  status?: string;
-  budget?: number;
-  totalBudget?: number;
-  created_at?: string;
-  createdAt?: string;
-  items?: InquiryRawItem[];
+  /** 有金额的样本数（区间统计的样本量） */
+  sampleCount: number;
+  /** 参考区间（元） */
+  minAmount: number;
+  medianAmount: number;
+  maxAmount: number;
+  /** 金额未公开的项目数（winning_amount 为 0 或空）—— 与 sampleCount 互补 */
+  missingAmountCount: number;
+  projects: QuoteReferenceProject[];
 }

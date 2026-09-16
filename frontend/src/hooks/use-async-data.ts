@@ -7,12 +7,15 @@ export interface AsyncState<T> {
 }
 
 /**
- * useAsyncData —— 极简异步取数（挂载时跑一次）。
+ * useAsyncData —— 极简异步取数。
+ *
+ * 默认挂载时跑一次；传 `key` 则在 key 变化时**重新取数**（服务端筛选/分页用，
+ * 例如 `useAsyncData(() => api.supplier.getOverview(f), JSON.stringify(f))`）。
  *
  * 页面只经 `services/api.ts` 取数；本 hook 负责 loading / error 三态，
- * 卸载后不再 setState（避免竞态写入）。
+ * 卸载或 key 变化后旧请求的结果不再写入（避免竞态）。
  */
-export function useAsyncData<T>(loader: () => Promise<T>): AsyncState<T> {
+export function useAsyncData<T>(loader: () => Promise<T>, key?: unknown): AsyncState<T> {
   const [state, setState] = useState<AsyncState<T>>({ data: null, error: null, loading: true });
   const loaderRef = useRef(loader);
   loaderRef.current = loader;
@@ -31,7 +34,8 @@ export function useAsyncData<T>(loader: () => Promise<T>): AsyncState<T> {
     return () => {
       alive = false;
     };
-  }, []);
+    // key 是调用方给的**取数标识**（通常是筛选条件的序列化）；变了就重取
+  }, [key]);
 
   return state;
 }

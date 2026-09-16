@@ -1,104 +1,114 @@
 /**
  * 供应商全景领域契约（Domain Model）。
  *
- * 评分口径 ⚠️ 2026-09-14 用户拍板：**由后端给**（前端只透传，不做任何评分计算）——
- * mock 里的 `score` 与 `radar.dimensions` 即"后端会返回的字段"，雷达轴现定为
- * 技术能力 / 交付能力 / 售后服务 / 价格竞争力 / 财务状况（后端按此计算）。
- * 唯一键 = 统一社会信用代码；**汇总金额单位「万元」**；地区省级。
+ * 2026-09-15 重塑：原来的「能力评分卡」（score + 五维雷达 + 资质/风险标签）
+ * **没有数据源**，已整体去掉。改为**可核验的工商档案 + 中标业绩**：
+ *
+ * - 工商信息（省份/行业/法人/注册资本/成立日期/经营范围…）来自
+ *   `ztb_clean.company_info`（38,911 家，字段覆盖 99%+），经 `company_unified` 下发
+ * - 中标业绩来自 `company_win` 关联表（按公司名归一化匹配）
+ *
+ * ⚠️ 两条口径必须如实呈现，别让 UI 装作很全：
+ *   1. **工商字段只有 LEGACY 侧有**；CCGP 侧那 1,058 家是 8 天内的新公司，没有工商数据，
+ *      `province` / `industry` 为 undefined，按地区/行业筛选时不会出现。
+ *   2. 中标业绩是**名称匹配**的结果，不是权威关联；多中标人的项目金额已按人数均摊。
+ *
+ * 金额单位：**元**（与 `project_unified` / `price_records` 一致），展示用 `fmtAmountYuan`。
  */
 
-/** 雷达图维度（0~100）。 */
-export interface RadarDimension {
-  label: string;
-  value: number;
+/** 一条中标记录。 */
+export interface SupplierWinRecord {
+  projectNo: string;
+  projectName: string;
+  region: string;
+  category?: string;
+  /** 中标金额（元）；null = 未公开 */
+  winningAmount: number | null;
+  winningDate: string;
 }
 
-export interface SupplierRadar {
-  dimensions: RadarDimension[];
-}
-
-/** 中标历史价格分布（详情 Modal）。 */
-export interface SupplierPriceHistory {
-  year: number;
-  /** 年均中标金额（**万元**） */
-  avgAmount: number;
-  /** 年中标次数 */
-  count: number;
-}
-
-/** 供应商履约统计（详情 Modal）。 */
-export interface SupplierStats {
-  totalBids: number;
-  wins: number;
-  /** 参与投标成功率 %（0~100） */
-  bidWinRate: number;
-  /** 合作年限 */
-  activeYears: number;
-  priceHistory: SupplierPriceHistory[];
-}
-
-/** 供应商卡片。 */
 export interface Supplier {
   id: string;
-  /** 统一社会信用代码（唯一键） */
-  creditCode: string;
+  /** LEGACY = 工商档案（有省份/行业）；CCGP = 新数据（无工商信息） */
+  source: string;
   name: string;
-  /** 省级 */
-  region: string;
-  /** 主营类别 */
-  categories: string[];
-  /** 资质标签 */
-  qualifications: string[];
-  /** 历史合作评分 0~100（口径待定，见文件头注释） */
-  score: number;
-  radar: SupplierRadar;
-  /** 风险预警标签 */
-  riskTags: string[];
-  /** 核心履约能力（一句话） */
-  coreCapability: string;
-  stats: SupplierStats;
+
+  // ── 工商信息（仅 LEGACY 可能有）──
+  creditCode?: string;
+  province?: string;
+  city?: string;
+  district?: string;
+  industry?: string;
+  legalPerson?: string;
+  registeredCapital?: string;
+  establishDate?: string;
+  businessStatus?: string;
+  companyType?: string;
+  companyLevel?: string;
+  address?: string;
+  businessScope?: string;
+
+  // ── 中标业绩 ──
+  winCount: number;
+  /** 中标总额（元） */
+  winAmountTotal: number;
+  firstWinDate?: string;
+  lastWinDate?: string;
+  /** 中标最多的省份（≠ 注册地） */
+  mainRegion?: string;
+  recentWins: SupplierWinRecord[];
 }
 
-/** 供应商一屏 + 筛选器选项。 */
 export interface SupplierOverview {
   filters: {
-    qualifications: string[];
-    categories: string[];
-    regions: string[];
-    /** 历史合作评分筛选区间 */
-    scoreRange: [number, number];
+    provinces: string[];
+    industries: string[];
   };
+  /** 符合条件的总数（分页用；前端一页只拿到 60 家） */
+  total: number;
+  /** 本页实际返回数 */
+  returned: number;
   suppliers: Supplier[];
 }
 
-/** 后端原始供应商记录（未来 read 端点返回形态；字段键可漂移）。 */
+/** 后端原始记录（snake_case；字段可漂移，由适配器宽容映射）。 */
 export interface SupplierRawItem {
   id?: string;
-  credit_code?: string;
+  source?: string;
   name?: string;
-  region?: string;
-  categories?: string[];
-  qualifications?: string[];
-  score?: number;
-  core_capability?: string;
-  risk_tags?: string[];
-  radar?: { dimensions?: Array<{ label?: string; value?: number }> };
-  stats?: {
-    total_bids?: number;
-    wins?: number;
-    bid_win_rate?: number;
-    active_years?: number;
-    price_history?: Array<{ year?: number; avg_amount?: number; count?: number }>;
-  };
+  credit_code?: string;
+  province?: string;
+  city?: string;
+  district?: string;
+  industry?: string;
+  legal_person?: string;
+  registered_capital?: string;
+  registered_capital_cny?: number | string | null;
+  establish_date?: string;
+  business_status?: string;
+  company_type?: string;
+  company_level?: string;
+  address?: string;
+  business_scope?: string;
+  trade_types?: string;
+  win_count?: number | string;
+  win_amount_total?: number | string;
+  first_win_date?: string;
+  last_win_date?: string;
+  main_region?: string;
+  recent_wins?: Array<{
+    project_no?: string;
+    project_name?: string;
+    region?: string;
+    category?: string;
+    winning_amount?: number | string | null;
+    winning_date?: string;
+  }>;
 }
 
-/** 后端原始供应商全景（含筛选器选项）。 */
 export interface SupplierRawOverview {
-  filters?: {
-    qualifications?: string[];
-    categories?: string[];
-    regions?: string[];
-    score_range?: [number, number];
-  };
+  filters?: { provinces?: string[]; industries?: string[] };
+  total?: number;
+  returned?: number;
   suppliers?: SupplierRawItem[];
 }

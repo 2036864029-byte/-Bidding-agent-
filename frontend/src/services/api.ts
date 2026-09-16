@@ -11,39 +11,42 @@
  */
 
 import { chatResponseAdapter } from '@/adapters/chatAdapter';
-import { inquiryAdapter } from '@/adapters/inquiryAdapter';
 import { kanbanAdapter } from '@/adapters/kanbanAdapter';
 import { supplierAdapter } from '@/adapters/supplierAdapter';
 import { chunkText } from '@/lib/chat';
-import { mockChatFixtures } from '@/mock/mockChat';import { mockInquiryRaw } from '@/mock/mockInquiry';
+import { mockChatFixtures } from '@/mock/mockChat';
 import { mockKanbanRaw } from '@/mock/mockKanban';
 import { mockSupplierRaw } from '@/mock/mockSupplier';
 import * as backend from '@/services/backend';
 import { BackendError } from '@/services/backend';
 import type { ChatRawResponse, ChatResponse, ReplyType } from '@/types/chat';
-import type { InquirySummary } from '@/types/inquiry';
 import type { KanbanOverview } from '@/types/kanban';
-import type { SupplierOverview } from '@/types/supplier';
+import type { SupplierOverview, SupplierRawOverview } from '@/types/supplier';
 
 export type DataMode = 'mock' | 'api';
 
 export interface DataSourceConfig {
   kanban: DataMode;
-  inquiry: DataMode;
   supplier: DataMode;
   chat: DataMode;
 }
 
 /**
  * 数据源开关（唯一真源）。
- * 三模块默认 Mock（真实数据/后端就绪后翻 `'api'`）；
- * chat 默认 Mock，可用 `VITE_CHAT_MODE=api` 环境变量直连真实后端，
+ *
+ * 2026-09-15：**看板 / 供应商已接真实端点**（`/kanban/overview`、`/suppliers/overview`，
+ * 读 `bidding` 库）；智能询价没有独立开关 —— 它的报价参考是 `/chat` 结果的派生视图。
+ * 三模块的 mock 仍然保留且**与真实返回同形状**，改回 `'mock'` 即可离线演示。
+ *
+ * chat 默认 Mock，可用 `VITE_CHAT_MODE=api` 直连真实后端，
  * 也可在对话浮窗头部**运行时切换**（方便对着真后端验证）。
+ *
+ * ⚠️ 后端需要**重启**才会加载 `/kanban/overview` 与 `/suppliers/overview` 路由
+ * （这两个端点是 2026-09-15 新增的）。
  */
 export const dataConfig: DataSourceConfig = {
-  kanban: 'mock',
-  inquiry: 'mock',
-  supplier: 'mock',
+  kanban: 'api',
+  supplier: 'api',
   chat: import.meta.env?.VITE_CHAT_MODE === 'api' ? 'api' : 'mock',
 };
 
@@ -227,6 +230,24 @@ async function realUpload(
   });
 }
 
+/**
+ * Mock 侧按**与后端同样的条件**过滤。
+ *
+ * 为什么不在 mock 里"返回全部、由页面筛"：那样筛选逻辑就在**两条不同的路径**上，
+ * 演示时看不出差别，但真接后端时会暴露出"筛选没生效"——让 mock 走同一语义，
+ * 才能让 mock 期间的测试真正有意义。
+ */
+function mockSupplierOverview(opts: backend.SupplierQuery): SupplierRawOverview {
+  const all = mockSupplierRaw.suppliers ?? [];
+  const hit = all.filter(
+    (s) =>
+      (!opts.province || s.province === opts.province) &&
+      (!opts.industry || s.industry === opts.industry) &&
+      (!opts.keyword || (s.name ?? '').includes(opts.keyword))
+  );
+  return { ...mockSupplierRaw, suppliers: hit, total: hit.length, returned: hit.length };
+}
+
 export const api = {
   kanban: {
     async getOverview(): Promise<KanbanOverview> {
@@ -235,17 +256,10 @@ export const api = {
     },
   },
 
-  inquiry: {
-    async getSummary(): Promise<InquirySummary> {
-      if (dataConfig.inquiry === 'mock') return inquiryAdapter(mockInquiryRaw);
-      return inquiryAdapter(await backend.getInquirySummary());
-    },
-  },
-
   supplier: {
-    async getOverview(): Promise<SupplierOverview> {
-      if (dataConfig.supplier === 'mock') return supplierAdapter(mockSupplierRaw);
-      return supplierAdapter(await backend.getSuppliers());
+    async getOverview(opts: backend.SupplierQuery = {}): Promise<SupplierOverview> {
+      if (dataConfig.supplier === 'mock') return supplierAdapter(mockSupplierOverview(opts));
+      return supplierAdapter(await backend.getSuppliers(opts));
     },
   },
 

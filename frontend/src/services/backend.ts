@@ -4,9 +4,10 @@
  * Phase 2 范围：`/health`、`/chat`、`/files/*`（非流式）已可调用；
  * `/chat/stream`（SSE）在 Phase 4 接入。
  *
- * 三模块只读端点（热力/占比/走势、供应商、询价单）后端**尚未提供**（设计文档 §5）——
- * 对应函数抛明确 `BackendError`，即数据源开关的「空实现」侧；Phase 3 起 UI 走空态，
+ * 模块只读端点（看板聚合、供应商）后端**尚未提供**（设计文档 §5）——
+ * 对应函数抛明确 `BackendError`，即数据源开关的「空实现」侧；UI 走空态，
  * 后端就绪后在此填真实请求即可（UI 与 adapters 零改动）。
+ * （智能询价不在此列：它的报价参考由 `/chat` 结果派生，不需要独立端点。）
  *
  * ⚠️ 开发期经 Vite 代理 `/api → 127.0.0.1:8000`；业务错误走 HTTP 200 + error_code
  * （由 adapters 透传，不在此抛出），系统/过载错误才走 4xx/5xx。
@@ -14,7 +15,6 @@
 
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import type { ChatRawResponse } from '@/types/chat';
-import type { InquiryRawSummary } from '@/types/inquiry';
 import type { KanbanRawOverview } from '@/types/kanban';
 import type { SupplierRawOverview } from '@/types/supplier';
 
@@ -306,18 +306,48 @@ export async function getFileStatus(fileId: string): Promise<Record<string, unkn
   return request<Record<string, unknown>>(`/files/${encodeURIComponent(fileId)}/status`);
 }
 
-/* ── 三模块只读端点：后端未提供 → 空实现 ───────────────────────────── */
+/* ── 模块只读端点 ───────────────────────────────────────────── */
 
-const NOT_IMPLEMENTED = '该模块后端只读端点尚未接入（设计文档 §5）；当前请使用 Mock 数据源。';
-
-export async function getKanbanOverview(): Promise<KanbanRawOverview> {
-  throw new BackendError(501, NOT_IMPLEMENTED);
+export interface SupplierQuery {
+  province?: string;
+  industry?: string;
+  keyword?: string;
+  limit?: number;
+  offset?: number;
 }
 
-export async function getInquirySummary(): Promise<InquiryRawSummary> {
-  throw new BackendError(501, NOT_IMPLEMENTED);
+/**
+ * GET /suppliers/overview —— 供应商全景（读后端 `bidding.company_unified`）。
+ *
+ * 筛选在**服务端**做：39,969 家不可能全下到前端。默认按中标次数倒序取前 60 家。
+ * ⚠️ 工商字段只有 LEGACY 侧有；CCGP 侧那 1,058 家按地区/行业筛选时不会出现。
+ */
+export async function getSuppliers(opts: SupplierQuery = {}): Promise<SupplierRawOverview> {
+  const qs = new URLSearchParams();
+  if (opts.province) qs.set('province', opts.province);
+  if (opts.industry) qs.set('industry', opts.industry);
+  if (opts.keyword) qs.set('keyword', opts.keyword);
+  if (opts.limit !== undefined) qs.set('limit', String(opts.limit));
+  if (opts.offset !== undefined) qs.set('offset', String(opts.offset));
+  const q = qs.toString();
+  return request<SupplierRawOverview>(`/suppliers/overview${q ? `?${q}` : ''}`);
 }
 
-export async function getSuppliers(): Promise<SupplierRawOverview> {
-  throw new BackendError(501, NOT_IMPLEMENTED);
+/**
+ * GET /kanban/overview —— 商机看板聚合（读后端 `bidding` 库）。
+ *
+ * 返回**原始形状**（snake_case），字段映射交 `kanbanAdapter`。
+ * ⚠️ 数据口径（后端实测）：`industries` 用的是粗粒度 `category`（学校/政府/货物）；
+ * 地区分布极偏（安徽占 65%）；`product_rank` 样本稀疏（最高频次 3）。
+ */
+export async function getKanbanOverview(
+  opts: { region?: string; industry?: string } = {}
+): Promise<KanbanRawOverview> {
+  const qs = new URLSearchParams();
+  if (opts.region) qs.set('region', opts.region);
+  if (opts.industry) qs.set('industry', opts.industry);
+  const q = qs.toString();
+  return request<KanbanRawOverview>(`/kanban/overview${q ? `?${q}` : ''}`);
 }
+
+// 智能询价**没有**独立端点：报价参考由 /chat 的 price_records 派生（见 lib/inquiry.ts）。
