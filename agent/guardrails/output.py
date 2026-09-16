@@ -38,6 +38,8 @@ BRANCH_OUTPUT_CONTRACTS: Dict[str, Dict[str, Any]] = {
     "deep_agent": {"required": ["branch", "answer"], "data_required": ["trace"]},
     "safety": {"required": ["branch", "answer"], "data_required": None},
     "fallback": {"required": ["branch", "answer"], "data_required": None},
+    # Phase 3（2026-09-16）：澄清式反问 —— 候选必须随 data 下发（前端渲染 chips）
+    "clarify": {"required": ["branch", "answer"], "data_required": ["candidates"]},
 }
 
 

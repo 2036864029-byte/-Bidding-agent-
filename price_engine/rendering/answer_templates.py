@@ -37,6 +37,11 @@ class AnswerTemplate:
     not_found_template: str = ""                     # 实体不存在时的回答模板
 
 
+#: 叙述（正文）列表最多展示条数。中标项目很多时正文只列前几条，其余省略并指向下方
+#: 表格（"见下表"）——避免 20 条编号行把回答刷成一大段，表格才是完整呈现的地方。
+NARRATIVE_MAX_ITEMS = 5
+
+
 # ═════════════════════════════════════════════════════════
 # 值格式化
 # ═════════════════════════════════════════════════════════
@@ -141,6 +146,33 @@ ANSWER_TEMPLATES: dict[str, AnswerTemplate] = {
             "② 本系统暂未收录该公司的处罚信息。\n\n"
             "③ 公司名称存在差异（建议核对工商登记全称）。\n\n"
             '如需查询该公司的工商登记信息，请提问"查{company_name}的工商信息"。'
+        ),
+    ),
+
+    # ── §1.3：推荐供应商（按行业/地区） ──
+    "supplier_recommend": AnswerTemplate(
+        query_type="supplier_recommend",
+        source_table="ztb_clean.company_info",
+        total_rows=38911,
+        single_template=(
+            "为您推荐：{company_name}（{industry} · {province}{city} · "
+            "注册资本 {registered_capital} · 法定代表人 {legal_person}）。\n\n"
+            "（数据来源：ztb_clean.company_info）"
+        ),
+        multi_template=(
+            "为您推荐 {N} 家{province}{city}的{industry}供应商：\n\n"
+            "{items}\n\n"
+            "（数据来源：ztb_clean.company_info）"
+        ),
+        item_line=(
+            "{index} {company_name}（{industry} · {province}{city} · "
+            "注册资本 {registered_capital} · 法定代表人 {legal_person}）"
+        ),
+        empty_template=(
+            '在收录的工商档案中，暂未找到符合"{entity}"条件的供应商。\n\n'
+            "建议：\n"
+            "  1. 换一个行业关键词（如「工程」→「建筑」「施工」）；\n"
+            "  2. 明确省份/城市后再试。"
         ),
     ),
 
@@ -342,7 +374,11 @@ def _render_single(record: dict[str, Any], template: AnswerTemplate) -> str:
 
 
 def _render_multi(records: list[dict[str, Any]], template: AnswerTemplate) -> str:
-    """渲染多条记录的自然语言回答（列表模式）。"""
+    """渲染多条记录的自然语言回答（列表模式）。
+
+    2026-09-16：记录数 > `NARRATIVE_MAX_ITEMS` 时，正文只列前 N 条并附"其余见下表"，
+    避免中标项目很多时正文被编号行刷屏（完整列表由下方表格呈现）。
+    """
     if not template.multi_template:
         # 无 multi_template 时逐条渲染拼接
         parts = []
@@ -350,14 +386,18 @@ def _render_multi(records: list[dict[str, Any]], template: AnswerTemplate) -> st
             parts.append(f"【{i}】\n{_render_single(rec, template)}")
         return "\n\n".join(parts)
 
+    total = len(records)
+    shown = records[:NARRATIVE_MAX_ITEMS]
     items = []
-    for i, rec in enumerate(records, 1):
+    for i, rec in enumerate(shown, 1):
         ctx = _build_record_context(rec, template)
         ctx["index"] = str(i)
         items.append(template.item_line.format(**ctx))
+    if total > NARRATIVE_MAX_ITEMS:
+        items.append(f"……（其余 {total - NARRATIVE_MAX_ITEMS} 条见下表，共 {total} 条记录）")
 
     first_ctx = _build_record_context(records[0], template)
-    first_ctx["N"] = str(len(records))
+    first_ctx["N"] = str(total)
     first_ctx["items"] = "\n".join(items)
     return template.multi_template.format(**first_ctx)
 

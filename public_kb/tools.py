@@ -329,7 +329,10 @@ def kb_search_expanded(
         docs: List[Tuple[Document, float]] = list(outcome.docs[:top_k])
 
         clauses = _split_clauses(question, min_clause_len)
-        if clauses and len(docs) < max_chunks:
+        # 2026-09-16：base 为空时不再为子句补检付检索成本（拒答路径省钱）。
+        # 旧条件 `clauses and len(docs) < max_chunks` 在 docs=[] 时恒真 → 空结果
+        # 仍白付多次 embedding+Milvus。加 `docs and` 前置。
+        if docs and clauses and len(docs) < max_chunks:
             base_seen = {_norm_key(doc.page_content) for doc, _ in docs}
             pool: List[Tuple[Document, float]] = []
             pool_seen: set = set()

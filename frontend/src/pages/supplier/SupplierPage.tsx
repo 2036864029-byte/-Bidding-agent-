@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Building2, SearchX, WifiOff } from 'lucide-react';
+import { useSearchParams } from 'react-router';
+import { Building2, MessageSquareQuote, SearchX, WifiOff, X } from 'lucide-react';
 import { ModulePageLayout } from '@/components/layout/ModulePageLayout';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +35,22 @@ export function SupplierPage() {
   // 输入框即时响应，真正发请求的条件延后（否则每敲一个字打一次后端）
   const [keywordInput, setKeywordInput] = useState('');
   const [keyword, setKeyword] = useState('');
+
+  // 对话模块联动入口：/supplier?from=chat&q=<公司名> → 预填关键词筛选 + 来自对话横幅
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [bannerOpen, setBannerOpen] = useState(true);
+  const fromChat = searchParams.get('from') === 'chat';
+  const carriedKeyword = searchParams.get('q') ?? '';
+  useEffect(() => {
+    if (carriedKeyword) {
+      setKeywordInput(carriedKeyword);
+      setKeyword(carriedKeyword);
+    }
+  }, [carriedKeyword]);
+  const dismissBanner = () => {
+    setBannerOpen(false);
+    setSearchParams({}, { replace: true }); // 清掉参数，刷新不再弹
+  };
 
   useEffect(() => {
     const t = setTimeout(() => setKeyword(keywordInput.trim()), KEYWORD_DEBOUNCE_MS);
@@ -109,6 +126,31 @@ export function SupplierPage() {
 
   return shell(
     <div className="space-y-4">
+      {fromChat && bannerOpen && (
+        <div className="flex items-start gap-3 rounded-2xl border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-4 py-3">
+          <MessageSquareQuote className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-accent)]" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium text-[var(--color-ink)]">来自对话</p>
+            {carriedKeyword && (
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-[var(--color-muted)]">
+                「{carriedKeyword}」
+              </p>
+            )}
+            <p className="mt-1 text-[12px] text-[var(--color-neutral)]">
+              已按这家企业筛选，可查看工商信息与中标情况；也可在上方调整地区、行业或关键词。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={dismissBanner}
+            aria-label="关闭提示"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--color-neutral)] transition-colors duration-[var(--dur-micro)] ease-out hover:bg-[var(--color-paper)] hover:text-[var(--color-ink)]"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </div>
+      )}
+
       <SupplierFilterRow
         provinces={data.filters.provinces}
         industries={data.filters.industries}

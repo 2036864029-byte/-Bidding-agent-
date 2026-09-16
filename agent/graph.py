@@ -88,11 +88,6 @@ def build_graph(
     # ── 创建图 ──
     graph = StateGraph(AgentState)
 
-    # ── 查询改写节点（W3-1）：入口先归一化追问，再路由 ──
-    from .nodes.rewrite import build_rewrite_node
-
-    graph.add_node("rewrite", build_rewrite_node())
-
     # ── 注册节点 ──
     # Router（不需要 _with_fallback，自身有异常处理）；W3-4 内容安全前置挂在入口：
     # 命中（超长/有害请求）→ 短路返回安全回复；未命中 → 照常路由。
@@ -124,21 +119,35 @@ def build_graph(
         path_map[spec.id] = node_name
         logger.info("动态注册节点: %s (capability=%s)", node_name, spec.id)
 
+    # ── 澄清终态节点（Phase 3）：追问无法消解 → 反问 + 一键候选（替代硬拒答）
+    from .nodes.clarify import node_clarify
+
+    graph.add_node("clarify", with_output_guardrails(_with_fallback(node_clarify)))
+
     # ── 边 ──
-    # START → rewrite → router
-    graph.set_entry_point("rewrite")
-    graph.add_edge("rewrite", "router")
+    # Phase 2（2026-09-16）：understand_merged=true 时改写并入 router 一次结构化调用
+    # （入口直连 router）；false 保留独立 rewrite 节点（W3-1 + Phase 1 触发放宽，回退用）。
+    if PublicKBSettings().understand_merged:
+        graph.set_entry_point("router")
+    else:
+        from .nodes.rewrite import build_rewrite_node
+
+        graph.add_node("rewrite", build_rewrite_node())
+        graph.set_entry_point("rewrite")
+        graph.add_edge("rewrite", "router")
 
     # router → 条件边分发到业务节点（map 由 registry 生成）
     # W3-4：安全闸门短路时 router_intent=SAFETY_BLOCKED_ROUTE → 直接 END。
+    # Phase 3：router_intent=clarify → 澄清终态节点。
     graph.add_conditional_edges(
         "router", _route_by_intent,
-        {**path_map, SAFETY_BLOCKED_ROUTE: END},
+        {**path_map, SAFETY_BLOCKED_ROUTE: END, "clarify": "clarify"},
     )
 
     # 所有业务节点 → END（直接终止，无中间 format_output 层）
     for node_name in wired_nodes:
         graph.add_edge(node_name, END)
+    graph.add_edge("clarify", END)
 
     # ── 编译 ──
     compiled = graph.compile(checkpointer=checkpointer)

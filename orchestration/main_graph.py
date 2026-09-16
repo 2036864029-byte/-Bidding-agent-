@@ -179,11 +179,6 @@ def build_supervisor_graph(
 
     graph = StateGraph(SupervisorState)
 
-    # ── 查询改写节点（W3-1）：入口先归一化追问，再走 supervisor 路由 ──
-    from agent.nodes.rewrite import build_rewrite_node
-
-    graph.add_node("rewrite", build_rewrite_node())
-
     # ── supervisor 节点（W2-3：与 agent 节点同样纳入兜底；W3-4：内容安全前置）──
     # 安全闸门在最外层：命中（超长/有害请求）→ 短路返回安全回复，跳过三级路由，
     # 并把 supervisor_route 置为 SAFETY_BLOCKED_ROUTE 哨兵 → 条件边直达 END。
@@ -205,7 +200,8 @@ def build_supervisor_graph(
         agent_nodes["knowledge_qa"] = knowledge_subgraph
     if price_subgraph is not None:
         agent_nodes["price_inquiry"] = price_subgraph
-    allowed = set(agent_nodes)
+    # Phase 3：clarify 是系统终态（非 registry 能力），单独放行路由
+    allowed = set(agent_nodes) | {"clarify"}
 
     def _route_from_supervisor(state: SupervisorState) -> str:
         # W3-4：安全闸门短路 → 哨兵路由到 end（不落入业务节点覆盖安全结果）
@@ -231,15 +227,32 @@ def build_supervisor_graph(
     # ── handoff 决策节点（W2-3：同样纳入兜底）──
     graph.add_node("handoff_decider", _with_fallback(_handoff_decider_node))
 
+    # ── 澄清终态节点（Phase 3）：追问无法消解 → 反问 + 一键候选。
+    # 不参与 handoff（终态），不打 last_agent（非 agent）。候选经 business_result 传入。
+    from agent.nodes.clarify import node_clarify
+
+    graph.add_node("clarify", with_output_guardrails(_with_fallback(node_clarify)))
+
     # ── 边 ──
-    graph.set_entry_point("rewrite")
-    graph.add_edge("rewrite", "supervisor")
+    # Phase 2（2026-09-16）：understand_merged=true 时改写并入 supervisor L3 一次
+    # 结构化调用（入口直连 supervisor）；false 保留独立 rewrite 节点（回退用）。
+    from core.config.settings import Settings
+
+    if Settings().understand_merged:
+        graph.set_entry_point("supervisor")
+    else:
+        from agent.nodes.rewrite import build_rewrite_node
+
+        graph.add_node("rewrite", build_rewrite_node())
+        graph.set_entry_point("rewrite")
+        graph.add_edge("rewrite", "supervisor")
     graph.add_conditional_edges(
         "supervisor", _route_from_supervisor,
-        {name: name for name in agent_nodes} | {"end": END},
+        {name: name for name in agent_nodes} | {"end": END, "clarify": "clarify"},
     )
     for name in agent_nodes:
         graph.add_edge(name, "handoff_decider")
+    graph.add_edge("clarify", END)  # 澄清是终态，不走 handoff
     graph.add_conditional_edges(
         "handoff_decider", _route_after_decider,
         {name: name for name in agent_nodes} | {"end": END},

@@ -14,6 +14,7 @@ from orchestration.supervisor import (
     classify_semantic,
     decide_handoff,
     route_question,
+    route_question_full,
 )
 from orchestration.handoff import HandoffMeta
 
@@ -275,6 +276,121 @@ def test_supervisor_node_respects_injected_llm_router(monkeypatch):
         llm=None, llm_router=lambda state: {"router_intent": "general_chat"}
     )
     assert callable(node)
+
+
+# ── Phase 2：route_question_full / 追问消解（2026-09-16）──────
+
+
+def test_route_question_full_recovers_resolved_from_l3_messages():
+    """L3 返回的 messages 原位替换 → RouteResult.resolved_question 还原（Phase 2）。"""
+    from langchain_core.messages import HumanMessage
+
+    last = HumanMessage(content="具体介绍一下？")
+    last.id = "msg-1"
+    fake_router = lambda state: {  # noqa: E731
+        "router_intent": "knowledge_qa",
+        "messages": [HumanMessage(content="招标方式有哪些？请逐一介绍", id="msg-1")],
+    }
+
+    r = route_question_full(
+        [HumanMessage(content="招标方式有哪些？"), last],
+        llm_router=fake_router,
+    )
+
+    assert r.intent == "knowledge_qa"
+    assert r.resolved_question == "招标方式有哪些？请逐一介绍"
+
+
+def test_route_question_full_l1_hit_no_resolved():
+    """L1 快路径 → resolved_question 恒 None（只处理自包含确定性场景）。"""
+    from langchain_core.messages import HumanMessage
+
+    r = route_question_full(
+        [HumanMessage(content="你好")],
+        llm_router=lambda state: {"router_intent": "x"},  # noqa: E731
+    )
+    assert r.intent == "general_chat"
+    assert r.resolved_question is None
+
+
+def test_route_question_full_l3_no_replacement_none():
+    """L3 未返回 messages 替换 → resolved_question=None（自包含/旧式 fake）。"""
+    from langchain_core.messages import HumanMessage
+
+    r = route_question_full(
+        [HumanMessage(content="什么是公开招标？")],
+        llm_router=lambda state: {"router_intent": "knowledge_qa"},  # noqa: E731
+    )
+    assert r.intent == "knowledge_qa"
+    assert r.resolved_question is None
+
+
+def test_supervisor_node_applies_resolved_replacement():
+    """supervisor_node 应用 L3 追问消解 → messages 同 id 原位替换。"""
+    from langchain_core.messages import HumanMessage
+
+    from orchestration.supervisor import build_supervisor_node
+
+    last = HumanMessage(content="具体介绍一下？")
+    last.id = "msg-2"
+    fake_router = lambda state: {  # noqa: E731
+        "router_intent": "knowledge_qa",
+        "messages": [HumanMessage(content="招标方式有哪些？请逐一介绍", id="msg-2")],
+    }
+    node = build_supervisor_node(llm=None, llm_router=fake_router)
+
+    out = node({"messages": [HumanMessage(content="招标方式有哪些？"), last]})
+
+    assert out["supervisor_route"] == "knowledge_qa"
+    assert out["router_intent"] == "knowledge_qa"
+    assert out["messages"][0].content == "招标方式有哪些？请逐一介绍"
+    assert out["messages"][0].id == "msg-2"
+
+
+# ── Phase 3：澄清式反问 ──────────────────────────────────────
+
+
+def test_route_question_full_clarify_from_l3():
+    """L3 返回 router_intent=clarify + 候选 → RouteResult 澄清决策。"""
+    from langchain_core.messages import HumanMessage
+
+    fake_router = lambda state: {  # noqa: E731
+        "router_intent": "clarify",
+        "business_result": {
+            "branch": "clarify",
+            "data": {"candidates": ["招标方式有哪些？请逐一介绍", "公开招标和邀请招标的区别"]},
+        },
+    }
+    r = route_question_full(
+        [HumanMessage(content="具体介绍一下？")],
+        llm_router=fake_router,
+    )
+    assert r.intent == "clarify"
+    assert r.needs_clarification is True
+    assert r.candidates == ["招标方式有哪些？请逐一介绍", "公开招标和邀请招标的区别"]
+
+
+def test_supervisor_node_routes_clarify_with_candidates():
+    """supervisor_node 把澄清决策落到 business_result（图条件边路由到 clarify 节点）。"""
+    from langchain_core.messages import HumanMessage
+
+    from orchestration.supervisor import build_supervisor_node
+
+    fake_router = lambda state: {  # noqa: E731
+        "router_intent": "clarify",
+        "business_result": {
+            "branch": "clarify",
+            "data": {"candidates": ["招标方式有哪些？请逐一介绍"]},
+        },
+    }
+    node = build_supervisor_node(llm=None, llm_router=fake_router)
+
+    out = node({"messages": [HumanMessage(content="具体介绍一下？")]})
+
+    assert out["supervisor_route"] == "clarify"
+    assert out["router_intent"] == "clarify"
+    assert out["business_result"]["branch"] == "clarify"
+    assert out["business_result"]["data"]["candidates"] == ["招标方式有哪些？请逐一介绍"]
 
 
 # ── handoff 决策矩阵 ─────────────────────────────────────────

@@ -11,7 +11,10 @@ import { api, setDataSource } from '@/services/api';
  * ② 提交后渲染金额区间卡（万元 2 位小数）+ 相似项目卡 + 查看原文外链 + 产品明细折叠；
  * ③ 结果为空 → 空态提示。 */
 
-beforeEach(() => setDataSource('reference', 'mock'));
+beforeEach(() => {
+  setDataSource('reference', 'mock');
+  vi.restoreAllMocks();
+});
 
 const VALID_TEXT = '采购120台监控摄像头用于校园安防监控项目';
 
@@ -26,6 +29,11 @@ describe('项目概况参考面板', () => {
     expect(screen.getByText(/至少 10 字/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /查金额参考/ })).toBeDisabled();
     expect(screen.getByText(/查询后这里会显示/)).toBeInTheDocument();
+  });
+
+  it('initialText 预填输入框（对话联动入口用）', () => {
+    render(<ProjectReferencePanel initialText="海康威视中标了哪些项目？" />);
+    expect(screen.getByDisplayValue('海康威视中标了哪些项目？')).toBeInTheDocument();
   });
 
   it('输入不足 10 字仍禁用；够 10 字才可提交', () => {
@@ -77,5 +85,37 @@ describe('项目概况参考面板', () => {
 
     expect(await screen.findByText('没有找到相似项目')).toBeInTheDocument();
     expect(screen.queryByText('金额参考')).toBeNull();
+  });
+
+  it('上传文件/图片 → 解析完成后产生 chip（复用主对话上传链路）', async () => {
+    render(<ProjectReferencePanel />);
+
+    const picker = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(picker).toBeTruthy();
+    const file = new File(['x'], '招标文件.pdf', { type: 'application/pdf' });
+    fireEvent.change(picker, { target: { files: [file] } });
+
+    // mock 上传同步 done → chip 出现（带"就绪"状态）
+    expect(await screen.findByText('招标文件.pdf')).toBeInTheDocument();
+    expect(await screen.findByText(/1 个文件就绪/)).toBeInTheDocument();
+  });
+
+  it('供应商/中标类提问 → 引导移步供应商模块，不提交语义检索', async () => {
+    const fetchSpy = vi.spyOn(api.reference, 'fetch');
+    render(<ProjectReferencePanel />);
+
+    fireEvent.change(screen.getByLabelText('项目概况文本'), {
+      target: { value: '海康威视和中国移动集团的中标项目' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /查金额参考/ }));
+
+    expect(await screen.findByText(/供应商全景/)).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('项目概况（含产品）不误触供应商引导，正常提交', async () => {
+    render(<ProjectReferencePanel />);
+    await submit(VALID_TEXT);
+    expect(await screen.findByText('42.50 万元 ~ 597.92 万元')).toBeInTheDocument();
   });
 });

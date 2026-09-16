@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { chatResponseAdapter } from '@/adapters/chatAdapter';
 import { deriveColumns, resolveColumns } from '@/components/chat/PriceRecordsTable';
 import { ReplyRenderer } from '@/components/chat/renderers/ReplyRenderer';
 import { mockChatFixtures } from '@/mock/mockChat';
+import { useChatWindowStore } from '@/store/chat-window';
 import type { ChatMessage, ReplyType } from '@/types/chat';
 
 /* reply_type 渲染注册表：7 种分支逐一验证渲染结果。
@@ -40,10 +41,11 @@ const ALL_TYPES: ReplyType[] = [
   'chat',
   'safety',
   'fallback',
+  'clarify',
 ];
 
 describe('ReplyRenderer 注册表', () => {
-  it('7 种 reply_type 都能渲染出正文（无一落空）', () => {
+  it('8 种 reply_type 都能渲染出正文（无一落空）', () => {
     for (const t of ALL_TYPES) {
       const { unmount } = renderReply(t);
       expect(document.body.textContent?.trim().length ?? 0).toBeGreaterThan(20);
@@ -89,6 +91,41 @@ describe('ReplyRenderer 注册表', () => {
     const link = screen.getByRole('link', { name: /在询价模块查看详情/ });
     expect(link.getAttribute('href')).toContain('/inquiry?from=chat');
     expect(link.getAttribute('href')).toContain(encodeURIComponent('海康威视中标了哪些项目？'));
+  });
+
+  it('price_records（供应商类）：跳供应商模块并按公司名筛选（不再绕询价）', () => {
+    const res = chatResponseAdapter({
+      ...mockChatFixtures.price_records,
+      answer: '为您推荐 2 家安徽省的软件信息服务商：\n\n① 安徽海纳信息科技有限公司……',
+      data: {
+        ...(mockChatFixtures.price_records.data as Record<string, unknown>),
+        records: [
+          { company_name: '安徽海纳信息科技有限公司', industry: '软件和信息技术服务业', province: '安徽省' },
+          { company_name: '合肥某某科技有限公司', industry: '软件和信息技术服务业', province: '安徽省' },
+        ],
+        intent: { sub_route: 'company_query', query_type: 'supplier_recommend', semantic_keywords: ['软件'] },
+        columns: [],
+      },
+    });
+    render(
+      <MemoryRouter>
+        <ReplyRenderer
+          message={{
+            id: 'sup',
+            role: 'agent',
+            content: res.answer,
+            replyType: res.replyType,
+            data: res.data,
+            sourceQuestion: '推荐几个做安防的供应商',
+          }}
+        />
+      </MemoryRouter>
+    );
+
+    // 供应商类结果 → 直跳供应商模块（不是询价），并带上**首条记录的公司名**作为搜索词
+    const link = screen.getByRole('link', { name: /在供应商模块查看详情/ });
+    expect(link.getAttribute('href')).toContain('/supplier?from=chat');
+    expect(link.getAttribute('href')).toContain(encodeURIComponent('安徽海纳信息科技有限公司'));
   });
 
   it('doc_qa：来源列表 + retrieval.notes 显式兜底提示', () => {
@@ -142,6 +179,16 @@ describe('ReplyRenderer 注册表', () => {
   it('safety：给出明确的安全边界标识，不伪装成正常回答', () => {
     renderReply('safety');
     expect(screen.getByText('安全边界提示')).toBeInTheDocument();
+  });
+
+  it('clarify：引导文案 + 候选 chips，点击候选发起新一轮提问', () => {
+    const submitSpy = vi.fn();
+    useChatWindowStore.setState({ submitText: submitSpy });
+    renderReply('clarify');
+
+    expect(screen.getByText('您是想问以下哪个？')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '公开招标和邀请招标的区别' }));
+    expect(submitSpy).toHaveBeenCalledWith('公开招标和邀请招标的区别');
   });
 
   it('流式过程中（还没有 result）按纯文本渲染，不报错', () => {

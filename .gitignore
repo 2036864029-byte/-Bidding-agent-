@@ -70,6 +70,9 @@ cloud_sync/
 *.jsonl
 # 例外：评测金标集必须版本化（见 docs/plan1/评测与可观测性/）
 !DATA/eval_rag/*.jsonl
+# 例外：多轮对话金标集必须版本化（2026-09-16，见 docs/plan1/多轮对话优化执行方案_20260916.md）
+!DATA/eval_multiturn/
+!DATA/eval_multiturn/*.jsonl
 
 # ===== 本地备份 =====
 backup.sql

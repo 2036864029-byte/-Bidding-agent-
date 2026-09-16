@@ -26,6 +26,7 @@ const REPLY_TYPES: readonly ReplyType[] = [
   'chat',
   'safety',
   'fallback',
+  'clarify',
 ];
 
 /** reply_type 归一：未知分支一律回落 fallback（避免把成功作答渲染成空白）。 */
@@ -258,6 +259,8 @@ function mapData(replyType: ReplyType, data: RawObj): ChatData {
         kind: 'safety',
         status: Object.keys(asObj(data.status)).length ? asObj(data.status) : null,
       };
+    case 'clarify':
+      return { kind: 'clarify', candidates: strArray(data.candidates) };
     case 'chat':
       return { kind: 'chat' };
     case 'fallback':

@@ -494,7 +494,9 @@ def _query_tables_uncached(tables: list[str], intent: SearchIntent) -> dict[str,
         _release_connection(conn)
 
     results = list(record_map.values())
-    ranked = _rank_records(results, intent, top_k=20)
+    # 2026-09-16：显示上限可配置（默认 30，env PRICE_DISPLAY_TOP_K）。
+    # 中标项目很多时表格能多展现几条；`total_found` 仍为本次实际返回数。
+    ranked = _rank_records(results, intent, top_k=_get_settings().price_display_top_k)
 
     logger.info(
         "[SQL_PROFILE] summary: dbs=1 sql_count=%d total_sql_time=%.3fs "

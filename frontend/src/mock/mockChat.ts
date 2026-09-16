@@ -277,6 +277,25 @@ const fallback: ChatRawResponse = {
   error_code: null,
 };
 
+/** clarify：追问无法消解 → 反问 + 一键候选（Phase 3）。 */
+const clarify: ChatRawResponse = {
+  answer: '您是想问以下哪个？',
+  reply_type: 'clarify',
+  intent: 'clarify',
+  citations: [],
+  data: {
+    candidates: [
+      '招标方式有哪些？请逐一介绍',
+      '公开招标和邀请招标的区别',
+      '评标委员会怎么组成？',
+    ],
+    original: '具体介绍一下？',
+  },
+  latency_ms: 980,
+  session_id: '5ce3a9c6abcdef0123456789abcdef0',
+  error_code: null,
+};
+
 /** 按 reply_type 索引的 fixture 表。 */
 export const mockChatFixtures: Record<ReplyType, ChatRawResponse> = {
   kb_answer: kbAnswer,
@@ -286,6 +305,7 @@ export const mockChatFixtures: Record<ReplyType, ChatRawResponse> = {
   chat,
   safety,
   fallback,
+  clarify,
 };
 
 /** 与 kb_answer 相关的示例问题（浮窗引导语用）。 */

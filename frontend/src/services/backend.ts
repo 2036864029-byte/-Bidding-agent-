@@ -362,6 +362,10 @@ export interface ReferenceQuery {
   topK?: number;
   minAmountWan?: number;
   region?: string;
+  /** 上传的招标文件/图片 id（复用 /files/upload 解析，服务端并入概况查询） */
+  fileIds?: string[];
+  /** 与 fileIds 配套的会话 id（文件归属校验） */
+  sessionId?: string;
 }
 
 export async function fetchReference(
@@ -372,6 +376,8 @@ export async function fetchReference(
   if (opts.topK !== undefined) body.top_k = opts.topK;
   if (opts.minAmountWan !== undefined) body.min_amount_wan = opts.minAmountWan;
   if (opts.region) body.region = opts.region;
+  if (opts.fileIds && opts.fileIds.length) body.file_ids = opts.fileIds;
+  if (opts.sessionId) body.session_id = opts.sessionId;
   return withRetry(() =>
     request<ReferenceRawResponse>('/inquiry/reference', {
       method: 'POST',

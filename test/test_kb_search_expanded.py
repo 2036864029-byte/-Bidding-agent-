@@ -103,6 +103,32 @@ def test_split_clauses_filters_short():
     assert _split_clauses("短？更短", 8) == []
 
 
+def test_expanded_skips_clauses_when_base_empty(monkeypatch):
+    """base 检索为空 → 不再为子句补检付检索成本（拒答路径省钱）。
+
+    旧逻辑 `clauses and len(docs) < max_chunks` 在 docs=[] 时恒真，空结果仍
+    白付多次子句检索；2026-09-16 起 base 空直接短路。
+    """
+    calls = {"retrieve": 0}
+
+    def _retrieve(q):
+        calls["retrieve"] += 1
+        return SimpleNamespace(
+            docs=[],
+            diagnostics=SimpleNamespace(to_dict=lambda: {}),
+        )
+
+    monkeypatch.setattr(
+        "public_kb.tools._get_retriever", lambda: SimpleNamespace(retrieve=_retrieve)
+    )
+
+    # Q 能切出 2 个子句（≥8 字）——若没短路会再多 2 次检索
+    result = kb_search_expanded(Q)
+
+    assert result.chunks == []
+    assert calls["retrieve"] == 1, "base 为空时只应付一次基线检索"
+
+
 def test_subgraph_routes_on_switch(monkeypatch):
     """开关 False → kb_search；True → kb_search_expanded。"""
     called: dict = {}

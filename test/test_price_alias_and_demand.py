@@ -43,6 +43,21 @@ class TestStripRegionPrefix:
         assert strip_region_prefix("中国移动") == "中国移动"
 
 
+class TestStripOrgSuffix:
+    def test_group_short(self):
+        assert alias.strip_org_suffix("中国移动集团") == "中国移动"
+
+    def test_group_with_business(self):
+        assert alias.strip_org_suffix("中国移动通信集团") == "中国移动通信"
+
+    def test_no_suffix(self):
+        assert alias.strip_org_suffix("海康威视") == "海康威视"
+
+    def test_full_name_untouched(self):
+        # 集团不在末尾（后面还有 有限公司）→ 不动
+        assert alias.strip_org_suffix("中国移动通信集团有限公司") == "中国移动通信集团有限公司"
+
+
 class TestResolveCompanyFamilies:
     def test_valid_full_name_unchanged(self, monkeypatch):
         # 已是全称 → 不动，保持精确匹配
@@ -62,6 +77,36 @@ class TestResolveCompanyFamilies:
         assert intent.hard_filters.successful_bidder == "海康威视"
         # 解析后守卫放行（此前 False → 引导）
         assert has_valid_query_entity(intent) is True
+
+    def test_bare_hikvision_resolves(self, monkeypatch):
+        # 「海康威视」无后缀无地区：确认改为包含匹配（杭州海康威视…）后应放行
+        monkeypatch.setattr(alias, "_confirm_family_exists", lambda s: True)
+        intent = _intent(successful_bidder="海康威视")
+        desc = resolve_company_families(intent)
+        assert "海康威视" in desc
+        assert intent.resolved_families == {"successful_bidder": "海康威视"}
+        assert has_valid_query_entity(intent) is True
+
+    def test_group_short_resolves_to_base(self, monkeypatch):
+        # 「中国移动集团」被当有效全称但库中无此名 → 剥集团 → 中国移动
+        monkeypatch.setattr(alias, "_confirm_family_exists", lambda s: True)
+        intent = _intent(successful_bidder="中国移动集团")
+        desc = resolve_company_families(intent)
+        assert "中国移动" in desc
+        assert intent.resolved_families == {"successful_bidder": "中国移动"}
+        assert has_valid_query_entity(intent) is True
+
+    def test_family_syncs_semantic_keywords(self, monkeypatch):
+        # FULLTEXT 用 semantic_keywords 做 ngram 布尔检索：「中国移动集团」的
+        # bigram「动集」不存在 → 0 命中；解析后必须把关键词同步成字号「中国移动」。
+        monkeypatch.setattr(alias, "_confirm_family_exists", lambda s: True)
+        intent = _intent(successful_bidder="中国移动集团")
+        intent.semantic_keywords = ["中国移动集团"]
+        intent.exact_tokens = ["中国移动集团"]
+        resolve_company_families(intent)
+        assert intent.resolved_families == {"successful_bidder": "中国移动"}
+        assert intent.semantic_keywords == ["中国移动"]
+        assert intent.exact_tokens == ["中国移动"]
 
     def test_unconfirmed_short_name_unchanged(self, monkeypatch):
         # 确认不到真实企业 → 不解析，守卫仍拦截（防幻觉）
@@ -245,3 +290,52 @@ class TestProductDemandRendering:
         answer = render_answer("product_demand", [], entity="摄像头")
         assert "摄像头" in answer
         assert "更通用的产品名称" in answer
+
+
+# ═════════════════════════════════════════════════════════
+# 供应商推荐渲染（干净列表，不再回退 mixed 字段堆砌）
+# ═════════════════════════════════════════════════════════
+
+class TestSupplierRecommendRendering:
+    RECORDS = [
+        {
+            "company_name": "安徽建工集团工程有限公司",
+            "industry": "土木工程建筑业",
+            "province": "安徽省", "city": "合肥市",
+            "registered_capital": "1018万人民币",
+            "legal_person": "张军",
+            "business_status": "存续",
+            "company_type": "有限责任公司(自然人投资或控股)",
+            "credit_code": "91340181689778743B",
+        },
+        {
+            "company_name": "安徽中安建设有限公司",
+            "industry": "土木工程建筑业",
+            "province": "安徽省", "city": "芜湖市",
+            "registered_capital": "5000万人民币",
+            "legal_person": "李明",
+            "business_status": "存续",
+            "company_type": "有限责任公司",
+            "credit_code": "91340200123456789A",
+        },
+    ]
+
+    def test_multi_renders_clean_list(self):
+        answer = render_answer("supplier_recommend", self.RECORDS, entity="安徽省 工程类")
+        assert "为您推荐 2 家" in answer
+        assert "安徽建工集团工程有限公司" in answer
+        assert "安徽中安建设有限公司" in answer
+        assert "注册资本 1018万人民币" in answer
+        # 不再堆砌原始字段（此前回退 mixed 会带上 id/credit_code/address）
+        assert "id: " not in answer
+        assert "credit_code" not in answer
+        assert "business_scope" not in answer
+
+    def test_single_renders(self):
+        answer = render_answer("supplier_recommend", self.RECORDS[:1], entity="安徽省 工程类")
+        assert "为您推荐：安徽建工集团工程有限公司" in answer
+
+    def test_empty_guides(self):
+        answer = render_answer("supplier_recommend", [], entity="安徽省 工程类")
+        assert "未找到" in answer
+        assert "换一个行业关键词" in answer

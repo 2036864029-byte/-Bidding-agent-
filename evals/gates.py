@@ -25,6 +25,11 @@ RETRIEVAL_GATES = {           # multi 口径（holdout 实测：0.6000 / 0.7857 
 GENERATION_TOL = -0.02        # 生成层 Δ 下限（不稀释；S1 实测三项均为正）
 SYSTEM_MAX_ERR_RATE = 0.05    # LLM 错误率上限
 SYSTEM_MAX_BRANCH_MS = 15000  # knowledge_qa 分支均值上限（实测 7.6s/题）
+# 多轮对话门禁（2026-09-16，Phase 0/1）—— 阈值来自 multiturn_30 金标设计值：
+#   省略/指代改写召回 = 19/20 = 0.95（edge-02"有哪些成员？"为 Phase 2 目标，故意放行）
+#   自包含误改写 = 0/10 = 0.00
+MULTITURN_ELLIPSIS_RECALL = 0.90   # rewrite=True 的追问轮里，precheck 命中率下限
+MULTITURN_SELF_CONTAINED_FP = 0.10  # rewrite=False 的轮次里，precheck 误触发率上限
 
 
 def _res(name: str, value, target, kind: str, passed: bool) -> dict:
@@ -72,6 +77,27 @@ def check_system(summary: dict, max_err_rate: float = SYSTEM_MAX_ERR_RATE,
     return out
 
 
+def check_multiturn(
+    summary: dict,
+    ellipsis_recall: float = MULTITURN_ELLIPSIS_RECALL,
+    self_contained_fp: float = MULTITURN_SELF_CONTAINED_FP,
+) -> List[dict]:
+    """summary = `evals.runners.multiturn.run_precheck(...)["summary"]`。
+
+    断言两条（offline，零 LLM/零网络，可进 CI）：
+      - 省略/指代追问的改写预判召回 ≥ 下限（防改写漏触发 → 断链回归）；
+      - 自包含追问的误改写率 ≤ 上限（防自包含问题白付改写 LLM）。
+    """
+    out = []
+    recall = summary.get("ellipsis_recall")
+    out.append(_res(f"多轮 · 省略/指代改写召回 ≥ {ellipsis_recall:.2f}", recall,
+                    ellipsis_recall, "abs", recall is not None and recall >= ellipsis_recall))
+    fp = summary.get("self_contained_false_positive")
+    out.append(_res(f"多轮 · 自包含误改写 ≤ {self_contained_fp:.2f}", fp,
+                    self_contained_fp, "abs", fp is not None and fp <= self_contained_fp))
+    return out
+
+
 def all_passed(results: Sequence[dict]) -> bool:
     return all(r["passed"] for r in results)
 
@@ -89,5 +115,7 @@ def render_gates(results: Sequence[dict], title: str = "评测门禁") -> str:
 
 __all__ = [
     "RETRIEVAL_GATES", "GENERATION_TOL", "SYSTEM_MAX_ERR_RATE", "SYSTEM_MAX_BRANCH_MS",
-    "check_retrieval", "check_generation", "check_system", "all_passed", "render_gates",
+    "MULTITURN_ELLIPSIS_RECALL", "MULTITURN_SELF_CONTAINED_FP",
+    "check_retrieval", "check_generation", "check_system", "check_multiturn",
+    "all_passed", "render_gates",
 ]

@@ -198,11 +198,13 @@ def build_supplier_overview(
     """供应商全景：**按地区 / 行业筛选**，返回基本信息 + 中标情况。
 
     数据源是 `company_unified`（`ztb_clean.company_info` 38,911 家工商档案
-    ∪ `bidding.supplier` 1,058 家新品），中标业绩来自 `company_win` 关联表。
+    ∪ `bidding.supplier` 新品，其中 **69 家与 LEGACY 同信用代码/同名已跨源合并**
+    进 LEGACY 富行，见 `scripts/build_company_unified.py::merge_cross_source`），
+    中标业绩来自 `company_win` 关联表。
 
     ⚠️ 两条必须如实说明的口径：
-      1. **工商信息只有 LEGACY 侧有**（省份/行业/法人/注册资本…）。CCGP 侧那 1,058 家
-         是交付包里 8 天的新公司，没有工商数据 —— `province`/`industry` 为 null，
+      1. **工商信息只有 LEGACY 侧有**（省份/行业/法人/注册资本…）。CCGP 侧其余
+         公司是交付包里 8 天的新公司，没有工商数据 —— `province`/`industry` 为 null，
          因此**按地区/行业筛选时它们不会出现**（只在"全部"里可见）。
       2. 中标业绩来自名称匹配（归一化后），非权威关联。多中标人已按人数**均摊金额**。
 

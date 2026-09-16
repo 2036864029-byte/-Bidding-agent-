@@ -34,10 +34,34 @@ logger = logging.getLogger(__name__)
 MAX_TURNS = 4
 
 #: 疑似追问的指代/省略线索（命中其一才花 LLM 调用；宁缺毋滥）
+#: 2026-09-16 扩展命令式省略词（"具体介绍一下？"）——修 W3-1 已知限制。
 _REFERENTIAL_HINTS = (
     "那", "这", "它", "该", "其", "换", "继续", "上述",
     "它们", "他们", "他的", "她的", "其他", "另外", "还有", "同上",
+    "具体", "详细", "展开", "再", "接着", "然后",
 )
+
+#: 结构式省略判据（短句 + 无话题词）用的话题词：含任一 → 视为自包含（有独立主题）
+_TOPIC_MARKERS = (
+    "招标", "投标", "采购", "公司", "企业", "项目", "处罚", "违规", "违法",
+    "记录", "金额", "价格", "报价", "单价", "总价", "中标", "合同", "验收",
+    "评标", "法规", "政策", "标准", "保证金", "供应商", "政府", "监督",
+    "资质", "注册", "法人", "成员", "责任", "资格", "文件", "公告", "编号",
+    "摄像头", "服务器", "家具", "设备", "空调", "监控", "电梯", "物业", "咨询",
+)
+
+#: 问候/闲聊排除：命中直接判非追问（避免 supervisor L1 前白付一次改写 LLM）
+_GREETING_WORDS = (
+    "你好", "您好", "你好啊", "您好啊", "嗨", "hello", "hi", "在吗",
+    "再见", "谢谢", "辛苦了", "你能做什么", "你是谁", "早上好", "下午好",
+)
+
+#: 疑问词开头（自包含独立问句）："什么是围标？""如何投标？"即使短也不改写。
+#: 刻意**不含**"多少"——"多少钱？"在本领域几乎总是省略式追问（价格类）。
+_QUESTION_HEAD = ("什么", "如何", "怎么", "哪些", "谁", "为什么", "怎么样")
+
+#: 结构式省略判据的短句阈值（去空白后字符数 ≤ 该值 → 疑似省略）
+_ELLIPSIS_MAX_LEN = 12
 
 _REWRITE_SYSTEM = (
     "你是招投标助手的「问题归一化器」。给定对话历史和当前用户问题：\n"
@@ -64,25 +88,61 @@ def _history_text(messages: list, max_turns: int) -> str:
     return "\n".join(lines)
 
 
-def looks_like_followup(messages) -> bool:
-    """确定性预判：当前问题是否疑似追问（决定是否调用改写 LLM）。"""
+def looks_like_followup(messages, *, mode: str = "heuristic") -> bool:
+    """确定性预判：当前问题是否疑似追问（决定是否调用改写 LLM）。
+
+    mode（对应 `Settings.multiturn_rewrite_trigger`）：
+      - ``heuristic``（默认）：指代线索词命中，或（≥2 轮 + 短句 + 无话题词）
+        → 疑似追问。补上 2026-09-16 前只认线索词漏掉的**零代词省略式追问**
+        （"具体介绍一下？""大概多少钱？"）。
+      - ``hints``：只认指代线索词（旧行为，回退用）。
+      - ``always``：有历史即视为追问（宁多勿漏；自包含短句也多一次 LLM 调用）。
+    """
     users = [m for m in messages if isinstance(m, HumanMessage)]
     if len(users) < 2:
         return False  # 首问必自包含
     if not messages or not isinstance(messages[-1], HumanMessage):
         return False
-    last = str(messages[-1].content)
-    return any(hint in last for hint in _REFERENTIAL_HINTS)
+    last = str(messages[-1].content).strip()
+    if not last:
+        return False
+    if any(g in last for g in _GREETING_WORDS):
+        return False  # 问候/闲聊（supervisor L1 能更快拦截，不白付改写 LLM）
+    if mode == "always":
+        return True
+    if mode == "hints":
+        return any(h in last for h in _REFERENTIAL_HINTS)
+    # heuristic：线索词命中，或短句 + 无话题词（省略式）
+    if any(h in last for h in _REFERENTIAL_HINTS):
+        return True
+    if last.startswith(tuple(_QUESTION_HEAD)):
+        return False  # "什么是X？" 类独立问句，即使短也不改写
+    return (
+        len(last) <= _ELLIPSIS_MAX_LEN
+        and not any(t in last for t in _TOPIC_MARKERS)
+    )
 
 
 def rewrite_question(question: str, history_text: str, llm: BaseChatModel) -> str:
-    """调用 LLM 归一化问题；失败/空结果时原样返回。"""
+    """调用 LLM 归一化问题；失败/空结果时原样返回。
+
+    改写前后对照写入 trace（`node.rewrite` span）：Langfuse 每轮可见
+    ``ztb.rewrite.original → ztb.rewrite.resolved``，供 E4-1 回灌核对。
+    未启用 tracing 时 span 为 no-op，零开销。
+    """
+    from core.observability.tracing import observation_io, set_span_attrs, span
+
     try:
         chain = _REWRITE_TEMPLATE | llm | StrOutputParser()
-        out = chain.invoke({"history": history_text, "question": question}).strip()
-        if out:
-            logger.info("查询改写: %r -> %r", question[:60], out[:120])
-            return out
+        with span("node.rewrite", **{"ztb.rewrite.original": question[:200]}) as sp:
+            out = chain.invoke({"history": history_text, "question": question}).strip()
+            if out:
+                set_span_attrs(sp, **{
+                    "ztb.rewrite.resolved": out[:200],
+                    **observation_io(question, out),
+                })
+                logger.info("查询改写: %r -> %r", question[:60], out[:120])
+                return out
     except Exception as exc:
         logger.warning("查询改写 LLM 调用失败，沿用原问题: %s", exc)
     return question
@@ -93,14 +153,23 @@ def build_rewrite_node(
     llm: Optional[BaseChatModel] = None,
     llm_factory: Optional[Callable[[], BaseChatModel]] = None,
     max_turns: int = MAX_TURNS,
+    mode: Optional[str] = None,
 ) -> Callable[[dict, Optional[RunnableConfig]], dict]:
     """构建查询改写节点 `(state, config?) -> dict`。
 
     Args:
         llm / llm_factory: 注入（测试用）；缺省用 models.yaml 的 rewrite 槽位。
         max_turns: 送入改写器的最近轮数。
+        mode: 改写预判模式（hints/heuristic/always）；None 读 Settings。
     """
     _llm: Optional[BaseChatModel] = llm
+    if mode is None:
+        try:
+            mode = Settings().multiturn_rewrite_trigger
+        except Exception:  # noqa: BLE001  配置不可用时退化为默认 heuristic
+            mode = "heuristic"
+    if mode not in ("hints", "heuristic", "always"):
+        mode = "heuristic"
 
     def _get_llm() -> BaseChatModel:
         nonlocal _llm
@@ -114,7 +183,7 @@ def build_rewrite_node(
     def node(state: dict, config: Optional[RunnableConfig] = None) -> dict:
         messages = state.get("messages") or []
         try:
-            if not looks_like_followup(messages):
+            if not looks_like_followup(messages, mode=mode):
                 return {}
             question = str(messages[-1].content)
             rewritten = rewrite_question(question, _history_text(messages, max_turns), _get_llm())

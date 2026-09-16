@@ -51,6 +51,8 @@ interface ChatWindowState {
   setInput: (v: string) => void;
   /** 发送：追加用户消息 + 占位 agent 消息，开流式 */
   submit: () => void;
+  /** 直接以指定文本发起一轮提问（澄清候选 chips 点击用；不经输入框） */
+  submitText: (question: string) => void;
   /** 重试某条失败的 agent 消息（重发它前面那条用户消息） */
   retry: (messageId: string) => void;
   /** 停止生成：中断流，保留已收到的内容 */
@@ -166,6 +168,12 @@ export const useChatWindowStore = create<ChatWindowState>((set, get) => {
       const q = input.trim();
       if (!q || busy) return;
       set({ input: '' });
+      startStream(q);
+    },
+
+    submitText: (question) => {
+      const q = question.trim();
+      if (!q || get().busy) return;
       startStream(q);
     },
 

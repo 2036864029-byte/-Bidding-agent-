@@ -74,12 +74,28 @@ def tool_intent_map(caps: List[CapabilitySpec]) -> dict:
 
 
 def build_decision_model(intents: List[str]) -> Type[BaseModel]:
-    """为当前候选集动态构建 RouterDecision（intent 限制为 enabled 能力 id）。"""
+    """为当前候选集动态构建 RouterDecision（intent 限制为 enabled 能力 id）。
+
+    Phase 2（2026-09-16）：加 `resolved_question`——路由与追问消解合并为一次调用。
+    下游（业务节点检索）经同 id 原位替换 `messages[-1]` 拿到归一化问题。
+    """
     intent_type = Literal[tuple(intents)]
     return create_model(
         "RouterDecision",
         intent=(intent_type, Field(description="用户意图分类")),
         reason=(str, Field(description="分类理由，4~8 字")),
+        resolved_question=(
+            Optional[str],
+            Field(None, description="若当前输入是追问（指代/省略上文实体），输出消解后的独立问题；自包含留空"),
+        ),
+        needs_clarification=(
+            bool,
+            Field(False, description="无法消解当前追问时置 True（触发澄清反问，Phase 3 接线）"),
+        ),
+        candidates=(
+            List[str],
+            Field(default_factory=list, description="澄清候选问题（≤3 条，needs_clarification=True 时给出）"),
+        ),
     )
 
 
@@ -93,7 +109,10 @@ ROUTER_USER_TEMPLATE = """【对话历史】
 【当前用户输入】
 {user_input}
 
-请调用对应的路由工具。结合历史判断真实意图，不确定时用 route_fallback。"""
+先判断当前输入是否为追问（指代或省略了上文出现过的公司/项目/产品/法规等实体）：
+- 是追问 → `resolved_question` 输出为去掉指代、补齐实体的独立问题；
+- 是自包含问题 → `resolved_question` 留空。
+然后**基于改写后的问题**确定真实意图，调用对应的路由工具。不确定时用 route_fallback。"""
 
 
 # ═════════════════════════════════════════════════════════
@@ -135,8 +154,8 @@ def _route_via_tool_calling(
 def _route_via_structured_output(
     llm: BaseChatModel, history_str: str, user_input: str,
     *, decision_model: Type[BaseModel], system_prompt: str,
-) -> str:
-    """通过 with_structured_output 实现路由。"""
+) -> Any:
+    """通过 with_structured_output 实现路由。返回 RouterDecision（含 resolved_question）。"""
     structured_llm = llm.with_structured_output(decision_model)
     decision = structured_llm.invoke([
         SystemMessage(content=system_prompt),
@@ -144,7 +163,40 @@ def _route_via_structured_output(
     ])
     intent = getattr(decision, "intent", None) or "fallback"
     logger.info("路由(structured): intent=%s", intent)
-    return intent
+    return decision
+
+
+def _route_via_tool_calling_with_rewrite(
+    llm: BaseChatModel,
+    messages: List,
+    history_str: str,
+    user_input: str,
+    *,
+    tools: List[BaseTool],
+    tool_map: dict,
+    system_prompt: str,
+) -> dict:
+    """Tool Calling 路径：工具参数无法回传 `resolved_question` → 先确定性预判+改写
+    （复用 W3-1 `looks_like_followup` + `rewrite_question`），再对改写后问题路由。
+
+    返回完整节点 dict（`router_intent` + 需要时的原位 `messages` 替换），
+    保证合并模式下 tool_fallback 环境里的追问不因无法结构化输出而断链。
+    """
+    from .nodes.rewrite import looks_like_followup, rewrite_question
+
+    resolved = user_input
+    if looks_like_followup(messages):
+        rewritten = rewrite_question(user_input, history_str, llm)
+        if rewritten and rewritten != user_input:
+            resolved = rewritten
+    intent = _route_via_tool_calling(
+        llm, history_str, resolved,
+        tools=tools, tool_map=tool_map, system_prompt=system_prompt,
+    )
+    out = {"router_intent": intent}
+    if resolved != user_input:
+        out["messages"] = [HumanMessage(content=resolved, id=messages[-1].id)]
+    return out
 
 
 def enabled_specs(registry: Optional[CapabilityRegistry] = None) -> List[CapabilitySpec]:
@@ -186,6 +238,13 @@ def build_router_node(llm: BaseChatModel, *, registry: Optional[CapabilityRegist
 
     # 用 dict 包装可变状态（避免 nonlocal 问题）
     state = {"tool_fallback": tool_fallback}
+    # Phase 3：澄清式反问开关（构建期捕获，测试可注入）
+    try:
+        from core.config.settings import Settings
+
+        clarify_enabled = Settings().clarify_enabled
+    except Exception:  # noqa: BLE001  配置不可用时按开启处理
+        clarify_enabled = True
 
     def router_node(agent_state: AgentState) -> dict:
         messages = agent_state.get("messages", [])
@@ -208,27 +267,57 @@ def build_router_node(llm: BaseChatModel, *, registry: Optional[CapabilityRegist
 
         try:
             if state["tool_fallback"]:
-                intent = _route_via_tool_calling(
-                    llm, history_str, user_input,
+                # 工具参数无法回传 resolved_question → 先独立改写再路由
+                return _route_via_tool_calling_with_rewrite(
+                    llm, messages, history_str, user_input,
                     tools=tools, tool_map=tool_map, system_prompt=system_prompt,
                 )
-            else:
-                try:
-                    intent = _route_via_structured_output(
+            try:
+                from core.observability.tracing import observation_io, set_span_attrs, span
+
+                with span("node.understand", **{"ztb.understand.original": user_input[:200]}) as sp:
+                    decision = _route_via_structured_output(
                         llm, history_str, user_input,
                         decision_model=decision_model, system_prompt=system_prompt,
                     )
-                except Exception as e:
-                    err = str(e).lower()
-                    if any(k in err for k in ("response_format", "unavailable", "not supported")):
-                        state["tool_fallback"] = True
-                        logger.info("Router: 运行时切换到 Tool Calling")
-                        intent = _route_via_tool_calling(
-                            llm, history_str, user_input,
-                            tools=tools, tool_map=tool_map, system_prompt=system_prompt,
-                        )
-                    else:
-                        raise
+                    intent = getattr(decision, "intent", None) or "fallback"
+                    resolved = (getattr(decision, "resolved_question", None) or "").strip() or None
+                    needs_clarify = bool(getattr(decision, "needs_clarification", False))
+                    candidates = [
+                        str(c) for c in (getattr(decision, "candidates", None) or [])
+                        if str(c).strip()
+                    ][:3]
+                    set_span_attrs(sp, **{
+                        "ztb.understand.intent": intent,
+                        "ztb.understand.resolved": resolved or "",
+                        "ztb.understand.needs_clarification": needs_clarify,
+                        **observation_io(user_input, resolved or intent),
+                    })
+            except Exception as e:
+                err = str(e).lower()
+                if any(k in err for k in ("response_format", "unavailable", "not supported")):
+                    state["tool_fallback"] = True
+                    logger.info("Router: 运行时切换到 Tool Calling")
+                    return _route_via_tool_calling_with_rewrite(
+                        llm, messages, history_str, user_input,
+                        tools=tools, tool_map=tool_map, system_prompt=system_prompt,
+                    )
+                raise
+            # Phase 3：追问无法消解 → 澄清反问（候选写进 business_result，图路由到 clarify）
+            if clarify_enabled and needs_clarify and candidates:
+                return {
+                    "router_intent": "clarify",
+                    "business_result": {
+                        "branch": "clarify",
+                        "data": {"candidates": candidates, "original": user_input},
+                    },
+                }
+            if resolved and resolved != user_input:
+                # 同 id 原位替换：add_messages 合并，业务节点检索用归一化问题
+                return {
+                    "router_intent": intent,
+                    "messages": [HumanMessage(content=resolved, id=messages[-1].id)],
+                }
             return {"router_intent": intent}
         except Exception as e:
             logger.error("路由失败 → fallback: %s", e)

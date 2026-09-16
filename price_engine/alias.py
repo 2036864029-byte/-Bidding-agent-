@@ -71,8 +71,29 @@ def strip_region_prefix(name: str) -> str:
     return name
 
 
-# 解析确认源：简称必须能在这些表里找到前缀，才认为是真实企业字号（防幻觉）。
-# 前缀 LIKE 可走索引；各段不加 LIMIT（UNION 后统一 LIMIT 1）。
+# 组织形态短称后缀：口语里常把「集团」直接挂在字号后（中国移动集团），
+# 真实公司名是「中国移动通信集团…」——剥掉后字号才落进公司名。
+# 完整注册形式（…集团有限公司 / …有限公司）**不剥**，只有裸「集团」结尾才剥。
+_FULL_FORM_SUFFIXES = ("集团有限公司", "有限责任公司", "股份有限公司", "有限公司", "股份公司")
+
+
+def strip_org_suffix(name: str) -> str:
+    """剥公司名末尾的裸「集团」后缀，返回字号段。
+
+    '中国移动集团' → '中国移动'；'中国移动通信集团' → '中国移动通信'；
+    '中国移动通信集团有限公司' → 不动（已是完整注册名）；
+    '海康威视' → '海康威视'（无后缀不动）。
+    """
+    if any(name.endswith(s) for s in _FULL_FORM_SUFFIXES):
+        return name
+    if name.endswith("集团") and len(name) > 2:
+        return name[:-2]
+    return name
+
+
+# 解析确认源：简称必须能在这些表里找到真实企业，才认为是字号（防幻觉）。
+# 同一 SQL 跑两种模式：前缀 `short%`（走索引）→ 命中即真；前缀 miss 再跑
+# 包含 `%short%`（裸字号如「海康威视」的公司名都带地区前缀，必须包含匹配）。
 _CONFIRM_SQL = """
 SELECT 1 FROM `company_info` WHERE `company_name` LIKE %s
 UNION ALL
@@ -84,16 +105,21 @@ LIMIT 1
 
 
 def _confirm_family_exists(short: str) -> bool:
-    """简称是否为真实企业字号前缀（company_info / bid_project 命中其一）。"""
+    """简称是否为真实企业字号（company_info / bid_project 命中其一）。
+
+    先前缀（`short%`，索引友好），前缀 miss 再包含（`%short%`）。
+    """
     settings = _get_settings()
     conn = _get_connection(settings.mysql_clean_db)
     if conn is None:
         return False
     try:
-        like = short + "%"
         with conn.cursor() as cur:
-            cur.execute(_CONFIRM_SQL, (like, like, like))
-            return cur.fetchone() is not None
+            for like in (short + "%", "%" + short + "%"):
+                cur.execute(_CONFIRM_SQL, (like, like, like))
+                if cur.fetchone() is not None:
+                    return True
+            return False
     except Exception as exc:  # noqa: BLE001  确认失败按不存在处理，不影响主流程
         logger.debug("公司字号确认查询失败: %s", exc)
         return False
@@ -101,13 +127,45 @@ def _confirm_family_exists(short: str) -> bool:
         _release_connection(conn)
 
 
+def _sync_keywords_to_family(intent: SearchIntent, value: str, family: str) -> None:
+    """把语义关键词 / 精确词里等于原实体的项替换为解析后的字号（就地）。
+
+    为什么必须同步：FULLTEXT 阶段用 ``semantic_keywords`` 做 ngram 布尔检索，
+    「中国移动集团」被切成 中国/国移/移动/动集/集团 五个 bigram，而真实公司名
+    （中国移动**通**信集团…）里没有「动集」连续二字 → 0 命中。家族解析成
+    「中国移动」后，它的 bigram 全部存在 → 命中 68 行。
+    """
+    for attr in ("semantic_keywords", "exact_tokens"):
+        lst = getattr(intent, attr, None)
+        if not lst:
+            continue
+        changed = False
+        out: list[str] = []
+        for item in lst:
+            if item and (item == value or value in item or item in value):
+                out.append(family)
+                changed = True
+            else:
+                out.append(item)
+        if changed:
+            setattr(intent, attr, out)
+
+
 def resolve_company_families(intent: SearchIntent) -> str:
     """对 intent 的公司实体字段做字号族解析（就地修改），返回动作描述或 ''。
 
     - company_name / purchaser / successful_bidder 三个字段都试；
-    - 已是有效全称 → 跳过；
-    - 简称经确认 → 剥地区取字号 → ``hard_filters[field]=字号`` 且
-      ``resolved_families[field]=字号``（SQL 侧按 LIKE 匹配）。
+    - 已是有效工商全称（如「杭州海康威视数字技术股份有限公司」）→ 跳过，精确匹配；
+    - 简称（无后缀，如「海康威视」/「杭州海康威视」）→ 确认是真实字号后，
+      取字号 → ``hard_filters[field]=字号`` 且 ``resolved_families[field]=字号``
+      （SQL 侧 ``LIKE '%字号%'`` 匹配全家族）；
+    - 「集团」结尾的短称（「中国移动集团」→「中国移动」）同样先剥组织后缀再确认——
+      它被 ``_is_valid_company_name`` 判为"有效"，但库里没有这个名字的公司，
+      剥掉「集团」后字号才落进「中国移动通信集团…」；
+    - 确认不到 → 不动（走原守卫引导，话术不变）。
+
+    候选字号按**更泛优先**（先剥组织后缀、再剥地区、最后原文），
+    确认即用——如「杭州海康威视」优先命中「海康威视」而非「杭州海康威视」。
     """
     hf = intent.hard_filters
     changes: list[str] = []
@@ -119,19 +177,26 @@ def resolve_company_families(intent: SearchIntent) -> str:
         value = value.strip()
         if not value:
             continue
-        if _is_valid_company_name(value):
-            continue  # 已是全称：原精确匹配，行为不变
+        # 有效全称且不是集团/分公司短称 → 不动（原精确匹配，行为不变）
+        if _is_valid_company_name(value) and not value.endswith(("集团", "分公司")):
+            continue
 
-        if not _confirm_family_exists(value):
-            continue  # 非真实企业前缀：不解析，走原守卫引导
+        # 候选字号：先剥组织后缀、再剥地区、最后才是原文（更泛优先）
+        candidates: list[str] = []
+        base = strip_org_suffix(value)
+        fam = strip_region_prefix(base)
+        for cand in (fam, base, value):
+            if cand and len(cand) >= 2 and cand not in candidates:
+                candidates.append(cand)
 
-        family = strip_region_prefix(value)
-        if not family or family == value:
-            # 剥不出更短字号（无地区），直接用原简称做 LIKE（如「中国移动」）
-            family = value
-        setattr(hf, field, family)
-        intent.resolved_families[field] = family
-        changes.append(f"{field}:{value}→{family}")
+        for cand in candidates:
+            if not _confirm_family_exists(cand):
+                continue
+            setattr(hf, field, cand)
+            intent.resolved_families[field] = cand
+            _sync_keywords_to_family(intent, value, cand)
+            changes.append(f"{field}:{value}→{cand}")
+            break
 
     if changes:
         logger.info("[COMPANY_FAMILY_RESOLVE] %s", "; ".join(changes))

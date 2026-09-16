@@ -14,7 +14,8 @@ export type ReplyType =
   | 'deep_agent'
   | 'chat'
   | 'safety'
-  | 'fallback';
+  | 'fallback'
+  | 'clarify';
 
 /** kb_answer 引用条目 —— 回答文本中【来源N】对应的原文。 */
 export interface Citation {
@@ -154,7 +155,8 @@ export type ChatData =
   | { kind: 'deep_agent'; trace: AgentTrace; draftAnswer: string }
   | { kind: 'safety'; status: Record<string, unknown> | null }
   | { kind: 'chat' }
-  | { kind: 'fallback' };
+  | { kind: 'fallback' }
+  | { kind: 'clarify'; candidates: string[] };
 
 /** /chat 完整响应（Domain 形态）。 */
 export interface ChatResponse {

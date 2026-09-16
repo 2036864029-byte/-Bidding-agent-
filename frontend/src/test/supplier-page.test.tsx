@@ -74,4 +74,23 @@ describe('供应商全景页', () => {
     const dialog = await screen.findByRole('dialog', { name: /供应商详情/ });
     expect(within(dialog).getByText(/暂无工商信息/)).toBeInTheDocument();
   });
+
+  it('来自对话：带 q 参数 → 预填企业名筛选 + 「来自对话」横幅', async () => {
+    render(
+      <MemoryRouter initialEntries={['/supplier?from=chat&q=安徽海纳信息科技有限公司']}>
+        <SupplierPage />
+      </MemoryRouter>
+    );
+
+    // 横幅在位，且给出被筛选的企业
+    expect(await screen.findByText('来自对话')).toBeInTheDocument();
+    expect(screen.getByText('「安徽海纳信息科技有限公司」')).toBeInTheDocument();
+    // 关键词输入框已预填
+    expect((screen.getByLabelText('按企业名称搜索') as HTMLInputElement).value).toBe(
+      '安徽海纳信息科技有限公司'
+    );
+    // 只显示这家企业（mock 按名称过滤）
+    expect(await screen.findByText(LEGACY)).toBeInTheDocument();
+    expect(screen.queryByText(CCGP)).toBeNull();
+  });
 });

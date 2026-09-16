@@ -9,6 +9,7 @@ from .generation import (
     merge_shards,
     run_generation_eval,
 )
+from .multiturn import run_multiturn, run_precheck
 from .router import run_router
 from .system import run_system_eval
 
@@ -21,4 +22,6 @@ __all__ = [
     "run_agent_trace",
     "derive_expected_tools",
     "run_system_eval",
+    "run_precheck",
+    "run_multiturn",
 ]

@@ -645,11 +645,29 @@ def create_app(
         独立新链路：不注册进 chat router（v1 走独立端点，避开聊天路由的 LLM 分类）。
         返回 snake_case 原始形状（金额一律万元，产品单价保留元），前端 referenceAdapter 归一化。
         400 = 概况文本不足 10 字；503 = 集合未索引 / bidding 库不可用。
+        file_ids（可选）：复用 /files/upload 解析链路，把招标文件/图片解析出的
+        文本并入概况查询——同一份文件既能问答（/chat）也能做项目概况参考。
         """
+        text = req.text
+        if req.file_ids:
+            session_scope = tenant_scoped(_resolve_session_id(req.session_id))
+            file_texts = []
+            for fid in req.file_ids:
+                rec = filestore.get(fid, session_id=session_scope)
+                if rec is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"file_id 不存在、已过期或不属于本会话: {fid}",
+                    )
+                if rec.markdown and rec.markdown.strip():
+                    file_texts.append(rec.markdown)
+            if file_texts:
+                # 文件解析文本优先作概况；截断到向量模型上限附近，正文截断交给 embedding
+                text = ("\n".join(file_texts)[:1800] + "\n" + text).strip()
         try:
             return search_reference(
                 settings,
-                req.text,
+                text,
                 top_k=req.top_k,
                 min_amount_wan=req.min_amount_wan,
                 region=req.region,

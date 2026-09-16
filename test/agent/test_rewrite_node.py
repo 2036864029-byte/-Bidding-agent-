@@ -25,6 +25,39 @@ def test_looks_like_followup_ignores_non_human_last():
     assert looks_like_followup(messages) is False
 
 
+def test_looks_like_followup_heuristic_catches_ellipsis():
+    """零代词省略式追问（2026-09-16 扩展）："具体介绍一下？""大概多少钱？"。
+    修 W3-1 已知限制——旧实现只认线索词，这类追问不命中 → 断链。
+    """
+    assert looks_like_followup(_msgs("招标方式有哪些？", "具体介绍一下？")) is True
+    assert looks_like_followup(_msgs("我要采购120台摄像头", "大概多少钱？")) is True
+    assert looks_like_followup(_msgs("评标委员会怎么组成？", "介绍一下")) is True
+
+
+def test_looks_like_followup_heuristic_keeps_self_contained():
+    """自包含追问不改写：有话题词 / 疑问词开头（"什么是X？"）即使短也不误触发。"""
+    assert looks_like_followup(_msgs("A公司中标了哪些项目？", "什么是围标？")) is False
+    assert looks_like_followup(_msgs("A公司有没有不良记录？", "如何投诉？")) is False
+    assert looks_like_followup(_msgs("评标委员会怎么组成？", "有哪些成员？")) is False
+
+
+def test_looks_like_followup_excludes_greetings():
+    """问候/闲聊即使短也不判追问（supervisor L1 前不白付改写 LLM）。"""
+    assert looks_like_followup(_msgs("招标方式有哪些？", "你好")) is False
+    assert looks_like_followup(_msgs("A公司中标了哪些项目？", "谢谢")) is False
+    assert looks_like_followup(_msgs("你好")) is False  # 首问
+
+
+def test_looks_like_followup_mode_switch():
+    """mode 语义：hints 只认线索词（旧行为）；always 有历史即改写。"""
+    msgs = _msgs("招标方式有哪些？", "大概多少钱？")
+    assert looks_like_followup(msgs, mode="hints") is False
+    assert looks_like_followup(msgs, mode="heuristic") is True
+    assert looks_like_followup(msgs, mode="always") is True
+    # always 模式仍放行问候（问候不该触发改写）
+    assert looks_like_followup(_msgs("招标方式有哪些？", "你好"), mode="always") is False
+
+
 # ── rewrite_question ─────────────────────────────────────────
 
 def _fake_llm(content: str):

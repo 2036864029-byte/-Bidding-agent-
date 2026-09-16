@@ -468,6 +468,11 @@ class Settings:
         default_factory=lambda: os.getenv("PRICE_ALLOW_FULL_SCAN", "false").lower()
         in {"1", "true", "yes"}
     )
+    # 2026-09-16：价格查询**显示**条数上限（回忆链排序后取前 N 条下发前端表格）。
+    # 中标项目很多时表格能多展现几条；叙述正文由 answer_templates 截断到 5 条。
+    price_display_top_k: int = field(
+        default_factory=lambda: int(os.getenv("PRICE_DISPLAY_TOP_K", "30"))
+    )
 
     # ============================================================
     # 检索结果缓存（W4-2）— 版本化 TTL 缓存
@@ -638,6 +643,39 @@ class Settings:
     # 提高引用合规率；false = 返回答案 + 校验报告（P6 前现状语义）。
     kb_guardrail_retry: bool = field(
         default_factory=lambda: os.getenv("KB_GUARDRAIL_RETRY", "true").lower()
+        in {"1", "true", "yes"}
+    )
+
+    # ============================================================
+    # 多轮对话改写预判（2026-09-16）— 省略式追问触发放宽
+    # ============================================================
+    # heuristic（默认）：指代线索词 OR（≥2 轮 + 短句 + 无话题词）→ 视为追问；
+    #   "具体介绍一下？""大概多少钱？" 这类零代词省略式追问由此命中（修 W3-1 已知限制）。
+    # hints：只认指代线索词（2026-09-16 前旧行为，回退用）。
+    # always：有历史即改写（宁多勿漏，自包含短句也多一次 LLM 调用）。
+    multiturn_rewrite_trigger: str = field(
+        default_factory=lambda: os.getenv("MULTITURN_REWRITE_TRIGGER", "heuristic")
+    )
+
+    # ============================================================
+    # 会话理解合并（2026-09-16，Phase 2）— 改写+路由合并为一次结构化调用
+    # ============================================================
+    # true（默认）：入口去掉独立 rewrite 节点，路由节点（L3）一次 LLM 调用同时输出
+    #   intent + resolved_question（追问消解），省一次 LLM 往返且消解更全
+    #   （"有哪些成员？"这类确定性预判漏掉的省略式追问由 LLM 补齐）。
+    # false：保留独立 rewrite 节点（Phase 1 行为，回退用）。
+    understand_merged: bool = field(
+        default_factory=lambda: os.getenv("UNDERSTAND_MERGED", "true").lower()
+        in {"1", "true", "yes"}
+    )
+
+    # ============================================================
+    # 澄清式反问（2026-09-16，Phase 3）— 追问无法消解时反问 + 一键候选
+    # ============================================================
+    # true（默认）：RouterDecision.needs_clarification 且候选非空 → 走 clarify 终态
+    #   （引导文案 + 候选 chips，替代硬拒答）；false：降级为直接按 intent 路由。
+    clarify_enabled: bool = field(
+        default_factory=lambda: os.getenv("CLARIFY_ENABLED", "true").lower()
         in {"1", "true", "yes"}
     )
 

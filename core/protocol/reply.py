@@ -14,7 +14,8 @@ from pydantic import BaseModel, Field
 from core.errors.codes import ErrorCode
 
 ReplyType = Literal[
-    "kb_answer", "price_records", "chat", "doc_qa", "deep_agent", "safety", "fallback"
+    "kb_answer", "price_records", "chat", "doc_qa", "deep_agent", "safety", "fallback",
+    "clarify",
 ]
 
 # 节点 branch → 回复类型
@@ -29,6 +30,8 @@ _BRANCH_TO_REPLY: Dict[str, ReplyType] = {
     "deep_agent": "deep_agent",
     "safety": "safety",
     "fallback": "fallback",
+    # Phase 3（2026-09-16）：澄清式反问（追问无法消解 → 一键候选）
+    "clarify": "clarify",
 }
 
 

@@ -173,9 +173,21 @@ def _create_connection(database: str) -> Optional[pymysql.Connection]:
 
 
 def _release_connection(conn: Optional[pymysql.Connection]) -> None:
-    """释放连接回池（唤醒等待者）。"""
+    """释放连接回池（唤醒等待者）。
+
+    ⚠️ **归还前必须结束事务**：pymysql 默认 ``autocommit=False``，连接从第一次
+    SELECT 起就持有 InnoDB REPEATABLE READ 快照。若不做 rollback，长连接归还后
+    被复用，会一直读到**数据重建前**的旧视图 —— 实测：重建 company_unified 后
+    端点仍返回已合并掉的 CCGP 行。池内连接全为只读查询（全仓无池内写），
+    rollback 是安全的：结束读事务、丢弃未提交（本来就是只读，无可丢的写）。
+    rollback 是网络 IO，放在锁外执行。
+    """
     if conn is None:
         return
+    try:
+        conn.rollback()
+    except Exception:
+        pass
     with _pool_lock:
         for index, pooled in enumerate(_pool_connections):
             if pooled is conn:

@@ -22,6 +22,12 @@ province / industry（95 类）/ legal_person / 注册资本 / 成立日期 / �
 中标业绩**统一**从 `project_unified` 汇总（不分来源），按公司名归一化后匹配 ——
 这样两家都出现过的公司（实测 69 家）也能拿到完整业绩，不会各算各的。
 
+⚠️ **跨源去重（2026-09-16 修复）**：两源各行其是，同一家公司会同时出现在
+LEGACY（工商全）和 CCGP（工商空，只有名称/部分信用代码）两行，供应商模块
+就出现"一详一空"两张卡。`merge_cross_source()` 在建表时按 **credit_code 相等**
+或 **normalized_name 相等** 判定同一家公司：保留 LEGACY 富行、把 CCGP 独有的
+`trade_types` 并入、丢弃 CCGP 行。实测 credit_code 跨源重复 57 组 / 同名 68 组。
+
 ⚠️ 一个计量约定：`project_unified` 里一行可能**并列多个中标人**（用 `、` 串联），
 而该行的 `winning_amount` 是**总额**。故按中标人数**均摊**金额，避免同一笔钱记三次。
 """
@@ -208,6 +214,49 @@ def ccgp_rows(cur, win: dict) -> tuple[list[tuple], list[tuple]]:
     return out, links
 
 
+# COLS 中 trade_types 的位置（合并时只补这一列 —— CCGP 独有的交易类型）
+_TRADE_TYPES_IDX = COLS.index("trade_types")
+
+
+def merge_cross_source(legacy: list[tuple], ccgp: list[tuple]) -> tuple[list[tuple], list[tuple], int]:
+    """跨源合并：CCGP 行若与 LEGACY 行**信用代码相等**或**归一化名相等**，
+    视为同一家公司 → 并入 LEGACY 富行（只补 `trade_types`），丢弃 CCGP 行。
+
+    LEGACY 有完整工商信息（省份/行业/法人/资本…），且两家都出现过的公司
+    中标业绩来自同一个 win 索引（同名），所以 LEGACY 行 = 超集，是保留的那张卡。
+
+    返回 (合并后的 LEGACY 行, 幸存 CCGP 行, 合并数量)。
+    """
+    legacy_rows = [list(r) for r in legacy]
+    by_credit: dict[str, list[int]] = {}
+    by_name: dict[str, int] = {}
+    for i, r in enumerate(legacy_rows):
+        credit = (r[4] or "").strip()
+        if credit:
+            by_credit.setdefault(credit, []).append(i)
+        nm = r[3]
+        if nm and nm not in by_name:
+            by_name[nm] = i
+
+    survivors: list[tuple] = []
+    merged = 0
+    for r in ccgp:
+        credit = (r[4] or "").strip()
+        nm = r[3]
+        target = None
+        if credit and credit in by_credit:
+            target = by_credit[credit][0]
+        elif nm and nm in by_name:
+            target = by_name[nm]
+        if target is None:
+            survivors.append(r)
+            continue
+        if legacy_rows[target][_TRADE_TYPES_IDX] is None and r[_TRADE_TYPES_IDX]:
+            legacy_rows[target][_TRADE_TYPES_IDX] = r[_TRADE_TYPES_IDX]
+        merged += 1
+    return [tuple(r) for r in legacy_rows], survivors, merged
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="构建 company_unified 统一公司表")
     ap.add_argument("--dry-run", action="store_true")
@@ -224,34 +273,47 @@ def main(argv: list[str] | None = None) -> int:
     win = build_win_index(cur)
     print(f"中标业绩索引: {len(win)} 家公司（来自 project_unified）")
 
-    if not args.dry_run:
-        cur.execute(DDL)
-        cur.execute(LINK_DDL)
-        conn.commit()
-
+    # 两源都先构建出来，再跨源合并 —— 合并需要全量对照，不能逐源直接落库
+    built: dict[str, tuple[list[tuple], list[tuple]]] = {}
     for src_name, builder in (("LEGACY", legacy_rows), ("CCGP", ccgp_rows)):
         rows, links = builder(cur, win)
+        built[src_name] = (rows, links)
         print(f"  {src_name}: {len(rows)} 家, 关联项目 {len(links)} 条")
-        if args.dry_run:
-            continue
-        cur.execute("DELETE FROM company_unified WHERE source=%s", (src_name,))
-        cur.execute("DELETE FROM company_win WHERE source=%s", (src_name,))
-        ph = ",".join(["%s"] * len(COLS))
-        for i in range(0, len(rows), 500):
-            cur.executemany(
-                f"INSERT INTO company_unified ({','.join(COLS)}) VALUES ({ph})", rows[i:i + 500]
-            )
-        lph = ",".join(["%s"] * len(LINK_COLS))
-        for i in range(0, len(links), 500):
-            cur.executemany(
-                f"INSERT IGNORE INTO company_win ({','.join(LINK_COLS)}) VALUES ({lph})",
-                links[i:i + 500],
-            )
-        conn.commit()
+
+    legacy, legacy_links = built["LEGACY"]
+    ccgp, ccgp_links = built["CCGP"]
+    merged_legacy, ccgp_survivors, merged_count = merge_cross_source(legacy, ccgp)
+    print(f"跨源合并: {merged_count} 家 CCGP 并入 LEGACY（同信用代码/同名）")
 
     if args.dry_run:
         conn.close()
         return 0
+
+    cur.execute(DDL)
+    cur.execute(LINK_DDL)
+    # 全量重建：合并后的行为单一读取面，不存在"一家两卡"
+    cur.execute("DELETE FROM company_unified")
+    cur.execute("DELETE FROM company_win")
+    conn.commit()
+
+    all_rows = merged_legacy + ccgp_survivors
+    # 链接：LEGACY 全量 + 幸存 CCGP（被合并者的项目链接已在 LEGACY 名下）
+    survivor_ids = {r[1] for r in ccgp_survivors}
+    survivor_links = [l for l in ccgp_links if l[1] in survivor_ids]
+    all_links = legacy_links + survivor_links
+
+    ph = ",".join(["%s"] * len(COLS))
+    for i in range(0, len(all_rows), 500):
+        cur.executemany(
+            f"INSERT INTO company_unified ({','.join(COLS)}) VALUES ({ph})", all_rows[i:i + 500]
+        )
+    lph = ",".join(["%s"] * len(LINK_COLS))
+    for i in range(0, len(all_links), 500):
+        cur.executemany(
+            f"INSERT IGNORE INTO company_win ({','.join(LINK_COLS)}) VALUES ({lph})",
+            all_links[i:i + 500],
+        )
+    conn.commit()
 
     cur.execute(
         "SELECT source, COUNT(*), SUM(province IS NOT NULL), SUM(industry IS NOT NULL), "

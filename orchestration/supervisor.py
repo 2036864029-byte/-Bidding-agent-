@@ -20,9 +20,10 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 
 from agent.registry import (
@@ -207,7 +208,34 @@ def route_question(
     embedder: Optional[Any] = None,
     llm_router: Optional[Callable[[dict], dict]] = None,
 ) -> str:
-    """路由：L0 文档上下文 → L1 规则 → L2 语义 → L3 LLM → fallback。
+    """路由（兼容旧接口）：只返回意图字符串。完整信息见 `route_question_full`。"""
+    return route_question_full(
+        messages, llm=llm, registry=registry,
+        embedder=embedder, llm_router=llm_router,
+    ).intent
+
+
+@dataclass
+class RouteResult:
+    """三级路由的完整决策（Phase 2：路由 + 追问消解合并）。"""
+
+    intent: str = "fallback"
+    #: 追问消解后的自包含问题（L3 从 llm_router 输出的 messages 替换中还原；
+    #: L0/L1/L2 快路径恒 None——它们只处理自包含的确定性场景）。
+    resolved_question: Optional[str] = None
+    needs_clarification: bool = False
+    candidates: List[str] = field(default_factory=list)
+
+
+def route_question_full(
+    messages: List[BaseMessage],
+    *,
+    llm: Optional[Any] = None,
+    registry: Optional[CapabilityRegistry] = None,
+    embedder: Optional[Any] = None,
+    llm_router: Optional[Callable[[dict], dict]] = None,
+) -> RouteResult:
+    """路由：L0 文档上下文 → L1 规则 → L2 语义 → L3 LLM → fallback（返回完整决策）。
 
     L0 分两档（A3）：
       - **显式**（客户端传了 file_ids）→ 最高的 L0，压过 L1/L2/L3；
@@ -217,12 +245,18 @@ def route_question(
     **两条 L0 都可升级 deep_agent**（第 3 项）：带文件 + 闸门命中 → `deep_agent`
     （跨源编排）；否则 `doc_qa`（单节点，够快）。判据见 `should_upgrade_to_agent`。
 
+    Phase 2（2026-09-16）：L3 为**合并会话理解调用**——`build_router_node` 一次
+    输出 intent + resolved_question（追问消解），resolved_question 以同 id 原位
+    替换 `messages[-1]` 的形式返回；本函数从替换中还原 `resolved_question`，
+    供 `supervisor_node` 应用，使下游 agent 检索到归一化问题。
+
     Args:
         messages: 对话消息（末条为用户问题；L3 走完整 history 与既有 router 一致）。
         llm: L3 用 LLM（llm_router 缺省时经 build_router_node 构建）。
         registry: 能力注册表（默认进程级）。
         embedder: L2 用（None 且开关关 → 跳过 L2）。
-        llm_router: 注入的 L3 分类器（(state)->{"router_intent": str}）；离线测试注入。
+        llm_router: 注入的 L3 分类器（(state)->{"router_intent": str, "messages"?}）；
+            离线测试注入 fake。
     """
     question = str(messages[-1].content) if messages else ""
     rules = load_rules_cached()
@@ -233,32 +267,58 @@ def route_question(
     if kind == "explicit":
         target = _doc_route(question, rules=rules, registry=registry)
         logger.info("supervisor L0（显式文件）路由 → %s", target)
-        return target
+        return RouteResult(intent=target)
 
     rule_hit = classify_rules(question, rules)
     if rule_hit:
         logger.info("supervisor L1 规则路由 → %s", rule_hit)
-        return rule_hit
+        return RouteResult(intent=rule_hit)
 
     # L0（弱）：本会话有自动附着的文件，且没有 L1 强信号 → 按文档答（同样可升级）。
     if kind == "session":
         target = _doc_route(question, rules=rules, registry=registry)
         logger.info("supervisor L0（会话文件）路由 → %s", target)
-        return target
+        return RouteResult(intent=target)
 
     semantic_hit = classify_semantic(question, registry, embedder)
     if semantic_hit:
-        return semantic_hit
+        return RouteResult(intent=semantic_hit)
 
     if llm_router is None:
         if llm is None:
             logger.warning("supervisor L3 缺 llm 与 llm_router，兜底 fallback")
-            return "fallback"
+            return RouteResult(intent="fallback")
         llm_router = _build_llm_router(llm, registry)
-    out = llm_router({"messages": messages})
+    out = llm_router({"messages": messages}) or {}
     intent = out.get("router_intent", "fallback")
     logger.info("supervisor L3 LLM 路由 → %s", intent)
-    return intent if intent in set(agent_ids(registry)) else "fallback"
+    if intent == "clarify":
+        # Phase 3：追问无法消解 → 澄清反问（候选由路由节点写入 business_result.data）
+        br = out.get("business_result") or {}
+        data = br.get("data") if isinstance(br.get("data"), dict) else {}
+        return RouteResult(
+            intent="clarify",
+            needs_clarification=True,
+            candidates=[str(c) for c in (data.get("candidates") or [])],
+        )
+    if intent not in set(agent_ids(registry)):
+        intent = "fallback"
+
+    # 追问消解：从 L3 返回的 messages 原位替换中还原（与 router_node 的
+    # 同 id 替换契约一致；`resolved_question` 不单独回传，避免非 schema 键）。
+    resolved = None
+    replacement = out.get("messages") or []
+    if messages and isinstance(messages[-1], HumanMessage):
+        for m in replacement:
+            if isinstance(m, HumanMessage) and m.id == messages[-1].id:
+                resolved = str(m.content)
+                break
+    return RouteResult(
+        intent=intent,
+        resolved_question=resolved,
+        needs_clarification=bool(out.get("needs_clarification")),
+        candidates=list(out.get("candidates") or []),
+    )
 
 
 # ── handoff 决策（supervisor 层，agent 零认知；W2-1 规则数据化）────
@@ -325,11 +385,33 @@ def build_supervisor_node(
 
     def supervisor_node(state: dict, config: Optional[RunnableConfig] = None) -> dict:
         messages = state.get("messages", [])
-        route = route_question(
+        result = route_question_full(
             messages, llm=llm, registry=registry,
             embedder=embedder, llm_router=llm_router,
         )
-        return {"supervisor_route": route, "router_intent": route}
+        # Phase 3：追问无法消解 → 澄清反问（候选写进 business_result，图路由到 clarify）
+        if result.needs_clarification and result.candidates:
+            return {
+                "supervisor_route": "clarify",
+                "router_intent": "clarify",
+                "business_result": {
+                    "branch": "clarify",
+                    "data": {"candidates": result.candidates},
+                },
+            }
+        out = {"supervisor_route": result.intent, "router_intent": result.intent}
+        # Phase 2：L3 返回的追问消解 → 同 id 原位替换 messages[-1]，
+        # 下游 agent（knowledge_qa/price_inquiry）检索到归一化问题。
+        if (
+            result.resolved_question is not None
+            and messages
+            and isinstance(messages[-1], HumanMessage)
+            and result.resolved_question != str(messages[-1].content)
+        ):
+            out["messages"] = [
+                HumanMessage(content=result.resolved_question, id=messages[-1].id)
+            ]
+        return out
 
     return supervisor_node
 

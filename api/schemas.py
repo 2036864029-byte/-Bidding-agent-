@@ -52,7 +52,12 @@ class ReferenceRequest(BaseModel):
     独立端点，不注册进 chat router（避开聊天路由的 LLM 分类）。
     """
 
-    text: str = Field(..., min_length=1, description="招标项目概况文本（>=10 字）")
+    text: str = Field(
+        "",
+        max_length=5000,
+        description="招标项目概况文本；与 file_ids 二选一或并用（纯文件上传时可为空，"
+                    "有效性按「文件解析文本 + 文本」合并后判定）",
+    )
     top_k: int = Field(10, ge=1, le=50, description="返回相似项目条数")
     min_amount_wan: Optional[float] = Field(
         None,
@@ -62,4 +67,14 @@ class ReferenceRequest(BaseModel):
     region: Optional[str] = Field(
         None,
         description="可选地域过滤（省份全称，如 新疆维吾尔自治区）",
+    )
+    file_ids: List[str] = Field(
+        default_factory=list,
+        description="可选：/files/upload 返回的文件 id（招标文件/图片），"
+                    "服务端把解析出的文本并入概况查询（与 text 同源复用解析链路）",
+    )
+    session_id: Optional[str] = Field(
+        None,
+        description="与 file_ids 配套：文件归属校验用的会话 id（不传则服务端生成，"
+                    "此时只能访问该新会话名下刚上传的文件）",
     )

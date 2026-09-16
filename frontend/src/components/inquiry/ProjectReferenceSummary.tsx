@@ -5,9 +5,8 @@ import type { ReferenceStats } from '@/types/inquiry';
 /**
  * ProjectReferenceSummary —— 项目概况参考的金额区间卡（万元口径）。
  *
- * 与聊天派生的 `ReferenceSummary`（元口径）**并行**：这是独立端点
- * `/inquiry/reference` 的结果，金额统一万元（方案 §7，字段名 `_wan` 即契约）。
- * 区间文案固定 2 位小数（`fmtWanFixed`），四档指标走紧凑展示（`fmtAmountWan`）。
+ * 这是独立端点 `/inquiry/reference` 的结果，金额统一万元（方案 §7，字段名 `_wan`
+ * 即契约）。区间文案固定 2 位小数（`fmtWanFixed`），四档指标走紧凑展示（`fmtAmountWan`）。
  */
 
 export function ProjectReferenceSummary({ stats }: { stats: ReferenceStats | null }) {
