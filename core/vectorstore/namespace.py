@@ -15,6 +15,11 @@ KB_PUBLIC_COLLECTION = "public_kb"
 # MySQL 结构化数据语义集合（企业/处罚/标讯 → 向量召回）
 PRICE_SEMANTIC_COLLECTION = "mysql_price_semantic"
 
+# 招标公告语义集合（项目概况相似检索与金额参考，2026-09-16 方案）：
+# 每条 = 一篇中标公告（announcement_id 主键），向量文本 = 项目名 + 产品清单 + 正文头段。
+# 与 public_kb / mysql_price_semantic 完全独立，检索走独立端点 POST /inquiry/reference。
+PROJECT_ANNOUNCEMENT_COLLECTION = "project_announcement_semantic"
+
 # 用户临时文档会话隔离集合前缀（9.3 Track D / D-4 扩展点）：
 # doc_qa 如需临时检索，按 ``DOC_KV_PREFIX + session_id`` 建集合，永不写入公共集合。
 DOC_KV_PREFIX = "doc_kv_"

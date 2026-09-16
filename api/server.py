@@ -54,7 +54,8 @@ from .middleware import (
     RequestContextMiddleware,
 )
 from .modules import build_kanban_overview, build_supplier_overview
-from .schemas import ChatRequest, ChatResponse
+from .inquiry_reference import search_reference
+from .schemas import ChatRequest, ChatResponse, ReferenceRequest
 
 logger = logging.getLogger(__name__)
 
@@ -636,6 +637,27 @@ def create_app(
             "chunk_count": rec.chunk_count,
             "session_id": session,
         }
+
+    @app.post("/inquiry/reference")
+    def inquiry_reference(req: ReferenceRequest) -> dict:
+        """项目概况相似检索与金额参考（读 `bidding` 库 + Milvus 独立集合）。
+
+        独立新链路：不注册进 chat router（v1 走独立端点，避开聊天路由的 LLM 分类）。
+        返回 snake_case 原始形状（金额一律万元，产品单价保留元），前端 referenceAdapter 归一化。
+        400 = 概况文本不足 10 字；503 = 集合未索引 / bidding 库不可用。
+        """
+        try:
+            return search_reference(
+                settings,
+                req.text,
+                top_k=req.top_k,
+                min_amount_wan=req.min_amount_wan,
+                region=req.region,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except LookupError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
 
     @app.post("/chat", response_model=ChatResponse)
     def chat(req: ChatRequest, agent: AgentGraph = Depends(get_agent_fn)) -> ChatResponse:

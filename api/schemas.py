@@ -44,3 +44,22 @@ class ChatResponse(BaseModel):
         None,
         description="统一错误码（W2-3；正常回答为 null，见 core.errors.codes.ErrorCode）",
     )
+
+
+class ReferenceRequest(BaseModel):
+    """POST /inquiry/reference —— 项目概况相似检索与金额参考（方案 §6）。
+
+    独立端点，不注册进 chat router（避开聊天路由的 LLM 分类）。
+    """
+
+    text: str = Field(..., min_length=1, description="招标项目概况文本（>=10 字）")
+    top_k: int = Field(10, ge=1, le=50, description="返回相似项目条数")
+    min_amount_wan: Optional[float] = Field(
+        None,
+        ge=0,
+        description="金额下限（万元）；只可上调，默认排除 ≤1000 元脏行",
+    )
+    region: Optional[str] = Field(
+        None,
+        description="可选地域过滤（省份全称，如 新疆维吾尔自治区）",
+    )
