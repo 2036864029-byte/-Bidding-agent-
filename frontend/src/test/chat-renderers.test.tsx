@@ -128,6 +128,50 @@ describe('ReplyRenderer 注册表', () => {
     expect(link.getAttribute('href')).toContain(encodeURIComponent('安徽海纳信息科技有限公司'));
   });
 
+  it('price_records（公司中标查询 bidder_query）：也跳供应商模块，带家族字号', () => {
+    const res = chatResponseAdapter({
+      ...mockChatFixtures.price_records,
+      answer: '中国移动近期中标 2 个项目……',
+      data: {
+        ...(mockChatFixtures.price_records.data as Record<string, unknown>),
+        records: [
+          { project_name: '某政务云项目', successful_bidder: '中国移动通信集团安徽有限公司' },
+          { project_name: '某专线项目', successful_bidder: '中国移动通信集团浙江有限公司' },
+        ],
+        // "某公司中标了哪些项目" 走 bidding_query + bidder_query —— 主语是公司，
+        // 落脚点是它的中标业绩，同属供应商全景（曾误跳询价模块）。
+        intent: {
+          sub_route: 'bidding_query',
+          query_type: 'bidder_query',
+          semantic_keywords: ['中国移动'],
+        },
+        columns: [],
+      },
+    });
+    render(
+      <MemoryRouter>
+        <ReplyRenderer
+          message={{
+            id: 'bidder',
+            role: 'agent',
+            content: res.answer,
+            replyType: res.replyType,
+            data: res.data,
+            sourceQuestion: '中国移动最新的中标项目',
+          }}
+        />
+      </MemoryRouter>
+    );
+
+    const link = screen.getByRole('link', { name: /在供应商模块查看详情/ });
+    expect(link.getAttribute('href')).toContain('/supplier?from=chat');
+    // 字号（不是某一家子公司）→ 供应商模块的家族搜索一次命中全部子公司
+    expect(link.getAttribute('href')).toContain(encodeURIComponent('中国移动'));
+    expect(link.getAttribute('href')).not.toContain(
+      encodeURIComponent('中国移动通信集团安徽有限公司')
+    );
+  });
+
   it('doc_qa：来源列表 + retrieval.notes 显式兜底提示', () => {
     renderReply('doc_qa');
     expect(screen.getByText(/检索到的段落 · 2/)).toBeInTheDocument();
