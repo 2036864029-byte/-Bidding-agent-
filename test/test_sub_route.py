@@ -189,11 +189,15 @@ class TestOutputTemplate:
             "credit_code": "91110000XXXXXXXX",
         }]
 
-        formatted = _apply_output_template(records, intent, template)
-        assert len(formatted) == 1
-        assert formatted[0]["企业名称"] == "测试科技公司"
-        assert formatted[0]["所属行业"] == "软件信息"
-        assert "法定代表人" not in formatted[0]  # optional 但值为 None
+        out = _apply_output_template(records, intent, template)
+        assert len(out.rows) == 1
+        assert out.rows[0]["company_name"] == "测试科技公司"
+        assert out.rows[0]["industry"] == "软件信息"
+        assert "legal_person" not in out.rows[0]  # optional 但值为 None
+        # 列定义随行下发：前端据此渲染表头，不再自己硬编码「机器名 ↔ 中文」
+        labels = {c["key"]: c["label"] for c in out.columns}
+        assert labels["company_name"] == "企业名称"
+        assert labels["industry"] == "所属行业"
 
     def test_penalty_check_required_fields(self):
         """不良记录模板：验证必出字段。"""
@@ -211,10 +215,10 @@ class TestOutputTemplate:
             "penalty_result": "罚款5000元",
         }]
 
-        formatted = _apply_output_template(records, intent, template)
-        assert len(formatted) == 1
-        assert formatted[0]["企业名称"] == "测试公司"
-        assert formatted[0]["违法行为"] == "未按规定申报"
+        out = _apply_output_template(records, intent, template)
+        assert len(out.rows) == 1
+        assert out.rows[0]["company_name"] == "测试公司"
+        assert out.rows[0]["illegal_behavior"] == "未按规定申报"
 
     def test_product_template_removed_price_inquiry(self):
         """产品线已下线：get_template('product_query', ...) 应返回 None。"""
@@ -247,13 +251,13 @@ class TestOutputTemplate:
             "winning_date": "2024-06-01",
         }]
 
-        formatted = _apply_output_template(records, intent, template)
-        assert len(formatted) == 1
-        assert formatted[0]["项目名称"] == "XX校区设备采购"
-        assert formatted[0]["中标供应商"] == "某科技公司"
+        out = _apply_output_template(records, intent, template)
+        assert len(out.rows) == 1
+        assert out.rows[0]["project_name"] == "XX校区设备采购"
+        assert out.rows[0]["successful_bidder"] == "某科技公司"
 
-    def test_null_placeholder_behavior(self):
-        """空值为 required 时显示占位符 '未提供'。"""
+    def test_null_values_become_none(self):
+        """空值以 None 下发（「未提供 / —」是展示层的事，不进契约）。"""
         template = get_template("company_query", "supplier_recommend")
 
         intent = _make_intent("company_query", "supplier_recommend")
@@ -265,10 +269,10 @@ class TestOutputTemplate:
             "city": None,
         }]
 
-        formatted = _apply_output_template(records, intent, template)
-        assert len(formatted) == 1
-        assert formatted[0]["企业名称"] == "未提供"
-        assert formatted[0]["所属行业"] == "未提供"
+        out = _apply_output_template(records, intent, template)
+        assert len(out.rows) == 1
+        assert out.rows[0]["company_name"] is None
+        assert out.rows[0]["industry"] is None
 
     def test_text_truncation(self):
         """文本截断：超长文本应截断并追加 …。"""
@@ -283,10 +287,10 @@ class TestOutputTemplate:
             "business_scope": long_text,
         }]
 
-        formatted = _apply_output_template(records, intent, template)
-        assert len(formatted) == 1
-        assert len(formatted[0]["经营范围"]) < len(long_text)
-        assert formatted[0]["经营范围"].endswith("\u2026")
+        out = _apply_output_template(records, intent, template)
+        assert len(out.rows) == 1
+        assert len(out.rows[0]["business_scope"]) < len(long_text)
+        assert out.rows[0]["business_scope"].endswith("\u2026")
 
 
 # ═════════════════════════════════════════════════════════

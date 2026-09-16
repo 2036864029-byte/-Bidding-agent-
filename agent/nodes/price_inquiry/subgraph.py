@@ -47,7 +47,7 @@ from price_engine.guards import (
     normalize_project_number,
 )
 from price_engine.rendering.answer_templates import CAPABILITY_GUIDANCE, render_answer
-from price_engine.rendering.output_templates import _apply_output_template, get_template
+from price_engine.rendering.output_templates import OutputRecords, _apply_output_template, get_template
 
 logger = logging.getLogger(__name__)
 
@@ -483,12 +483,12 @@ def _render_node(state: PriceSubgraphState) -> dict:
     route_config = state.get("pg_route_config", _SUB_ROUTE_MAP.get(intent.sub_route, _SUB_ROUTE_MAP["all"]))
     question = state["pg_question"]
 
-    # Step 3：输出字段筛选
+    # Step 3：输出字段筛选（机器键行 + 列定义；标签不再当行键下发）
     template = get_template(intent.sub_route, intent.query_type)
     if template and records:
-        formatted_records = _apply_output_template(records, intent, template)
+        output = _apply_output_template(records, intent, template)
     else:
-        formatted_records = records
+        output = OutputRecords(rows=records, columns=[])
 
     # 性能日志
     node_elapsed = time.perf_counter() - node_start
@@ -501,7 +501,7 @@ def _render_node(state: PriceSubgraphState) -> dict:
         sql_count,
         total_sql_time,
         len(records),
-        len(formatted_records),
+        len(output.rows),
         node_elapsed,
     )
 
@@ -518,7 +518,7 @@ def _render_node(state: PriceSubgraphState) -> dict:
         question[:30]
     )
 
-    if not records and not formatted_records:
+    if not records and not output.rows:
         answer = render_answer(
             intent.query_type, [], entity=entity, sub_route=intent.sub_route
         )
@@ -530,6 +530,7 @@ def _render_node(state: PriceSubgraphState) -> dict:
                 "answer": answer,
                 "data": {
                     "records": [],
+                    "columns": [],
                     "tables": route_config["tables"],
                     "intent": {
                         "sub_route": intent.sub_route,
@@ -555,7 +556,8 @@ def _render_node(state: PriceSubgraphState) -> dict:
             "query_type": intent.query_type,
             "answer": answer,
             "data": {
-                "records": formatted_records,
+                "records": output.rows,
+                "columns": output.columns,
                 "tables": tables,
                 "total_found": query_result.get("total_found", 0),
                 "intent": {
@@ -566,7 +568,7 @@ def _render_node(state: PriceSubgraphState) -> dict:
                 },
                 "meta": {
                     "total_hits": len(records),
-                    "displayed_hits": len(formatted_records),
+                    "displayed_hits": len(output.rows),
                     "sql_count": sql_count,
                     "total_sql_time": round(total_sql_time, 3),
                     "node_elapsed": round(node_elapsed, 3),

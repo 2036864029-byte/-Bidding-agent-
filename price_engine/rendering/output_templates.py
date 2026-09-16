@@ -13,7 +13,7 @@ output_templates — 统一输出字段配置框架。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 
 @dataclass
@@ -37,6 +37,17 @@ class OutputTemplate:
     conditional: dict[str, list[str]] = field(default_factory=dict)
     optional: list[str] = field(default_factory=list)
     display_order: list[str] = field(default_factory=list)
+
+
+class OutputRecords(NamedTuple):
+    """输出模板的产物：**机器键行** + 列定义。
+
+    - ``rows``：每行以 `FieldDescriptor.key`（机器名）为键；空值为 ``None``。
+    - ``columns``：``[{"key", "label"}]``，顺序同 ``display_order``，只含实际出现过的字段。
+      供前端渲染表头 —— 前端因此不必再硬编码「机器名 ↔ 中文标签」的映射。
+    """
+    rows: list[dict]
+    columns: list[dict]
 
 
 # ═════════════════════════════════════════════════════════
@@ -266,15 +277,20 @@ def _apply_output_template(
     template: OutputTemplate,
     field_registry: dict[str, FieldDescriptor] = None,
     max_fields_per_record: int = 12,
-) -> list[dict]:
+) -> "OutputRecords":
     """根据 OutputTemplate 筛选并格式化输出字段。
 
     处理流程：
     ① 确定活跃字段集（required + 条件满足的 conditional + optional）
-    ② 逐字段应用空值处理（hide / show_placeholder / keep_null）
+    ② 逐字段取值：空值 → None（null_behavior="hide" 则整列不出现）
     ③ 逐字段应用截断（max_chars → 追加 "\u2026"）
-    ④ 按 display_order 排序
-    ⑤ 单记录字段数超 max_fields_per_record 时，从 optional 尾部裁剪
+    ④ 单记录字段数超 max_fields_per_record 时，从 optional 尾部裁剪
+    ⑤ 汇总列定义（按 display_order，只含实际出现过的字段）
+
+    行的键是**机器名**（`fd.key`，如 `winning_amount`），标签（`fd.label`，如「中标金额」）
+    单独放 `columns`。早期版本把中文标签直接当行键写进响应，前端只能靠中文字面量认字段
+    —— 后端一换标签，前端就静默失效（无编译错、无测试失败）。列定义随行下发后，
+    前端拿到的是服务端的权威映射，不必自己硬编码。
     """
     if field_registry is None:
         field_registry = _FIELD_REGISTRY
@@ -301,39 +317,41 @@ def _apply_output_template(
 
             value = raw.get(fd.source_col)
 
-            # 空值处理（②）
+            # 空值处理（②）：空 → None；展示层的「未提供 / —」交给前端
             if value is None or (isinstance(value, str) and value.strip() == ""):
-                if fd.null_behavior == "show_placeholder":
-                    row[fd.label] = "未提供"
-                elif fd.null_behavior == "keep_null":
-                    row[fd.label] = None
-                else:  # "hide"
+                if fd.null_behavior == "hide":
                     continue
+                row[fd.key] = None
             else:
                 # 截断（③）
                 if fd.max_chars and isinstance(value, str) and len(value) > fd.max_chars:
                     value = value[:fd.max_chars] + "\u2026"
-                row[fd.label] = value
+                row[fd.key] = value
 
-        # ⑤ 字段上限裁剪
+        # ④ 字段上限裁剪（从尾部丢非必出字段）
         if len(row) > max_fields_per_record:
             overflow = len(row) - max_fields_per_record
-            keys_in_order = [k for k in template.display_order if k in row]
-            for k in reversed(keys_in_order):
+            for k in reversed([k for k in template.display_order if k in row]):
                 if overflow <= 0:
                     break
-                fd = field_registry.get(k)
-                if fd is None:
-                    continue
-                k_label = fd.label
-                if k_label in row and k not in template.required:
-                    del row[k_label]
+                if k not in template.required:
+                    del row[k]
                     overflow -= 1
 
-        if row:  # 全 NULL 的记录不输出
+        if row:  # 全空记录不输出
             formatted.append(row)
 
-    return formatted
+    # ⑤ 列定义：只含实际出现过的字段，顺序同 display_order
+    present: set[str] = set()
+    for r in formatted:
+        present.update(r.keys())
+    columns = [
+        {"key": k, "label": field_registry[k].label}
+        for k in template.display_order
+        if k in present and k in field_registry
+    ]
+
+    return OutputRecords(rows=formatted, columns=columns)
 
 
 def get_template(sub_route: str, query_type: str) -> Optional[OutputTemplate]:
