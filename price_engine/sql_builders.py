@@ -163,16 +163,34 @@ def _build_preference_conditions(
     is_bid_project = table == "bid_project"
 
     # ── 实体名称 ──
+    # 字号族（alias.resolve_company_families）：按 `LIKE '%字号%'` 匹配全家族
+    # （跨地区同字号子公司，如 海康威视 → 福州/杭州海康威视…），否则精确 `=`。
+    family = intent.resolved_families or {}
     if hf.purchaser and classification.get("purchaser"):
-        conditions.append(f"`{classification['purchaser'][0]}` = %s")
-        params.append(hf.purchaser)
+        fam = family.get("purchaser")
+        if fam:
+            conditions.append(f"`{classification['purchaser'][0]}` LIKE %s")
+            params.append(f"%{fam}%")
+        else:
+            conditions.append(f"`{classification['purchaser'][0]}` = %s")
+            params.append(hf.purchaser)
     if hf.successful_bidder:
-        conditions.append("`successful_bidder` = %s")
-        params.append(hf.successful_bidder)
+        fam = family.get("successful_bidder")
+        if fam:
+            conditions.append("`successful_bidder` LIKE %s")
+            params.append(f"%{fam}%")
+        else:
+            conditions.append("`successful_bidder` = %s")
+            params.append(hf.successful_bidder)
     # company_name 仅用于 company_info 等非项目表
     if hf.company_name and not is_bid_project:
-        conditions.append("`company_name` = %s")
-        params.append(hf.company_name)
+        fam = family.get("company_name")
+        if fam:
+            conditions.append("`company_name` LIKE %s")
+            params.append(f"%{fam}%")
+        else:
+            conditions.append("`company_name` = %s")
+            params.append(hf.company_name)
 
     # ── 地区（bid_project 已屏蔽）──
     if hf.region and classification.get("region") and not is_bid_project:

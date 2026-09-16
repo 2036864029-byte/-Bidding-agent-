@@ -18,8 +18,15 @@ from pydantic import BaseModel, Field
 
 from .enum_norm import _normalize_intent_enums
 from .guards import QUERY_INTENT_KEYWORDS, has_valid_query_entity, normalize_project_number
-from .intent import _build_llm, _looks_like_code, _parse_unified_intent, _safe_parse_intent
+from .intent import (
+    _build_llm,
+    _looks_like_code,
+    _parse_unified_intent,
+    _safe_parse_intent,
+    detect_product_demand,
+)
 from .queries import _query_all_tables, _query_bidding_data, _query_company_data
+from .alias import resolve_company_families
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +65,18 @@ def price_query(question: str, *, max_rows: Optional[int] = None) -> Dict[str, A
         intent = _normalize_intent_enums(intent)
     except Exception as e:
         logger.warning("[ENUM_NORM] 枚举归一化异常，降级为原始过滤: %s", e)
+
+    # 公司简称 → 字号族解析（海康威视类；与子图 guard 共用，W1-3 保持一致）
+    try:
+        resolve_company_families(intent)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[COMPANY_FAMILY] 字号族解析异常，降级原值: %s", e)
+
+    # 采购需求确定性检测（采购N台X → product_demand；与子图 guard 保持一致）
+    try:
+        detect_product_demand(intent, question)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[PRODUCT_DEMAND] 检测异常，降级原意图: %s", e)
 
     # product 功能线已下线（与节点侧一致的能力边界）
     if intent.sub_route == "product_query":

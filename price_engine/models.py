@@ -34,6 +34,9 @@ class HardFilters:
     # ── 产品专用（保留 category / price_range 供通用引擎兼容） ──
     category: Optional[str] = None
     price_range: Optional[dict[str, float]] = None
+    # 采购需求（2026-09-16）：用户表达「我要采购N台X」时提取的产品名（如 摄像头）。
+    # product_demand 查询路径读 bidding.project_product_item，与公司查询无关。
+    product_name: Optional[str] = None
 
     # ── 招标专用 ──
     successful_bidder: Optional[str] = None
@@ -59,6 +62,11 @@ class SearchIntent:
     top_n: Optional[int] = None
     need_penalty_check: bool = False
     need_contact: bool = False
+
+    # 字号族解析（2026-09-16）：公司简称 → 字号（如 杭州海康威视→海康威视），
+    # 由 price_engine.alias.resolve_company_families 填充。命中的字段在 SQL 侧
+    # 按 `LIKE '%字号%'` 匹配全家族（覆盖跨地区同字号子公司），守卫也据此放行。
+    resolved_families: dict[str, str] = dataclass_field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], question: str = "") -> SearchIntent:
@@ -86,6 +94,7 @@ class SearchIntent:
                 project_category=hf.get("project_category"),
                 project_stage=hf.get("project_stage"),
                 winning_amount_range=hf.get("winning_amount_range"),
+                product_name=hf.get("product_name"),
             ),
             semantic_keywords=data.get("semantic_keywords") or [],
             exact_tokens=data.get("exact_tokens") or [],

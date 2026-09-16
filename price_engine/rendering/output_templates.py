@@ -250,6 +250,16 @@ _BIDDING_OUTPUT_TEMPLATES: dict[str, OutputTemplate] = {
                        "project_category", "budget_amount",
                        "province", "city", "publish_date", "source_url"],
     ),
+    # 采购需求（2026-09-16）：记录来自 bidding 库公告（bid_project 形状），
+    # subject_matter 聚合产品清单，source_url 是公告原文链接。
+    "product_demand": OutputTemplate(
+        route="bidding_query",
+        query_type="product_demand",
+        required=["project_name", "winning_amount", "winning_date"],
+        optional=["purchaser", "subject_matter", "province", "source_url"],
+        display_order=["project_name", "purchaser", "winning_amount",
+                       "winning_date", "province", "subject_matter", "source_url"],
+    ),
 }
 
 # 路由 → 模板表映射

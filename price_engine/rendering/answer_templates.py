@@ -275,6 +275,34 @@ ANSWER_TEMPLATES: dict[str, AnswerTemplate] = {
             "  （数据来源：ztb_clean）"
         ),
     ),
+
+    # ── product_demand（采购需求：相似项目中标金额参考） ──
+    "product_demand": AnswerTemplate(
+        query_type="product_demand",
+        source_table="bidding.announcement+project_product_item",
+        total_rows=802,
+        single_template=(
+            "为您找到包含「{product_name}」的历史采购项目「{project_name}」，"
+            "中标金额为 {winning_amount} 元（{province}，{winning_date}）。\n\n"
+            "（数据来源：bidding 库中标公告 + 产品明细）"
+        ),
+        multi_template=(
+            "为您找到 {N} 个包含「{product_name}」的历史采购项目，中标金额参考如下：\n\n"
+            "{items}\n\n"
+            "如需查看某条公告原文或产品明细，可点开下方列表。\n\n"
+            "（数据来源：bidding 库中标公告 + 产品明细，金额为中标价）"
+        ),
+        item_line=(
+            "{index} {winning_date} | 「{project_name}」"
+            "| 中标金额 {winning_amount} 元 | {province}"
+        ),
+        empty_template=(
+            '在收录的采购公告中，暂未查询到含"{entity}"的相似项目。\n\n'
+            "建议：\n"
+            "  1. 用更通用的产品名称重试（如「摄像头」→「监控」「摄像机」）；\n"
+            "  2. 明确产品型号或采购内容后再查询。"
+        ),
+    ),
 }
 
 

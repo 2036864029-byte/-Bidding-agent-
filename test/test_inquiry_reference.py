@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from api import inquiry_reference as ir
 from api.inquiry_reference import search_reference
 from api.server import create_app
+import price_engine.reference as ref
 from core.vectorstore.namespace import PROJECT_ANNOUNCEMENT_COLLECTION
 
 
@@ -174,7 +175,7 @@ class TestSearchReference:
             search_reference(_settings(), "太短")
 
     def test_collection_not_ready(self, monkeypatch):
-        monkeypatch.setattr(ir, "_milvus_client", lambda s: FakeMilvus(ready=False))
+        monkeypatch.setattr(ref, "_milvus_client", lambda s: FakeMilvus(ready=False))
         with pytest.raises(LookupError):
             search_reference(_settings(), "采购监控摄像头项目招标概况")
 
@@ -185,9 +186,9 @@ class TestSearchReference:
             _FakeHit("A3", 0.35),
             _FakeHit("A4", 0.28),  # 低于阈值 0.30 → 应被丢弃
         ]
-        monkeypatch.setattr(ir, "_milvus_client", lambda s: FakeMilvus(hits))
+        monkeypatch.setattr(ref, "_milvus_client", lambda s: FakeMilvus(hits))
         monkeypatch.setattr(
-            ir, "get_embeddings",
+            ref, "get_embeddings",
             lambda s: type("E", (), {"embed_query": lambda self, t: [0.0] * 1024})(),
         )
         # 回表结果与 Milvus 顺序不同，验证按 score 重排 + 金额过滤
@@ -203,8 +204,8 @@ class TestSearchReference:
                 ("A2", "摄像头", "摄像头", "大华", None, "5", "台", "800"),
             ],
         )
-        monkeypatch.setattr(ir, "_get_connection", lambda db: conn)
-        monkeypatch.setattr(ir, "_release_connection", lambda c: None)
+        monkeypatch.setattr(ref, "_get_connection", lambda db: conn)
+        monkeypatch.setattr(ref, "_release_connection", lambda c: None)
 
         result = search_reference(_settings(), "采购120台监控摄像头用于校园安防", top_k=5)
 
@@ -223,7 +224,7 @@ class TestSearchReference:
         assert result["total"] == 2
 
     def test_no_hits_above_threshold(self, monkeypatch):
-        monkeypatch.setattr(ir, "_milvus_client", lambda s: FakeMilvus([_FakeHit("A1", 0.10)]))
+        monkeypatch.setattr(ref, "_milvus_client", lambda s: FakeMilvus([_FakeHit("A1", 0.10)]))
         result = search_reference(_settings(), "采购120台监控摄像头用于校园安防")
         assert result["total"] == 0
         assert result["projects"] == []
@@ -231,26 +232,26 @@ class TestSearchReference:
 
     def test_region_passed_as_filter(self, monkeypatch):
         client = FakeMilvus([_FakeHit("A1", 0.75)])
-        monkeypatch.setattr(ir, "_milvus_client", lambda s: client)
+        monkeypatch.setattr(ref, "_milvus_client", lambda s: client)
         monkeypatch.setattr(
-            ir, "get_embeddings",
+            ref, "get_embeddings",
             lambda s: type("E", (), {"embed_query": lambda self, t: [0.0] * 1024})(),
         )
         conn = _make_conn(
             announcements=[("A1", "PNO", "项目", "采购人", "新疆维吾尔自治区",
                             5_000_000.0, None, "https://ccgp.gov.cn/1")],
         )
-        monkeypatch.setattr(ir, "_get_connection", lambda db: conn)
-        monkeypatch.setattr(ir, "_release_connection", lambda c: None)
+        monkeypatch.setattr(ref, "_get_connection", lambda db: conn)
+        monkeypatch.setattr(ref, "_release_connection", lambda c: None)
 
         search_reference(_settings(), "采购监控摄像头项目招标概况", region="新疆维吾尔自治区")
         assert client.last_search_kwargs["filter"] == 'region == "新疆维吾尔自治区"'
 
     def test_min_amount_wan_raises_floor(self, monkeypatch):
         hits = [_FakeHit("A1", 0.9), _FakeHit("A2", 0.8)]
-        monkeypatch.setattr(ir, "_milvus_client", lambda s: FakeMilvus(hits))
+        monkeypatch.setattr(ref, "_milvus_client", lambda s: FakeMilvus(hits))
         monkeypatch.setattr(
-            ir, "get_embeddings",
+            ref, "get_embeddings",
             lambda s: type("E", (), {"embed_query": lambda self, t: [0.0] * 1024})(),
         )
         seen_floor = {}
@@ -278,8 +279,8 @@ class TestSearchReference:
 
                 return _Ctx()
 
-        monkeypatch.setattr(ir, "_get_connection", lambda db: _Conn())
-        monkeypatch.setattr(ir, "_release_connection", lambda c: None)
+        monkeypatch.setattr(ref, "_get_connection", lambda db: _Conn())
+        monkeypatch.setattr(ref, "_release_connection", lambda c: None)
 
         search_reference(_settings(), "采购120台监控摄像头用于校园安防", min_amount_wan=1000.0)
         assert seen_floor["floor"] == 10_000_000.0  # 1000 万 → 1e7 元
@@ -301,7 +302,7 @@ class TestReferenceEndpoint:
         assert "至少 10 字" in resp.json()["detail"]
 
     def test_503_collection_not_ready(self, monkeypatch):
-        monkeypatch.setattr(ir, "_milvus_client", lambda s: FakeMilvus(ready=False))
+        monkeypatch.setattr(ref, "_milvus_client", lambda s: FakeMilvus(ready=False))
         client = _app_client(monkeypatch)
         resp = client.post(
             "/inquiry/reference", json={"text": "采购120台监控摄像头用于校园安防项目"}

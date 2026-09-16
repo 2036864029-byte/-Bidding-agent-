@@ -52,10 +52,15 @@ from .intent import (
     _post_process_intent,
     _safe_parse_intent,
     _split_overlong_keyword,
+    detect_product_demand,
 )
 from .models import (
     HardFilters,
     SearchIntent,
+)
+from .alias import (
+    resolve_company_families,
+    strip_region_prefix,
 )
 from .queries import (
     _query_all_tables,
@@ -148,6 +153,9 @@ __all__ = [
     "_LEVEL_SCALE_CHARS",
     "_MYSQL_SEMANTIC_BATCH_SIZE",
     "_MYSQL_SEMANTIC_COLLECTION",
+    "resolve_company_families",
+    "strip_region_prefix",
+    "detect_product_demand",
     "_MYSQL_SEMANTIC_PER_TABLE_LIMIT",
     "_MYSQL_SEMANTIC_TEXT_TRUNCATE",
     "_MYSQL_SEMANTIC_THRESHOLD",

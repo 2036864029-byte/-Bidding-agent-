@@ -55,7 +55,7 @@ def test_route_copy_present_for_builtins():
         assert spec.route_desc, f"{spec.id} 缺 route_desc"
         assert spec.route_tool_doc, f"{spec.id} 缺 route_tool_doc"
     price = reg.get("price_inquiry")
-    assert len(price.examples) == 3
+    assert len(price.examples) == 5  # 2026-09-16 起含采购需求示例（我要采购120台摄像头等）
     assert price.route_desc.startswith("结构化业务数据查询")
     assert price.route_tool_doc.startswith("结构化业务数据查询（三大核心能力）")
 

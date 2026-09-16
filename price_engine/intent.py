@@ -71,7 +71,8 @@ _UNIFIED_INTENT_SYSTEM = """你是招投标领域的智能查询意图解析专�
     "project_category": "项目类别 或 null（bidding_query 已禁用此字段，设为 null）",
     "project_stage": "项目阶段 或 null（bidding_query 已禁用此字段，设为 null）",
     "time_range": {{"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}} 或 null（bidding_query 已禁用此字段，设为 null）,
-    "winning_amount_range": {{"min": number, "max": number}} 或 null（bidding_query 已禁用此字段，设为 null）
+    "winning_amount_range": {{"min": number, "max": number}} 或 null（bidding_query 已禁用此字段，设为 null）,
+    "product_name": "采购需求中的产品名 或 null（仅 product_demand 使用，如 摄像头；不含数量/单位）"
   }},
   "semantic_keywords": ["业务关键词"],
   "exact_tokens": ["精确的公司名、项目编号等"],
@@ -92,9 +93,11 @@ company_query: "supplier_recommend"|"penalty_check"|"company_detail"|"mixed"
   - 是否有不良记录/处罚/违法 → "penalty_check"，同时 need_penalty_check=true
   - 某具体公司的详细信息 → "company_detail"
 
-bidding_query: "purchaser_query"|"bidder_query"|"project_detail"|"aggregation"|"mixed"
+bidding_query: "purchaser_query"|"bidder_query"|"project_detail"|"aggregation"|"product_demand"|"mixed"
   - 招标过什么/采购了什么/发包历史 → "purchaser_query"（提取 purchaser 字段）
   - 某公司中标了哪些项目/中标历史/中标过什么 → "bidder_query"（提取 successful_bidder 字段）
+  - 用户表达采购需求（如"我要采购120台摄像头""采购50台服务器"）→ "product_demand"
+    （提取 product_name=产品名，不含数量/单位；数量只在语义关键词里体现，如 120台）
   - P0-12放宽：只要识别到有效项目编号（含字母+数字，如 AH2024-001、ZB-2024-123、[350001]FJGGZY[GK]2024013），不论用户是否提到"中标""详情"等词，一律走 "project_detail" → 仅提取 project_number
   - 某项目的中标情况/中标详情/谁中了 → "project_detail"（仅提取 project_number，禁止使用 project_name）
   - 用户输入纯项目编号如"AH2024-001"、"ZB-2024-123" → "project_detail"，hard_filters.project_number=该编号
@@ -432,3 +435,69 @@ def _extract_keywords(question: str) -> list[str]:
             words.append(token)
     words = _dedupe_keep_order(words)
     return words[:5] if words else [_normalize_token(question)[:10]]
+
+
+# ── 采购需求确定性检测（2026-09-16，修复「我要采购120台摄像头」落 fallback）──
+# 采购动词 + 数量 + 产品名 → product_demand 查询（读 bidding 产品明细 → 相似项目金额参考）。
+# 与 LLM 意图解析并行，LLM 若没归到 product_demand，这里确定性兜底覆盖。
+_PRODUCT_DEMAND_VERBS = re.compile(
+    r"(?:采购|要买|需要买|想买|购置|购买|拟采购|买)"
+)
+# 采购 N 台X：动词…数量 后跟产品（非贪婪截断到常见结尾词前）
+_PRODUCT_AFTER_QTY = re.compile(
+    r"(?:采购|要买|需要买|想买|购置|购买|拟采购|买)\D{0,8}?"
+    r"\d+[台个套批件组箱条只辆]\s*([一-龥A-Za-z0-9]{2,8})"
+)
+# 采购X N台：动词 后跟产品 再跟数量
+_PRODUCT_BEFORE_QTY = re.compile(
+    r"(?:采购|要买|需要买|想买|购置|购买|拟采购|买)\s*"
+    r"([一-龥A-Za-z0-9]{2,8})\s*\d+[台个套批件组箱条只辆]"
+)
+# 产品名后的语气/用途尾巴（"监控摄像头用于校园安防" → 只取"监控摄像头"）
+_PRODUCT_TRAILING = re.compile(
+    r"(用于.*|的.*|采购.*|多少钱.*|大概.*|价格.*|预算.*|大概需要.*)$"
+)
+
+
+def _extract_product_demand(question: str) -> Optional[str]:
+    """从采购需求文本中确定性提取产品名；不是采购需求或无产品 → None。
+
+    '我要采购120台摄像头' → '摄像头'；'采购摄像头120台' → '摄像头'；
+    '采购120台监控摄像头用于校园安防' → '监控摄像头'；
+    '采购方式有哪些'（无数量）→ None。
+    """
+    text = (question or "").strip()
+    if not text or not _PRODUCT_DEMAND_VERBS.search(text):
+        return None
+    for pat in (_PRODUCT_AFTER_QTY, _PRODUCT_BEFORE_QTY):
+        m = pat.search(text)
+        if not m:
+            continue
+        product = _PRODUCT_TRAILING.sub("", m.group(1)).strip()
+        # 产品组里可能混入数量数字（'摄像头12'→'摄像头'），去尾部数字
+        product = re.sub(r"\d+$", "", product).strip()
+        if len(product) >= 2 and not product.isdigit():
+            return product
+    return None
+
+
+def detect_product_demand(intent: SearchIntent, question: str) -> bool:
+    """采购需求确定性检测：命中则把 intent 覆盖为 product_demand（就地修改）。
+
+    返回是否命中。命中时：
+      - sub_route → bidding_query；query_type → product_demand；
+      - hard_filters.product_name = 产品名；semantic_keywords 前置产品词。
+    """
+    product = _extract_product_demand(question)
+    if not product:
+        return False
+    intent.sub_route = "bidding_query"
+    intent.query_type = "product_demand"
+    intent.hard_filters.product_name = product
+    if product not in intent.semantic_keywords:
+        intent.semantic_keywords = [product] + list(intent.semantic_keywords)
+    logger.info(
+        "[PRODUCT_DEMAND] 检测到采购需求: product=%s question=%.60s",
+        product, question,
+    )
+    return True

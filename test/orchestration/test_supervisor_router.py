@@ -64,8 +64,10 @@ def test_semantic_hit_exact_example():
 
 def test_semantic_below_threshold_returns_none():
     # 无关文本（不同哈希桶，余弦≈0）→ 低于阈值 → None
+    # ⚠️ 文本与任一能力示例桶相撞（假 embedder 的哈希巧合）会误命中；
+    # 2026-09-16 price_inquiry 新增采购需求示例后"今天天气怎么样"与其同桶，改用"今天天气不错"。
     hit = classify_semantic(
-        "今天天气怎么样",
+        "今天天气不错",
         embedder=_HashEmbedder(),
     )
     assert hit is None

@@ -42,6 +42,8 @@ def has_valid_query_entity(intent: SearchIntent) -> bool:
     company_name / purchaser / successful_bidder。未通过校验的实体名视为无效。
     supplier_recommend 例外：行业（hard_filters.industry）按行业过滤查询，
     是合法实体（非全表扫）；其余路由行业不算实体。
+    字号族例外（2026-09-16）：`resolved_families` 命中的字段已由
+    alias.resolve_company_families 确认为真实企业字号（公司简称），视为合法实体。
     """
     hf = intent.hard_filters
     if hf.project_number and _looks_like_code(hf.project_number):
@@ -51,6 +53,13 @@ def has_valid_query_entity(intent: SearchIntent) -> bool:
     if hf.purchaser and _is_valid_company_name(hf.purchaser):
         return True
     if hf.successful_bidder and _is_valid_company_name(hf.successful_bidder):
+        return True
+    # 字号族解析命中 → 合法实体（公司简称，如 杭州海康威视→海康威视）
+    for field in ("company_name", "purchaser", "successful_bidder"):
+        if field in intent.resolved_families:
+            return True
+    # product_demand：采购需求（产品名过滤查询，非全表扫）→ 合法实体
+    if intent.query_type == "product_demand" and hf.product_name:
         return True
     # supplier_recommend：行业是合法实体（WHERE industry=… 过滤查询，非全表扫）
     if intent.query_type == "supplier_recommend" and hf.industry:

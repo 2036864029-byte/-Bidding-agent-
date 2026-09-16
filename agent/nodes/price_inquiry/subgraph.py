@@ -40,6 +40,8 @@ from price_engine import (
     _parse_unified_intent,
     _safe_parse_intent,
 )
+from price_engine.alias import resolve_company_families
+from price_engine.intent import detect_product_demand
 from price_engine import queries as _queries_module
 from price_engine.guards import (
     QUERY_INTENT_KEYWORDS,
@@ -243,6 +245,19 @@ def _guard_entity_node(state: PriceSubgraphState) -> dict:
     question = state["pg_question"]
     intent = state["pg_intent"]
     llm_elapsed = state.get("pg_llm_elapsed", 0.0)
+
+    # ── 公司简称 → 字号族解析（海康威视类，就地改 intent）──
+    # 必须在守卫判定前执行：解析成功后 guard 才会放行（resolved_families 视为合法实体）。
+    try:
+        resolve_company_families(intent)
+    except Exception as e:  # noqa: BLE001  解析失败降级原值，不阻断主流程
+        logger.warning("[COMPANY_FAMILY] 字号族解析异常，降级原值: %s", e)
+
+    # ── 采购需求确定性检测（采购N台X → product_demand，覆盖 LLM 未归类）──
+    try:
+        detect_product_demand(intent, question)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[PRODUCT_DEMAND] 检测异常，降级原意图: %s", e)
 
     # ── 确定性拦截：product_query 功能线已砍除，先于一切 SQL 执行 ──
     if intent.sub_route == "product_query":
