@@ -1,0 +1,335 @@
+{
+  "description": "price 金标候选（E1-3 生成）",
+  "items": [
+    {
+      "q": "成都印钞有限公司的工商信息和中标历史",
+      "sub_route": "all",
+      "query_type": "mixed",
+      "source": "template+mysql"
+    },
+    {
+      "q": "安徽普甲商贸有限公司的详细信息和中标记录",
+      "sub_route": "all",
+      "query_type": "mixed",
+      "source": "template+mysql"
+    },
+    {
+      "q": "合肥金其商贸有限公司的工商信息和中标历史",
+      "sub_route": "all",
+      "query_type": "mixed",
+      "source": "template+mysql"
+    },
+    {
+      "q": "浙江卫星能源有限公司的工商信息和中标历史",
+      "sub_route": "all",
+      "query_type": "mixed",
+      "source": "template+mysql"
+    },
+    {
+      "q": "丰都县三抚林场的详细信息和中标记录",
+      "sub_route": "all",
+      "query_type": "mixed",
+      "source": "template+mysql"
+    },
+    {
+      "q": "上海福乐山庄有限公司的工商信息和中标历史",
+      "sub_route": "all",
+      "query_type": "mixed",
+      "source": "template+mysql"
+    },
+    {
+      "q": "广东中亚薯业有限公司的工商信息和中标历史",
+      "sub_route": "all",
+      "query_type": "mixed",
+      "source": "template+mysql"
+    },
+    {
+      "q": "北京碧湖怡景种植园的详细信息和中标记录",
+      "sub_route": "all",
+      "query_type": "mixed",
+      "source": "template+mysql"
+    },
+    {
+      "q": "2024年金额最高的中标项目",
+      "sub_route": "bidding_query",
+      "query_type": "aggregation",
+      "source": "template+mysql"
+    },
+    {
+      "q": "中标金额TOP10的项目",
+      "sub_route": "bidding_query",
+      "query_type": "aggregation",
+      "source": "template+mysql"
+    },
+    {
+      "q": "中标金额最大的项目是哪个？",
+      "sub_route": "bidding_query",
+      "query_type": "aggregation",
+      "source": "template+mysql"
+    },
+    {
+      "q": "最近中标金额最高的采购项目",
+      "sub_route": "bidding_query",
+      "query_type": "aggregation",
+      "source": "template+mysql"
+    },
+    {
+      "q": "一二三航空有限公司中标了哪些项目？",
+      "sub_route": "bidding_query",
+      "query_type": "bidder_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "重庆权馀苗木有限公司中标过什么项目？",
+      "sub_route": "bidding_query",
+      "query_type": "bidder_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "福建乌龙茶叶有限公司的中标历史",
+      "sub_route": "bidding_query",
+      "query_type": "bidder_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "蚌埠敏思商贸有限公司的中标历史",
+      "sub_route": "bidding_query",
+      "query_type": "bidder_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "一二三航空有限公司的投标中标记录",
+      "sub_route": "bidding_query",
+      "query_type": "bidder_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "海通开元投资有限公司的中标历史",
+      "sub_route": "bidding_query",
+      "query_type": "bidder_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "宾川县子龙育苗站中标过什么项目？",
+      "sub_route": "bidding_query",
+      "query_type": "bidder_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "HBSJ-202302QT-005003005的中标详情",
+      "sub_route": "bidding_query",
+      "query_type": "project_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "310109000240815122210-09143452 项目中标的是谁",
+      "sub_route": "bidding_query",
+      "query_type": "project_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "2511451000000264372的中标详情",
+      "sub_route": "bidding_query",
+      "query_type": "project_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "项目编号2023AFDGZ01582谁中标了？",
+      "sub_route": "bidding_query",
+      "query_type": "project_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "项目编号HBSJ-202308GL-083001001谁中标了？",
+      "sub_route": "bidding_query",
+      "query_type": "project_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "2023DFAGZ01670 项目中标的是谁",
+      "sub_route": "bidding_query",
+      "query_type": "project_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "2871451000000262890的中标详情",
+      "sub_route": "bidding_query",
+      "query_type": "project_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "2023ACCBZ00079 这个项目的中标情况",
+      "sub_route": "bidding_query",
+      "query_type": "project_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "蚌埠敏思商贸有限公司发包了哪些项目？",
+      "sub_route": "bidding_query",
+      "query_type": "purchaser_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "广东中亚薯业有限公司发包了哪些项目？",
+      "sub_route": "bidding_query",
+      "query_type": "purchaser_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "浙江卫星能源有限公司发包了哪些项目？",
+      "sub_route": "bidding_query",
+      "query_type": "purchaser_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "合肥金其商贸有限公司采购过哪些项目？",
+      "sub_route": "bidding_query",
+      "query_type": "purchaser_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "山东博汇浆业有限公司的招标历史",
+      "sub_route": "bidding_query",
+      "query_type": "purchaser_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "安徽慧瑶贸易有限公司的招标历史",
+      "sub_route": "bidding_query",
+      "query_type": "purchaser_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "浙江永吉木业有限公司采购过哪些项目？",
+      "sub_route": "bidding_query",
+      "query_type": "purchaser_query",
+      "source": "template+mysql"
+    },
+    {
+      "q": "成都印钞有限公司的工商信息有哪些？",
+      "sub_route": "company_query",
+      "query_type": "company_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "海通开元投资有限公司的企业详情",
+      "sub_route": "company_query",
+      "query_type": "company_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "合肥金其商贸有限公司的工商信息有哪些？",
+      "sub_route": "company_query",
+      "query_type": "company_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "安徽慧瑶贸易有限公司的企业详情",
+      "sub_route": "company_query",
+      "query_type": "company_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "中农锦溪农业有限公司的企业详情",
+      "sub_route": "company_query",
+      "query_type": "company_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "蚌埠敏思商贸有限公司的企业详情",
+      "sub_route": "company_query",
+      "query_type": "company_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "福建乌龙茶叶有限公司的注册资本和经营范围",
+      "sub_route": "company_query",
+      "query_type": "company_detail",
+      "source": "template+mysql"
+    },
+    {
+      "q": "北京碧湖怡景种植园有没有行政处罚",
+      "sub_route": "company_query",
+      "query_type": "penalty_check",
+      "source": "template+mysql"
+    },
+    {
+      "q": "宾川县子龙育苗站有不良记录吗？",
+      "sub_route": "company_query",
+      "query_type": "penalty_check",
+      "source": "template+mysql"
+    },
+    {
+      "q": "蚌埠敏思商贸有限公司有没有行政处罚",
+      "sub_route": "company_query",
+      "query_type": "penalty_check",
+      "source": "template+mysql"
+    },
+    {
+      "q": "宾川县子龙育苗站有没有被处罚过？",
+      "sub_route": "company_query",
+      "query_type": "penalty_check",
+      "source": "template+mysql"
+    },
+    {
+      "q": "海通开元投资有限公司有没有被处罚过？",
+      "sub_route": "company_query",
+      "query_type": "penalty_check",
+      "source": "template+mysql"
+    },
+    {
+      "q": "安徽普甲商贸有限公司有没有行政处罚",
+      "sub_route": "company_query",
+      "query_type": "penalty_check",
+      "source": "template+mysql"
+    },
+    {
+      "q": "蚌埠敏思商贸有限公司有不良记录吗？",
+      "sub_route": "company_query",
+      "query_type": "penalty_check",
+      "source": "template+mysql"
+    },
+    {
+      "q": "帮我找餐饮业领域的供应商",
+      "sub_route": "company_query",
+      "query_type": "supplier_recommend",
+      "source": "template+mysql"
+    },
+    {
+      "q": "推荐几家做林业的企业",
+      "sub_route": "company_query",
+      "query_type": "supplier_recommend",
+      "source": "template+mysql"
+    },
+    {
+      "q": "林业行业有哪些存续企业",
+      "sub_route": "company_query",
+      "query_type": "supplier_recommend",
+      "source": "template+mysql"
+    },
+    {
+      "q": "推荐几家做农业的企业",
+      "sub_route": "company_query",
+      "query_type": "supplier_recommend",
+      "source": "template+mysql"
+    },
+    {
+      "q": "推荐几家做餐饮业的企业",
+      "sub_route": "company_query",
+      "query_type": "supplier_recommend",
+      "source": "template+mysql"
+    },
+    {
+      "q": "帮我推荐农业的服务商",
+      "sub_route": "company_query",
+      "query_type": "supplier_recommend",
+      "source": "template+mysql"
+    },
+    {
+      "q": "帮我找农业领域的供应商",
+      "sub_route": "company_query",
+      "query_type": "supplier_recommend",
+      "source": "template+mysql"
+    }
+  ]
+}
