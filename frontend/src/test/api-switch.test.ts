@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockChatFixtures } from '@/mock/mockChat';
 import { mockKanbanRaw } from '@/mock/mockKanban';
+import { mockReferenceRaw } from '@/mock/mockReference';
 import { mockSupplierRaw } from '@/mock/mockSupplier';
 import { api, setDataSource } from '@/services/api';
 
@@ -16,7 +17,7 @@ const jsonResponse = (data: unknown, status = 200): Response =>
 
 describe('数据源开关 Mock ↔ API', () => {
   beforeEach(() => {
-    (['kanban', 'supplier', 'chat'] as const).forEach((m) => setDataSource(m, 'mock'));
+    (['kanban', 'supplier', 'chat', 'reference'] as const).forEach((m) => setDataSource(m, 'mock'));
   });
 
   afterEach(() => {
@@ -90,5 +91,31 @@ describe('数据源开关 Mock ↔ API', () => {
       '/api/chat',
       expect.objectContaining({ method: 'POST' })
     );
+  });
+
+  it('reference mock 态：返回经适配器的 Domain（金额万元）', async () => {
+    const r = await api.reference.fetch('采购120台监控摄像头用于校园安防监控项目');
+    expect(r.total).toBe(4);
+    expect(r.stats?.maxWan).toBe(597.92);
+    expect(r.projects[0].sourceUrl).toContain('ccgp.gov.cn');
+  });
+
+  it('reference 翻到 api：POST /api/inquiry/reference 并回填 Domain', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      jsonResponse(mockReferenceRaw)
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    setDataSource('reference', 'api');
+
+    const r = await api.reference.fetch('采购120台监控摄像头用于校园安防监控项目', { topK: 5 });
+    expect(r.total).toBe(4);
+    expect(r.projects[0].winningAmountWan).toBe(133.94);
+    // 请求体：text + top_k 组装正确
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/inquiry/reference');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      text: '采购120台监控摄像头用于校园安防监控项目',
+      top_k: 5,
+    });
   });
 });

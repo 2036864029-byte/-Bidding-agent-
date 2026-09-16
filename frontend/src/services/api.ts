@@ -12,15 +12,18 @@
 
 import { chatResponseAdapter } from '@/adapters/chatAdapter';
 import { kanbanAdapter } from '@/adapters/kanbanAdapter';
+import { referenceAdapter } from '@/adapters/referenceAdapter';
 import { supplierAdapter } from '@/adapters/supplierAdapter';
 import { chunkText } from '@/lib/chat';
 import { mockChatFixtures } from '@/mock/mockChat';
 import { mockKanbanRaw } from '@/mock/mockKanban';
+import { mockReferenceRaw } from '@/mock/mockReference';
 import { mockSupplierRaw } from '@/mock/mockSupplier';
 import * as backend from '@/services/backend';
 import { BackendError } from '@/services/backend';
 import type { ChatRawResponse, ChatResponse, ReplyType } from '@/types/chat';
 import type { KanbanOverview } from '@/types/kanban';
+import type { ReferenceOverview } from '@/types/inquiry';
 import type { SupplierOverview, SupplierRawOverview } from '@/types/supplier';
 
 export type DataMode = 'mock' | 'api';
@@ -29,6 +32,7 @@ export interface DataSourceConfig {
   kanban: DataMode;
   supplier: DataMode;
   chat: DataMode;
+  reference: DataMode;
 }
 
 /**
@@ -48,6 +52,7 @@ export const dataConfig: DataSourceConfig = {
   kanban: 'api',
   supplier: 'api',
   chat: import.meta.env?.VITE_CHAT_MODE === 'api' ? 'api' : 'mock',
+  reference: 'api',
 };
 
 /** 切换某模块数据源（测试/演示/灰度用）。 */
@@ -260,6 +265,17 @@ export const api = {
     async getOverview(opts: backend.SupplierQuery = {}): Promise<SupplierOverview> {
       if (dataConfig.supplier === 'mock') return supplierAdapter(mockSupplierOverview(opts));
       return supplierAdapter(await backend.getSuppliers(opts));
+    },
+  },
+
+  reference: {
+    /**
+     * POST /inquiry/reference —— 项目概况相似检索与金额参考。
+     * 输入是粘贴的项目概况文本（≥10 字），输出是相似中标项目 + 万元金额区间。
+     */
+    async fetch(text: string, opts: backend.ReferenceQuery = {}): Promise<ReferenceOverview> {
+      if (dataConfig.reference === 'mock') return referenceAdapter(mockReferenceRaw);
+      return referenceAdapter(await backend.fetchReference(text, opts));
     },
   },
 

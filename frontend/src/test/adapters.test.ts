@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { chatResponseAdapter } from '@/adapters/chatAdapter';
 import { kanbanAdapter } from '@/adapters/kanbanAdapter';
+import { referenceAdapter } from '@/adapters/referenceAdapter';
 import { supplierAdapter } from '@/adapters/supplierAdapter';
 import { mockChatFixtures } from '@/mock/mockChat';
 import { mockKanbanRaw } from '@/mock/mockKanban';
+import { mockReferenceRaw } from '@/mock/mockReference';
 import { mockSupplierRaw } from '@/mock/mockSupplier';
 import type { ReplyType } from '@/types/chat';
 import type { KanbanRawOverview } from '@/types/kanban';
@@ -263,5 +265,67 @@ describe('chatResponseAdapter', () => {
     const res = chatResponseAdapter({ reply_type: 'weird_new_type', answer: 'x' });
     expect(res.replyType).toBe('fallback');
     expect(res.data.kind).toBe('fallback');
+  });
+});
+
+describe('referenceAdapter', () => {
+  it('同份 raw 两次深等，且不改入参', () => {
+    const before = JSON.stringify(mockReferenceRaw);
+    expect(referenceAdapter(mockReferenceRaw)).toEqual(referenceAdapter(mockReferenceRaw));
+    expect(JSON.stringify(mockReferenceRaw)).toBe(before);
+  });
+
+  it('snake_case → camelCase：金额万元、原文链接、产品明细、相似度', () => {
+    const r = referenceAdapter(mockReferenceRaw);
+    expect(r.query).toBe(mockReferenceRaw.query);
+    expect(r.total).toBe(4);
+    expect(r.stats).toEqual({
+      minWan: 42.5,
+      medianWan: 133.94,
+      maxWan: 597.92,
+      avgWan: 231.35,
+      sampleCount: 4,
+    });
+    const p = r.projects[0];
+    expect(p).toMatchObject({
+      announcementId: 't20260911_27310629',
+      projectName: '校园安防视频监控系统升级改造项目',
+      region: '广东省',
+      winningAmountWan: 133.94,
+      winningDate: '2026-09-11',
+      sourceUrl: expect.stringContaining('ccgp.gov.cn'),
+      score: 0.87,
+    });
+    expect(p.products[0]).toEqual({
+      productName: '400万星光级网络摄像机',
+      normalizedProductName: '网络摄像机',
+      brand: '海康威视',
+      model: 'DS-2CD3T46WDV3',
+      quantity: '120',
+      unit: '台',
+      unitPriceYuan: 1650,
+    });
+  });
+
+  it('⚠️ 缺 stats / 缺 products / 单价 null —— 安全回落，不伪造', () => {
+    const r = referenceAdapter({
+      projects: [{ announcement_id: 'x' }],
+    } as unknown as Parameters<typeof referenceAdapter>[0]);
+    expect(r.stats).toBeNull();
+    expect(r.projects[0].products).toEqual([]);
+    expect(r.projects[0].score).toBe(0);
+    // 单价 null 保留 null（不是 0）
+    const withPrice = referenceAdapter({
+      projects: [{ products: [{ product_name: 'p', unit_price_yuan: null }] }],
+    } as never);
+    expect(withPrice.projects[0].products[0].unitPriceYuan).toBeNull();
+  });
+
+  it('完全空 raw → 空 Domain（不炸）', () => {
+    const r = referenceAdapter(undefined);
+    expect(r.query).toBe('');
+    expect(r.total).toBe(0);
+    expect(r.stats).toBeNull();
+    expect(r.projects).toEqual([]);
   });
 });

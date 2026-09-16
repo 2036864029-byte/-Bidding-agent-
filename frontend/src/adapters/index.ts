@@ -6,4 +6,5 @@
 export { kanbanAdapter } from './kanbanAdapter';
 export { supplierAdapter } from './supplierAdapter';
 export { chatResponseAdapter } from './chatAdapter';
+export { referenceAdapter } from './referenceAdapter';
 export { num, str, clamp, strArray, pick } from './helpers';

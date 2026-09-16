@@ -23,5 +23,17 @@ export function fmtAmountYuan(yuan: number | null): { value: string; unit: strin
   return { value: fmtInt(Math.round(yuan)), unit: '元' };
 }
 
+/** 万元金额（固定 2 位小数，报价参考用）→ 文案；≥1 亿自动折亿元。
+ *
+ * 与 `fmtAmountWan` 的区别：后者用于指标卡紧凑展示（取整），这里保留小数——
+ * 报价参考区间必须精确到分，round 到整万会丢掉 42.50 万这种有效信息。
+ */
+export function fmtWanFixed(wan: number): string {
+  const big = Math.abs(wan) >= 10000;
+  const value = big ? wan / 10000 : wan;
+  const unit = big ? '亿元' : '万元';
+  return `${value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${unit}`;
+}
+
 /** X 轴月份 'YYYY-MM' → 'YY/MM'（11 个刻度下更省横向空间）。 */
 export const fmtMonthTick = (m: string): string => m.slice(2).replace('-', '/');

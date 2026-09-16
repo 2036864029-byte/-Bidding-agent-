@@ -16,6 +16,7 @@
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import type { ChatRawResponse } from '@/types/chat';
 import type { KanbanRawOverview } from '@/types/kanban';
+import type { ReferenceRawResponse } from '@/types/inquiry';
 import type { SupplierRawOverview } from '@/types/supplier';
 
 /**
@@ -348,6 +349,36 @@ export async function getKanbanOverview(
   if (opts.industry) qs.set('industry', opts.industry);
   const q = qs.toString();
   return request<KanbanRawOverview>(`/kanban/overview${q ? `?${q}` : ''}`);
+}
+
+/**
+ * POST /inquiry/reference —— 项目概况相似检索与金额参考（读后端 `bidding.announcement`
+ * 语义检索，方案 §6）。
+ *
+ * 返回**原始形状**（snake_case，金额一律万元、产品单价元），字段映射交 `referenceAdapter`。
+ * 400 = 概况文本 <10 字；503 = 集合未索引 / bidding 库不可用（`withRetry` 会退避重试 503）。
+ */
+export interface ReferenceQuery {
+  topK?: number;
+  minAmountWan?: number;
+  region?: string;
+}
+
+export async function fetchReference(
+  text: string,
+  opts: ReferenceQuery = {}
+): Promise<ReferenceRawResponse> {
+  const body: Record<string, unknown> = { text };
+  if (opts.topK !== undefined) body.top_k = opts.topK;
+  if (opts.minAmountWan !== undefined) body.min_amount_wan = opts.minAmountWan;
+  if (opts.region) body.region = opts.region;
+  return withRetry(() =>
+    request<ReferenceRawResponse>('/inquiry/reference', {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    })
+  );
 }
 
 // 智能询价**没有**独立端点：报价参考由 /chat 的 price_records 派生（见 lib/inquiry.ts）。

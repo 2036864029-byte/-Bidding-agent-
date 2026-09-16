@@ -1,13 +1,16 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { InquiryPage } from '@/pages/inquiry/InquiryPage';
+import { setDataSource } from '@/services/api';
 
 /* 智能询价页集成 —— 本版的核心行为是**左右联动**：
- * ① 首屏是空态（没有查询就没有参考，不预填编造的项目）；
- * ② 左侧提问 → 右栏实时算出中标价区间与相似项目清单；
+ * ① 首屏是项目概况参考面板（独立端点链路）+ 无聊天派生的参考（不预填编造）；
+ * ② 左侧提问 → 右栏实时算出中标价区间与相似项目清单（聊天派生链路）；
  * ③ 问非价格类问题时保留上一次参考（不清空）；
  * ④ 对话模块联动入口的横幅与预填仍工作。 */
+
+beforeEach(() => setDataSource('reference', 'mock'));
 
 function renderPage(entry = '/inquiry') {
   return render(
@@ -25,12 +28,15 @@ async function ask(question: string) {
 }
 
 describe('智能询价页', () => {
-  it('首屏是空态引导，不预填编造的参考', () => {
+  it('首屏是项目概况参考面板（idle），不预填编造的参考', () => {
     renderPage();
 
-    expect(screen.getByText('还没有报价参考')).toBeInTheDocument();
+    // 独立端点链路的面板在场（idle 引导）
+    expect(screen.getByText('项目概况参考')).toBeInTheDocument();
+    expect(screen.getByText(/查询后这里会显示相似中标项目的金额区间/)).toBeInTheDocument();
+    // 聊天派生链路无结果：不预填编造的报价参考
     expect(screen.queryByText('相似项目清单')).toBeNull();
-    expect(screen.queryByText('3 个相似项目')).toBeNull();
+    expect(screen.queryByText('金额参考')).toBeNull();
   });
 
   it('左侧提问价格类问题 → 右栏算出区间与相似项目清单（左右联动）', async () => {

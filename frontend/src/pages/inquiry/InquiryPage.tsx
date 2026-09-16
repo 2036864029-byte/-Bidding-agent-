@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
-import { Calculator, MessageSquareQuote, Search, X } from 'lucide-react';
+import { Calculator, MessageSquareQuote, X } from 'lucide-react';
 import { ModulePageLayout } from '@/components/layout/ModulePageLayout';
-import { EmptyState } from '@/components/common/EmptyState';
 import { Badge } from '@/components/ui/badge';
 import { InquiryChat } from '@/components/inquiry/InquiryChat';
+import { ProjectReferencePanel } from '@/components/inquiry/ProjectReferencePanel';
 import { ReferenceSummary } from '@/components/inquiry/ReferenceSummary';
 import { SimilarProjectList } from '@/components/inquiry/SimilarProjectList';
 import { buildReference } from '@/lib/inquiry';
@@ -101,17 +101,15 @@ export function InquiryPage() {
         <InquiryChat initialQuestion={carriedQuestion} onResult={handleResult} />
 
         <div className="space-y-4">
-          {reference ? (
+          {/* 独立端点链路：粘贴项目概况 → 相似中标 + 金额参考（万元） */}
+          <ProjectReferencePanel />
+
+          {/* 聊天派生链路（保留）：左栏 /chat 结果 → 报价参考（元） */}
+          {reference && (
             <>
               <ReferenceSummary reference={reference} />
               <SimilarProjectList projects={reference.projects} />
             </>
-          ) : (
-            <EmptyState
-              icon={Search}
-              title="还没有报价参考"
-              description="在左侧描述项目概况，或上传招标文件 / 图片让我解析，这里会显示相似项目的中标价区间与清单。"
-            />
           )}
         </div>
       </div>
