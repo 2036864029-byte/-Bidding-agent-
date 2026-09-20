@@ -1,0 +1,60 @@
+# 本地门禁 hook —— PR review 的替代品（个人项目，见方案 §7）。
+#
+# 设计取向：**把机械检查自动化，人只留下判断**。
+#   pre-commit  秒级：只查本次改动的 Python 文件 + 契约测试（契约漂移最该在提交前拦）
+#   pre-push    全量：直接复用 scripts/ci/local_ci.py（一条命令 = CI 同款 3 个门禁）
+#
+# **为什么慢检查放 pre-push 而非 pre-commit**：否则每次 commit 都要等，
+# 人会开始用 `--no-verify`，门禁形同虚设 —— 比没有门禁更糟（有门禁的错觉）。
+#
+# **为什么全部用 local hook、不引 `ruff-pre-commit` 远程仓库**（2026-09-20 实测）：
+# 那类 hook 首次运行要从 GitHub 克隆，而本机 `git fetch` 直接
+# `Recv failure: Connection was reset` —— 配了它等于**每次提交都失败**。
+# 改用 local hook 调 venv 里的 ruff：离线可用，且 ruff 版本由 uv.lock 锁定，
+# 比远程仓库的 rev 更可控。
+#
+# 安装（一次性）：
+#     .venv/Scripts/python.exe -m pre_commit install \
+#         --hook-type pre-commit --hook-type pre-push
+# 临时跳过（确实需要时）：git commit --no-verify
+# 卸载：.venv/Scripts/python.exe -m pre_commit uninstall
+
+repos:
+  - repo: local
+    hooks:
+      # ── 阻断集：只 --fix 本次改动的文件 ──────────────────────
+      # 与 scripts/ci/local_ci.py 的 RUFF_BLOCKING_RULES 保持一致
+      # （那里是权威定义；此处为 hook 需要内联一份）。
+      - id: ruff-blocking
+        name: ruff（阻断集，自动修可修项）
+        entry: >-
+          .venv/Scripts/python.exe -m ruff check --fix
+          --select F821,F822,F823,F811,F841,E741,F601,F602,F632,I001,F401,W291,W292
+        language: system
+        files: ^(agent|api|core|price_engine|public_kb|orchestration|test)/.*\.py$
+        # 必须与 pyproject 的 `extend-exclude` 对齐：pre-commit 是**显式传文件路径**，
+        # 会绕过 ruff 自己的目录排除 —— 实测 `test/legacy/`（刻意排除的历史脚本）
+        # 被 files 正则匹配到、又被显式传入，于是报出 2 条永远不会修的错。
+        exclude: ^(test/legacy|archive|scripts/archive|docs)/
+
+      # 契约测试是秒级的（~5s），值得放提交前 ——
+      # 契约漂移（前后端 reply_type / 出口协议 / 列 key）越早发现越好改。
+      # 只在可能影响契约的文件变动时触发，避免无关改动也等。
+      - id: contract-tests
+        name: 契约测试（reply_type / 出口协议 / 列 key）
+        entry: .venv/Scripts/python.exe -m pytest test/contract -q
+        language: system
+        pass_filenames: false
+        # 注意：必须是**单行**正则 —— 用 YAML 折叠标量（>-）会把多行拼成带空格
+        # 的字符串，而空格是字面量，正则随之失效且不报错（静默永不触发）。
+        files: ^(core/protocol/|api/schemas\.py|frontend/src/types/|price_engine/rendering/output_templates\.py|agent/registry\.py)
+
+      # push 前跑完整门禁（lint + test + contract，≈1 分钟）——
+      # 直接复用 CI 运行器：一处定义，本地与云端同款。
+      # frontend 不在其中：它要 90s 且与后端改动无关，留给 CI。
+      - id: local-ci
+        name: 本地 CI（lint + test + contract）
+        entry: .venv/Scripts/python.exe scripts/ci/local_ci.py lint test contract
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
