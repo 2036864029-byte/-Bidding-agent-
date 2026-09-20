@@ -1,0 +1,100 @@
+# 云端 CI —— 与 scripts/ci/local_ci.py 同一套门禁（4 个解耦 job）。
+#
+# ⚠️ **当前处于休眠状态**：本仓库是纯本地个人项目、**无远端**，
+# GitHub Actions 不会被触发。此文件的作用是"日后接入远端即可直接生效"，
+# 而不是今天就能跑。**今天的入口是 `scripts/ci/local_ci.py`**（同 4 个门禁）。
+#
+# 两处的门禁定义必须保持一致：改了其中一个，另一个也要改。
+# 之所以不做成"一处定义两处消费"（如从 yml 生成脚本），是因为两边只有
+# 4 条命令、且执行环境差异（runner vs 本机）本身就不小 —— 抽象层的维护成本
+# 高于重复 4 条命令。
+
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+
+# 连续 push 时取消上一次未完成的运行，避免排队堆积
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Job 1: 缺陷类静态检查（阻断）─────────────────────────────
+  # 选这些规则的理由：F8xx/E741 是"写错了"类，不涉及风格偏好，零争议。
+  # 实测收益：三处 F821（注解引用未导入名字）正是靠它检出的 ——
+  # 因有 `from __future__ import annotations` 而不报错，但 get_type_hints 会崩。
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --group dev
+      - name: ruff —— 缺陷类（阻断）
+        run: |
+          uv run ruff check \
+            --select F821,F822,F823,F811,F841,E741,F601,F602,F632 \
+            agent api core price_engine public_kb orchestration test
+      - name: ruff —— 风格类（报告，不阻断）
+        if: always()
+        run: uv run ruff check --statistics agent api core price_engine public_kb orchestration test || true
+
+  # ── Job 2: hermetic 测试（阻断）──────────────────────────────
+  # `integration`/`e2e` 由 test/conftest.py 自动跳过，故此处无需 -m 过滤 ——
+  # 这是测试分层（P1）的收益：CI 不必知道哪些用例需要真实服务。
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --group dev
+      - name: pytest（hermetic 子集 + 覆盖率）
+        run: |
+          uv run pytest test/ -q \
+            --cov=agent --cov=api --cov=core \
+            --cov=price_engine --cov=orchestration \
+            --cov-report=term-missing \
+            --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.xml
+
+  # ── Job 3: 契约校验（阻断）───────────────────────────────────
+  # 独立成 job 的理由：契约漂移的失败信息只有这一处能给出，混在测试里会被淹没。
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --group dev
+      - run: uv run pytest test/contract -v
+
+  # ── Job 4: 前端（阻断）───────────────────────────────────────
+  # `build` 必跑：只跑 vitest 会漏掉类型/打包错误（tsc -b 在 build 里）。
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
