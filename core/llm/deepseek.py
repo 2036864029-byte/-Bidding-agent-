@@ -3,7 +3,8 @@
 
 原 ``create_llm``（services/llm.py:19-39）的 ChatOpenAI 构造逻辑包进
 ``DeepSeekProvider.build()``；模块级 ``create_llm(settings, *, temperature=None)``
-保留兼容签名——public_kb/services/llm.py 及旧调用方经 re-export 继续可用。
+保留兼容签名（旧调用方仍可用）。原 public_kb/services/llm.py 的 re-export 兼容壳
+**已随 P6 结构收敛删除**（守卫见 test/core/test_legacy_path_allowlist.py）。
 """
 
 from __future__ import annotations

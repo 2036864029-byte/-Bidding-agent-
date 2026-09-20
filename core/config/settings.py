@@ -3,8 +3,8 @@
 core.config.settings — 全局单一配置中心。
 
 来源：public_kb/config.py（364 行整体上提）。保持 @dataclass Settings +
-os.getenv + 根 .env 加载方式不变，仅包路径迁移；public_kb/config.py
-改为 `from core.config.settings import Settings` re-export + DeprecationWarning。
+os.getenv + 根 .env 加载方式不变，仅包路径迁移。原 public_kb/config.py 的
+re-export 兼容壳**已随 P6 结构收敛删除**（守卫见 test/core/test_legacy_path_allowlist.py）。
 
 使用方式：
     from core.config.settings import Settings

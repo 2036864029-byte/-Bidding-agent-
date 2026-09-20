@@ -2,7 +2,8 @@
 """Context and source formatting — moved from public_kb/generation/context.py (Phase 1 / B-2).
 
 渲染依赖检索 Document 的 chunk 元数据契约（doc_name/chapter/chunk_index），
-故留在 RAG 能力包内；generation/context.py 现为 re-export 兼容壳。
+故留在 RAG 能力包内。原 `generation/context.py` 的 re-export 兼容壳
+**已随 P6 结构收敛删除**（`test/core/test_legacy_path_allowlist.py` 守卫防回潮）。
 """
 
 from __future__ import annotations

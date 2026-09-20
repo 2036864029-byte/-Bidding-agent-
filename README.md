@@ -183,7 +183,7 @@ A: `pip install 'setuptools<70'`（pymilvus 2.4.x 需要）
 A: 检查 `.env` 是否填好；MySQL/Milvus 是否启动；数据目录是否就位。
 
 **Q: 怎么往知识库加新法规 PDF？**
-A: 把 PDF 放到 `raw_pdfs/`，然后跑 `python -m public_kb --init --pdf-dir raw_pdfs`（首次或全量重建）。增量添加见 `public_kb/rag_engine.py` 的 `add_pdf(path)` 方法。
+A: 把 PDF 放到 `raw_pdfs/`，然后跑 `python -m public_kb --init --pdf-dir raw_pdfs`（首次或全量重建）。增量添加见 `public_kb/engine.py` 的 `add_pdf(path)` 方法（该文件由 `rag_engine.py` 更名，旧路径兼容壳已随 P6 结构收敛删除）。
 
 **Q: 我改了某个节点的逻辑，怎么本地验证？**
 A: 单条问题：`python -m agent --question "..." --verbose`。交互模式：`python -m agent --interactive`。

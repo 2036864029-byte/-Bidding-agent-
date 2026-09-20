@@ -65,7 +65,7 @@ The system has two independent packages connected by a thin contract:
 - **`router.py`**: LLM-based intent classifier, **candidate set fully generated from the registry** — no hardcoded `RouterIntent`/route tools/prompt. Builds per-registry tools (`route_*`), a dynamic decision model (`Literal` over enabled ids), and the system prompt from each capability's routing copy. Tries `with_structured_output` first; falls back to Tool Calling if the API doesn't support it. Carries the last 3 conversation turns for context-aware routing. All failures → `fallback`.
 - **`graph.py`**: Builds and compiles the StateGraph. **Nodes and conditional edges are registered dynamically from `registry.enabled_specs()`** (entries resolved via `nodes.base.get_node_spec`). All business nodes are wrapped in `_with_fallback()` — any unhandled exception returns a friendly degradation message instead of crashing. The `AgentGraph` class is the public entry point.
 - **`state.py`**: Single `AgentState(TypedDict)` with three fields: `messages` (Annotated list with `add_messages` reducer for ID dedup), `router_intent` (str; value domain = registry enabled ids), `business_result` (generic dict). All branches share this same state — new branches do NOT add fields.
-- **`nodes/`**: Business nodes, each following the signature `(AgentState) → dict`. `price_inquiry/` is now a **thin node + facade** (P3): `node.py` (entry + P0-11/P0-12 guards + guidance + dual timeout + POST_GUARD) lives here; the engine (intent/queries/recall/semantic/sql_builders/enum_norm/schema/models) moved to `price_engine/`. `agent/nodes/answer_templates.py` / `output_templates.py` are mirror shells for `price_engine/rendering/`. The package `__init__.py` re-exports engine symbols via `price_engine`, so `from agent.nodes.price_inquiry import ...` is unchanged for external callers.
+- **`nodes/`**: Business nodes, each following the signature `(AgentState) → dict`. `price_inquiry/` is now a **thin node + facade** (P3): `node.py` (entry + P0-11/P0-12 guards + guidance + dual timeout + POST_GUARD) lives here; the engine (intent/queries/recall/semantic/sql_builders/enum_norm/schema/models) moved to `price_engine/`. 曾经的镜像壳 `agent/nodes/answer_templates.py` / `output_templates.py` **已随 P6 结构收敛删除** —— 价格模板只存在于 `price_engine/rendering/`（`test/core/test_legacy_path_allowlist.py` 守卫防回潮）。The package `__init__.py` re-exports engine symbols via `price_engine`, so `from agent.nodes.price_inquiry import ...` is unchanged for external callers.
 
 ### `price_engine/` — 价格/标讯查询引擎（P3 下沉）
 
@@ -81,9 +81,9 @@ The system has two independent packages connected by a thin contract:
 
 ### `public_kb/` — RAG engine
 
-- **`rag_engine.py`**: `PublicKnowledgeRAG` class — the public entry point. Methods: `init_knowledge_base(pdf_dir)`, `query(question)`, `clear_kb()`, `add_pdf(path)`. Uses lazy singleton pattern; the knowledge base is read-only after initialization.
-- Pipeline: PDF → `MinerUParser` (MinerU API → Markdown) → `TextCleaner` → `SemanticChunker` (heading-aware, 2000 chars/chunk, 100 char overlap) → `create_embeddings()` (BGE-m3, 1024 dims) → `MilvusStoreManager` → `build_qa_chain()` (LCEL hybrid retrieval chain).
-- **`config.py`**: `Settings` dataclass — single source of truth for all parameters. Loads from `.env` automatically. All modules share this config.
+- **`engine.py`**（由 `rag_engine.py` 更名，**旧名 compat 壳已随 P6 删除，勿再引用旧路径**）: `PublicKnowledgeRAG` class — the public entry point. Methods: `init_knowledge_base(pdf_dir)`, `query(question)`, `clear_kb()`, `add_pdf(path)`. Uses lazy singleton pattern; the knowledge base is read-only after initialization.
+- Pipeline: PDF → `MinerUParser` (MinerU API → Markdown) → `TextCleaner` → `SemanticChunker` (heading-aware, 2000 chars/chunk, 100 char overlap) → `create_embeddings()` (BGE-m3, 1024 dims，`core/embeddings/bge_m3.py`) → `MilvusStoreManager` (`core/vectorstore/milvus_client.py`) → `build_chain()` (LCEL hybrid retrieval chain，`public_kb/generation/chain.py`；旧名 `build_qa_chain` / `qa_chain.py` 已随 P6 删除）。
+- **配置**：`Settings` dataclass 是全局单一配置源，已上提到 **`core/config/settings.py`**（`public_kb/config.py` 兼容壳已随 P6 删除）。自动加载根 `.env`，所有模块共享。
 - Hybrid retrieval: dense (BGE-m3) + sparse → RRF fusion (k=60) → BGE-reranker-v2-m3 Cross-Encoder rerank → top-K (5). Adaptive similarity threshold with 0.45 floor.
 
 ### Data sources
