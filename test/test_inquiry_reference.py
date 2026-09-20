@@ -225,6 +225,12 @@ class TestSearchReference:
 
     def test_no_hits_above_threshold(self, monkeypatch):
         monkeypatch.setattr(ref, "_milvus_client", lambda s: FakeMilvus([_FakeHit("A1", 0.10)]))
+        # 必须同时 patch embedder：漏了它会真发 POST 到 127.0.0.1:18003，
+        # 本用例便随"开发机有没有跑模型隧道"红绿漂移（本文件自称零网络）。
+        monkeypatch.setattr(
+            ref, "get_embeddings",
+            lambda s: type("E", (), {"embed_query": lambda self, t: [0.0] * 1024})(),
+        )
         result = search_reference(_settings(), "采购120台监控摄像头用于校园安防")
         assert result["total"] == 0
         assert result["projects"] == []

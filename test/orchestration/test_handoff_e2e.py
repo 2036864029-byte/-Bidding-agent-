@@ -3,10 +3,14 @@
 注入 fake agent 子图（callable，同 (state, config) 接口）与 fake L3 router，
 不触碰网络。覆盖：price→handoff→knowledge 组合终态、无 handoff 直通 END、
 handoff 清空防循环、agent 内部键不泄漏进 supervisor 终态。
+
+例外：`test_real_compiled_subgraph_through_supervisor` 标 `integration` ——
+它用的是**真实编译子图**，检索会打到 Milvus + 嵌入服务，非离线可跑。
 """
 
 from __future__ import annotations
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 
@@ -109,10 +113,17 @@ def test_fallback_route_still_terminates():
     assert out.get("handoff") is None
 
 
+@pytest.mark.integration
 def test_real_compiled_subgraph_through_supervisor(monkeypatch):
     """真实编译子图（langgraph 1.2.11 不可 callable）经适配器在 supervisor 主图运行。
 
     回归：此前 `_with_fallback` 对 CompiledStateGraph 误判单参 → "object is not callable"。
+
+    ⚠️ `integration`：本用例走**真实检索**（Milvus + 嵌入服务），不是单测。
+    曾被误当单测，patch 了 `ksg.kb_search` 却漏了 `kb_search_expanded`
+    （`kb_light_decompose` 默认 True 时走的是后者）→ 补丁未生效、真联网，
+    表现为"开发机跑隧道就绿、不跑就红"。该回归价值已由
+    `test_fallback_route_still_terminates`（fake 子图）覆盖，此处标 integration 不损失覆盖。
     """
     import agent.nodes.knowledge_qa.subgraph as ksg
     from agent.nodes.knowledge_qa.subgraph import build_knowledge_qa_subgraph

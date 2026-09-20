@@ -120,3 +120,27 @@ def fake_doc_embeddings(monkeypatch):
             return self._vec(text)
 
     monkeypatch.setattr(ce, "get_embeddings", lambda settings=None: _FakeEmbeddings())
+
+
+# ── 测试分层：integration / e2e 默认跳过 ─────────────────────────────
+#
+# 为什么要默认跳过：标了 marker 的用例仍会被 `pytest test/` 跑到 —— marker 只是
+# 标签，不是开关。这些用例需要真实 Milvus / MySQL / 模型隧道，在没起的机器上
+# 必然失败，于是"套件红绿取决于本机状态"而不是代码对错。默认跳过把这类噪声
+# 从日常运行里摘出去，需要时用 RUN_INTEGRATION=1 放行。
+#
+# 与 `-m "not integration"` 的区别：`-m` 要每次都记得写；默认跳过是**默认安全**，
+# 漏写不会误跑。P1 的网络闸门会在此基础上再把"忘了标记却偷偷联网"堵死。
+
+def pytest_collection_modifyitems(config, items):
+    """integration / e2e 用例默认跳过；`RUN_INTEGRATION=1` 放行。"""
+    import os
+
+    if os.getenv("RUN_INTEGRATION") == "1":
+        return
+    skip = pytest.mark.skip(
+        reason="integration/e2e 默认跳过（需真实 Milvus/MySQL/隧道）；设 RUN_INTEGRATION=1 放行"
+    )
+    for item in items:
+        if item.get_closest_marker("integration") or item.get_closest_marker("e2e"):
+            item.add_marker(skip)
