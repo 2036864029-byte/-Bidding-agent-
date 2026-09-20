@@ -33,6 +33,20 @@ docker compose -f docker/mysql/docker-compose.yml up -d # local MySQL (optional)
 
 # Run tests (pytest-compatible; some also run standalone via __main__)
 python -m pytest test/ -v
+# 注：`integration`/`e2e` 用例**默认跳过**（需真实 Milvus/MySQL/模型隧道）。
+# 放行：RUN_INTEGRATION=1 python -m pytest test/ -v
+
+# 工程门禁：一条命令跑完 lint / test / contract / frontend（~2.5 min）
+# 入口是 scripts/ci/local_ci.py（本地 CI 运行器）——本仓库无远端，
+# .github/workflows/ci.yml 处于休眠状态，**日常入口是这条命令**。
+.venv/Scripts/python.exe scripts/ci/local_ci.py
+.venv/Scripts/python.exe scripts/ci/local_ci.py lint test   # 只跑指定门禁
+.venv/Scripts/python.exe scripts/ci/local_ci.py --list      # 列出门禁
+
+# 风格类棘轮：E501/E731 告警数与覆盖率，只允许比基线好不允许差
+# （基线在 scripts/ci/baselines.json，入库；变好时用 --update 固化）
+.venv/Scripts/python.exe scripts/ci/ratchet.py lint
+.venv/Scripts/python.exe scripts/ci/ratchet.py coverage --report coverage.json
 
 # Diagnostic tools
 python test/explain_sql.py --db ztb_clean --sql "<SQL>"   # EXPLAIN a query
@@ -101,6 +115,18 @@ When adding a new branch (P4 起，router/graph 已由 `agent/registry.py` Capab
 
 The `test/` directory contains both diagnostic scripts and pytest-compatible tests:
 
+**测试分层的写法约定（新增用例必读）**：默认 hermetic，`integration`/`e2e` 显式 opt-in。
+- **不标 marker = 必须离线**：`test/_support/hermetic.py` 会拦掉所有网络出口
+  （`socket.connect` / `create_connection`），联网即抛 `NetworkBlockedByTest`，
+  提示告诉你是补 mock 还是该标 marker。**别靠"本机跑通了"判断**——这类用例的
+  典型形态是"联网失败后走降级、断言恰好成立"，本地绿、换台机器红。
+- 需要真实服务（Milvus/MySQL/模型隧道）→ 加 `@pytest.mark.integration`（或 `e2e`），
+  默认跳过，`RUN_INTEGRATION=1` 放行。
+- **假件优先从 `test/_support/fakes.py` 取**（`ZeroEmbeddings` / `CharCountEmbeddings` /
+  `HashEmbeddings` / `patch_kb_search` …），不要在每个用例里内联 lambda ——
+  重复手抄正是"漏 mock"类 bug 的温床。
+- 会话结束会汇总"哪些非 live 用例试图联网"（含降级后碰巧通过的），是补充信号。
+
 **Diagnostic/profiling scripts:**
 - `test/db_explorer.py` — database overview (table counts, sizes)
 - `test/explain_sql.py` — run EXPLAIN on a query to detect full table scans
@@ -113,12 +139,18 @@ The `test/` directory contains both diagnostic scripts and pytest-compatible tes
 - `scripts/archive/` — run_evaluation.py, generate_report.py, csv_to_mysql.py
 - `test/legacy/` — _step* 迁移步骤、scan_tables / inspect_price_dbs / export_samples 等数据诊断工具
 
-**Pytest-compatible tests** (test internal functions with mocks, no live DB/LLM needed):
+**Pytest-compatible tests** (hermetic by default — no live DB/LLM needed):
+- `test/_support/` — 测试共用基建：`hermetic.py`（网络闸门）+ `fakes.py`（假件），见上方「测试分层的写法约定」
+- `test/test_hermetic_gate.py` — 网络闸门自身的元测试（保证闸门没被改坏 —— 它静默失效的表现是"测试全绿但又在偷偷联网"）
+- `test/contract/` — **契约测试**（出口协议 `ReplyType` / 前后端 reply_type / price 列 key）。
+  三组断言的"防什么"见文件 docstring；其中最有价值的是把"registry 登记"与
+  "出口协议登记"锚在一起（漏登记会静默落 fallback，不报错）
 - `test/test_recall_optimization.py` — recall stage logic tests
-- `test/test_sub_route.py` — sub-route classification tests
 - `test/test_bug_repairs.py` — regression tests for fixed bugs
 - `test/test_p0_*.py` — P0 bug fix verification tests
 - `test/test_citation_tracing.py` — citation tracing tests (chunk_uid, standardized citations, validation rules R1-R7)
+- ⚠️ `test/test_sub_route.py` — **多数用例需要真实 LLM/MySQL**（类 docstring 有说明），
+  已按语义标 `e2e`/`integration`、默认跳过；只有纯逻辑的那几个类默认运行
 
 **Knowledge-base citation evaluation** (requires live Milvus + LLM):
 - `python scripts/run_knowledge_citation_eval.py` — full citation traceability eval over `testset_knowledge.jsonl` (~106 legal questions), verifies per-result citation completeness and Milvus back-check association; writes `test_report/knowledge_citation_results.jsonl` + summary report
