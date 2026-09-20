@@ -11,7 +11,7 @@ W1-3：与 `agent/nodes/price_inquiry/subgraph.py` 共用 `price_engine.guards` 
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field

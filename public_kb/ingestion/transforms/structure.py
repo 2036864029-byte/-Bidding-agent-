@@ -250,8 +250,8 @@ def _front_is_manual_body(front: List[str]) -> bool:
     法名标题下的沿革行（"1. 1999年8月30日通过"）不是问句、也无答行 → 不算。
     封面/前言/目录不含问句与答行 → 不算。
     """
-    for l in front:
-        s = l.strip().lstrip("#").strip()
+    for line in front:
+        s = line.strip().lstrip("#").strip()
         if not s:
             continue
         if re.match(r"^答\s*[:：]", s):

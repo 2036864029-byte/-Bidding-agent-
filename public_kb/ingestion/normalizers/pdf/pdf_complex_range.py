@@ -115,8 +115,7 @@ def aggregate_complex_ranges(
     seed = range_id_seed or "pdf"
     out: List[ComplexRange] = []
     for ridx, page_idxs in enumerate(merged):
-        core = [i for i in page_idxs if _in_groups(page_idxs, i, raw_groups, expand_pages, total_pages)]
-        # core 简化：从 raw_groups 中所有属于本 page_idxs 范围的页
+        # 简化：从 raw_groups 中所有属于本 page_idxs 范围的页
         core_set = set()
         for grp in raw_groups:
             for p in grp:

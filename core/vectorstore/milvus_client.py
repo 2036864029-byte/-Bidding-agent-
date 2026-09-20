@@ -272,7 +272,6 @@ class MilvusStoreManager:
         避免客户端并发问题（settings.embedding_max_workers 控制并发度）。
         """
         batch_size = self._settings.embedding_batch_size
-        total = len(documents)
         inserted = 0
         skipped = 0
 

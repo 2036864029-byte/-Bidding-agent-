@@ -285,7 +285,6 @@ def extract_page_markdown(
     页眉识别交给文档级 ``detect_header_candidates``（跨页重复，A1-1）；不再按
     页面位置硬切（旧 top_ratio 会误删单栏正文首行）。
     """
-    d = page.get_text("dict") or {}
     lines = iter_lines(page)
     lines = remove_page_numbers(lines)
     lines = remove_header_lines(lines, header_candidates)

@@ -26,7 +26,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from langchain_core.documents import Document
 
@@ -178,9 +178,9 @@ def clean_markdown(
                 # 仅在"文首不再以该标题作标题行"时恢复（用标题行判定，避免被正文
                 # 《…法》引用里的同名子串干扰）。
                 _headlines = [
-                    re.sub(r"^#+\s+", "", l).strip()
-                    for l in cleaned.split("\n")[:24]
-                    if l.strip().startswith("#")
+                    re.sub(r"^#+\s+", "", line).strip()
+                    for line in cleaned.split("\n")[:24]
+                    if line.strip().startswith("#")
                 ][:8]
                 if leading_title not in _headlines:
                     # 前置剥离误把书名/法名标题当封面吞掉 → 置顶恢复为 H1（书根），
@@ -293,15 +293,12 @@ def prepare_handoff(
     重新解析。产物分目录：raw/{stem}.raw.md · clean/{stem}.assembled.md ·
     chunks/{stem}.documents.jsonl。
     """
-    from .parser_factory import build_pdf_parser
-
     pdf_dir = Path(pdf_dir)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     if not pdf_dir.exists():
         raise FileNotFoundError(f"PDF 目录不存在: {pdf_dir}")
 
-    parser = build_pdf_parser(settings)
     summary: List[Dict[str, Any]] = []
     pdf_files = sorted(pdf_dir.glob("*.pdf"))
     if not pdf_files:

@@ -13,7 +13,7 @@ Router — 意图路由节点（P4 动态化：候选集/系统提示/route_* to
 from __future__ import annotations
 
 import logging
-from typing import List, Literal, Optional, Type
+from typing import Any, List, Literal, Optional, Type
 
 from pydantic import BaseModel, Field, create_model
 from langchain_core.messages import HumanMessage, SystemMessage

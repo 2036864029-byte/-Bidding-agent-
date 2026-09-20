@@ -392,7 +392,6 @@ def _post_guard_node(state: PriceSubgraphState) -> dict:
     intent = state["pg_intent"]
     query_result = state["pg_query_result"]
     records = query_result.get("records", [])
-    question = state["pg_question"]
 
     # ── P0-11：后置回溯 — bid_project 召回结果校验（G-6 角色感知）──
     # 当 bidding_query 以公司名检索时，验证返回结果的 successful_bidder/purchaser
