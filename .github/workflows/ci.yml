@@ -35,14 +35,13 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --frozen --group dev
-      - name: ruff —— 缺陷类（阻断）
+      - name: ruff —— 阻断集（缺陷类 + 已清零的清理类）
         run: |
           uv run ruff check \
-            --select F821,F822,F823,F811,F841,E741,F601,F602,F632 \
+            --select F821,F822,F823,F811,F841,E741,F601,F602,F632,I001,F401,W291,W292 \
             agent api core price_engine public_kb orchestration test
-      - name: ruff —— 风格类（报告，不阻断）
-        if: always()
-        run: uv run ruff check --statistics agent api core price_engine public_kb orchestration test || true
+      - name: 风格类棘轮（E501 / E731，不得比基线差）
+        run: uv run python scripts/ci/ratchet.py lint
 
   # ── Job 2: hermetic 测试（阻断）──────────────────────────────
   # `integration`/`e2e` 由 test/conftest.py 自动跳过，故此处无需 -m 过滤 ——
@@ -61,7 +60,10 @@ jobs:
             --cov=agent --cov=api --cov=core \
             --cov=price_engine --cov=orchestration \
             --cov-report=term-missing \
+            --cov-report=json:coverage.json \
             --cov-report=xml
+      - name: 覆盖率棘轮（不得比基线差）
+        run: uv run python scripts/ci/ratchet.py coverage --report coverage.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

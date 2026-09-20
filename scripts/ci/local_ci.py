@@ -45,10 +45,17 @@ if hasattr(sys.stdout, "reconfigure"):
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND = ROOT / "frontend"
 CONTRACT_DIR = ROOT / "test" / "contract"
+RATCHET = ROOT / "scripts" / "ci" / "ratchet.py"
+COVERAGE_JSON = "coverage.json"     # 由 test 门禁产出，供覆盖率棘轮消费（已 gitignore）
 
-#: 缺陷类规则 —— "写错了"而非"风格不合我意"，零争议，故可阻断。
-#: 不含 E501/F401（风格/清理类）：那类走棘轮，见方案 P3-3。
-RUFF_DEFECT_RULES = "F821,F822,F823,F811,F841,E741,F601,F602,F632"
+#: lint 门禁的规则集 —— 两类，都**阻断**：
+#:   缺陷类  F8xx / E741        —— "写错了"（未定义名/未用变量/重定义/歧义名），零风格争议
+#:   清理类  I001/F401/W291/W292 —— 导入无序/未用导入/行尾空白（P3-2 已 autofix 清零，
+#:                                进阻断防止回潮；留棘轮也能防涨，但既然已是 0，阻断更强）
+#: **不含** E501（长行）/ E731（lambda 赋值）—— 纯风格偏好，走棘轮，见 P3-3。
+RUFF_BLOCKING_RULES = (
+    "F821,F822,F823,F811,F841,E741,F601,F602,F632,I001,F401,W291,W292"
+)
 
 #: 被检查的 Python 包（含 test/ —— 2026-09-20 起纳入）。
 PY_PACKAGES = ["agent", "api", "core", "price_engine", "public_kb", "orchestration", "test"]
@@ -137,21 +144,25 @@ def _run_steps(name: str, steps: Sequence[Sequence[str]], cwd: Path) -> GateResu
 # ── 各门禁 ────────────────────────────────────────────────────────
 
 def _lint() -> GateResult:
-    return _run_steps("lint", ([
-        _venv_python(), "-m", "ruff", "check",
-        "--select", RUFF_DEFECT_RULES, *PY_PACKAGES,
-    ],), ROOT)
+    """静态检查：阻断集（缺陷类 + 已清零的清理类）+ 风格类棘轮。"""
+    return _run_steps("lint", (
+        [_venv_python(), "-m", "ruff", "check",
+         "--select", RUFF_BLOCKING_RULES, *PY_PACKAGES],
+        [_venv_python(), str(RATCHET), "lint"],
+    ), ROOT)
 
 
 def _test() -> GateResult:
     # integration / e2e 由 conftest 自动跳过（P1 的分层），故此处无需 -m 过滤 ——
     # 这是 P1 的收益：CI 不必知道哪些用例是 live 的。
-    return _run_steps("test", ([
-        _venv_python(), "-m", "pytest", "test/", "-q",
-        "--cov=agent", "--cov=api", "--cov=core",
-        "--cov=price_engine", "--cov=orchestration",
-        "--cov-report=term-missing:skip-covered",
-    ],), ROOT)
+    return _run_steps("test", (
+        [_venv_python(), "-m", "pytest", "test/", "-q",
+         "--cov=agent", "--cov=api", "--cov=core",
+         "--cov=price_engine", "--cov=orchestration",
+         "--cov-report=term-missing:skip-covered",
+         f"--cov-report=json:{COVERAGE_JSON}"],
+        [_venv_python(), str(RATCHET), "coverage", "--report", COVERAGE_JSON],
+    ), ROOT)
 
 
 def _contract() -> GateResult:
