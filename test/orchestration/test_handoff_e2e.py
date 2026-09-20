@@ -4,18 +4,18 @@
 不触碰网络。覆盖：price→handoff→knowledge 组合终态、无 handoff 直通 END、
 handoff 清空防循环、agent 内部键不泄漏进 supervisor 终态。
 
-例外：`test_real_compiled_subgraph_through_supervisor` 标 `integration` ——
-它用的是**真实编译子图**，检索会打到 Milvus + 嵌入服务，非离线可跑。
+`test_real_compiled_subgraph_through_supervisor` 用**真实编译子图**（验 langgraph
+不可 callable 的适配回归），其检索入口由 `_support.fakes.patch_kb_search` 打桩，
+故同样离线可跑。
 """
 
 from __future__ import annotations
 
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 
+from _support.fakes import patch_kb_search
 from orchestration.main_graph import build_supervisor_graph
-
 
 # ── fake agent 子图 ───────────────────────────────────────────
 
@@ -113,17 +113,14 @@ def test_fallback_route_still_terminates():
     assert out.get("handoff") is None
 
 
-@pytest.mark.integration
 def test_real_compiled_subgraph_through_supervisor(monkeypatch):
     """真实编译子图（langgraph 1.2.11 不可 callable）经适配器在 supervisor 主图运行。
 
     回归：此前 `_with_fallback` 对 CompiledStateGraph 误判单参 → "object is not callable"。
 
-    ⚠️ `integration`：本用例走**真实检索**（Milvus + 嵌入服务），不是单测。
-    曾被误当单测，patch 了 `ksg.kb_search` 却漏了 `kb_search_expanded`
-    （`kb_light_decompose` 默认 True 时走的是后者）→ 补丁未生效、真联网，
-    表现为"开发机跑隧道就绿、不跑就红"。该回归价值已由
-    `test_fallback_route_still_terminates`（fake 子图）覆盖，此处标 integration 不损失覆盖。
+    注意检索入口用共享助手 `patch_kb_search` 一次补两个 —— 曾经只 patch
+    `ksg.kb_search`，而 `kb_light_decompose` 默认 True 时子图走
+    `kb_search_expanded`，补丁静默失效、真联网到模型隧道（表现："本机跑隧道就绿"）。
     """
     import agent.nodes.knowledge_qa.subgraph as ksg
     from agent.nodes.knowledge_qa.subgraph import build_knowledge_qa_subgraph
@@ -141,7 +138,7 @@ def test_real_compiled_subgraph_through_supervisor(monkeypatch):
         rendered_context="[来源1] 公开招标是指招标人以招标公告方式邀请不特定的法人或其他组织投标。",
         recall_trace={"mode": "fake"},
     )
-    monkeypatch.setattr(ksg, "kb_search", lambda q: triple)
+    patch_kb_search(monkeypatch, ksg, triple)
     monkeypatch.setattr(ksg, "_get_llm", lambda: RunnableLambda(
         lambda msgs: AIMessage(content="根据【来源1】，公开招标是指招标人以招标公告方式邀请不特定的法人或其他组织投标。")))
 

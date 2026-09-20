@@ -7,8 +7,8 @@ fake llm_router。覆盖：规则命中 / 语义命中 / LLM 兜底 / 全 miss�
 
 from __future__ import annotations
 
-import hashlib
-
+from _support.fakes import HashEmbeddings
+from orchestration.handoff import HandoffMeta
 from orchestration.supervisor import (
     classify_rules,
     classify_semantic,
@@ -16,8 +16,6 @@ from orchestration.supervisor import (
     route_question,
     route_question_full,
 )
-from orchestration.handoff import HandoffMeta
-
 
 # ── L1 规则快路径 ─────────────────────────────────────────────
 
@@ -43,22 +41,15 @@ def test_rule_ambiguous_returns_none():
 
 
 # ── L2 语义相似度（注入 fake embedder）────────────────────────
-
-class _HashEmbedder:
-    """确定性 fake：同文同向量（余弦=1.0），异文正交（余弦=0.0）。"""
-
-    def embed_query(self, text: str):
-        h = int(hashlib.md5(text.encode("utf-8")).hexdigest(), 16)
-        vec = [0.0] * 32
-        vec[h % 32] = 1.0
-        return vec
+# 假件取自 test/_support/fakes.py（P1-3 集中）：HashEmbeddings 的语义正合此处所需
+# —— 同文余弦 1.0、异文正交 0.0，便于精确断言"命中/不命中"。
 
 
 def test_semantic_hit_exact_example():
     # question 与 knowledge_qa 示例逐字相同 → 余弦 1.0 > 阈值 → 语义路由命中
     hit = classify_semantic(
         "评标委员会怎么组成？",
-        embedder=_HashEmbedder(),
+        embedder=HashEmbeddings(),
     )
     assert hit == "knowledge_qa"
 
@@ -69,7 +60,7 @@ def test_semantic_below_threshold_returns_none():
     # 2026-09-16 price_inquiry 新增采购需求示例后"今天天气怎么样"与其同桶，改用"今天天气不错"。
     hit = classify_semantic(
         "今天天气不错",
-        embedder=_HashEmbedder(),
+        embedder=HashEmbeddings(),
     )
     assert hit is None
 
@@ -244,8 +235,9 @@ def test_explicit_doc_context_still_outranks_l1():
 
 def test_supervisor_node_builds_llm_router_once(monkeypatch):
     """每请求不得重建 L3 router——构建期会触发一次 LLM 预检测（审计 C4）。"""
-    import orchestration.supervisor as sup_mod
     from langchain_core.messages import HumanMessage
+
+    import orchestration.supervisor as sup_mod
 
     calls = {"build": 0}
 

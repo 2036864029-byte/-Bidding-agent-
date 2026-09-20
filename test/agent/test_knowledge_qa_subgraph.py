@@ -16,6 +16,7 @@ from langchain_core.runnables import RunnableLambda
 from langgraph.graph import END, StateGraph
 
 import agent.nodes.knowledge_qa.subgraph as subgraph_mod
+from _support.fakes import patch_kb_search
 from agent.nodes.knowledge_qa.subgraph import (
     _REFUSAL_ANSWER,
     KB_MAX_ATTEMPTS,
@@ -50,12 +51,12 @@ def _llm_like(content: str):
 
 
 def _patch_tool_path(monkeypatch, *, retrieval, answer):
-    """打桩子图共享符号：kb_search / kb_search_expanded / _get_llm。
+    """打桩子图共享符号：检索入口（两个）/ _get_llm。
 
-    kb_light_decompose 默认 True 后子图走 kb_search_expanded，两个入口都要打桩。
+    检索入口委托给共享助手 `patch_kb_search`（test/_support/fakes.py）—— 那里集中了
+    "kb_light_decompose 默认 True 时两个入口都要补"这一知识，本文件不再各记一遍。
     """
-    monkeypatch.setattr(subgraph_mod, "kb_search", lambda q: retrieval)
-    monkeypatch.setattr(subgraph_mod, "kb_search_expanded", lambda q: retrieval)
+    patch_kb_search(monkeypatch, subgraph_mod, retrieval)
     monkeypatch.setattr(subgraph_mod, "_get_llm", lambda: _llm_like(answer))
 
 
@@ -227,8 +228,14 @@ def test_subgraph_guardrail_retry_disabled(monkeypatch):
 
 
 def test_subgraph_refusal_never_triggers_retry(monkeypatch):
-    """空检索拒答路径：不触发生成，也就无重试（护栏拒答报告 is_refusal=True）。"""
-    monkeypatch.setattr(subgraph_mod, "kb_search", lambda q: RetrievalResult())
+    """空检索拒答路径：不触发生成，也就无重试（护栏拒答报告 is_refusal=True）。
+
+    ⚠️ 必须走 `_patch_tool_path`（两个检索入口都补）。曾经只 patch `kb_search`，
+    而默认走 `kb_search_expanded` → 补丁失效、真联网到模型隧道。当时仍"通过"是
+    因为服务不可用 → 真检索返回空 → 拒答路径成立。**服务一起来它就转红** ——
+    方向完全相反的环境依赖，靠单跑一次看不出来。
+    """
+    _patch_tool_path(monkeypatch, retrieval=RetrievalResult(), answer="")
     sub = build_knowledge_qa_subgraph()
     state_out = sub.invoke({"messages": [HumanMessage(content="查无此条")]})
     biz = state_out["business_result"]

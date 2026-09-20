@@ -11,6 +11,7 @@ test_sub_route — 二级路由改造测试用例集。
 import os
 import sys
 import time
+
 import pytest
 
 # 确保项目根目录在 sys.path 中
@@ -18,29 +19,29 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from price_engine.rendering.output_templates import (
-    _apply_output_template,
-    _FIELD_REGISTRY,
-    _eval_condition,
-    get_template,
-)
 from langchain_core.messages import HumanMessage
+
 from agent.nodes.price_inquiry import (
+    _SUB_ROUTE_MAP,
     HardFilters,
     SearchIntent,
-    _parse_unified_intent,
-    _safe_parse_intent,
+    _build_capability_boundary_answer,
     _build_hard_conditions_extended,
     _build_order_clause,
     _extract_keywords,
     _get_classification,
-    _query_company_data,
-    _query_bidding_data,
+    _parse_unified_intent,
     _query_all_tables,
-    _SUB_ROUTE_MAP,
-    _build_capability_boundary_answer,
+    _query_bidding_data,
+    _query_company_data,
+    _safe_parse_intent,
 )
-
+from price_engine.rendering.output_templates import (
+    _FIELD_REGISTRY,
+    _apply_output_template,
+    _eval_condition,
+    get_template,
+)
 
 # ═════════════════════════════════════════════════════════
 # 辅助：构建测试用 SearchIntent
@@ -78,13 +79,14 @@ def _make_intent(
 # 单元测试：意图分类
 # ═════════════════════════════════════════════════════════
 
+@pytest.mark.e2e
 class TestSubRouteClassification:
     """测试 _parse_unified_intent 的二级路由分类准确率（需要 LLM 连接）。
 
-    注：由于依赖 LLM，以下测试用例用于手工验证，CI 中标记为 skip。
+    注：依赖 LLM，故标 e2e —— 默认跳过（conftest 统一处理），
+    `RUN_INTEGRATION=1` 时运行，用于手工验证。
     """
 
-    
     def test_company_query_supplier_recommend(self):
         """企业推荐场景。"""
         from agent.nodes.price_inquiry import _build_llm
@@ -94,7 +96,6 @@ class TestSubRouteClassification:
         assert intent.sub_route == "company_query"
         assert intent.query_type == "supplier_recommend"
 
-    #  (reason="需要 LLM 连接，用于手工验证")
     def test_company_query_penalty_check(self):
         """不良记录核查。"""
         from agent.nodes.price_inquiry import _build_llm
@@ -105,7 +106,6 @@ class TestSubRouteClassification:
         assert intent.query_type == "penalty_check"
         assert intent.need_penalty_check is True
 
-    
     def test_product_query_intercepted_to_all(self):
         """产品类查询已下线：LLM 不再有 product_query 选项，应路由到 all 或 bidding。"""
         from agent.nodes.price_inquiry import _build_llm
@@ -116,7 +116,6 @@ class TestSubRouteClassification:
         assert intent.sub_route != "product_query"
         assert intent.sub_route in ("all", "bidding_query")
 
-    
     def test_product_query_intercepted_to_all_2(self):
         """供应商搜索已下线：应降级路由。"""
         from agent.nodes.price_inquiry import _build_llm
@@ -126,7 +125,6 @@ class TestSubRouteClassification:
         assert intent.sub_route != "product_query"
         assert intent.sub_route in ("all", "company_query")
 
-    
     def test_bidding_query_purchaser(self):
         """采购方视角。"""
         from agent.nodes.price_inquiry import _build_llm
@@ -135,7 +133,6 @@ class TestSubRouteClassification:
         intent = _safe_parse_intent(intent)
         assert intent.sub_route == "bidding_query"
 
-    
     def test_bidding_query_aggregation(self):
         """聚合查询。"""
         from agent.nodes.price_inquiry import _build_llm
@@ -441,10 +438,10 @@ class TestDataModel:
 # 集成测试：端到端（需要数据库连接）
 # ═════════════════════════════════════════════════════════
 
+@pytest.mark.integration
 class TestIntegration:
     """端到端集成测试（需要 MySQL 连接和有效数据）。"""
 
-    
     def test_query_company_data(self):
         """测试公司查询正常返回。"""
         intent = _make_intent(
@@ -456,14 +453,12 @@ class TestIntegration:
         assert "records" in result
         assert "total_found" in result
 
-    
     def test_query_product_data(self):
         """产品线已下线：product_query 被确定性拦截为能力边界引导。"""
         result = _build_capability_boundary_answer("防水涂料价格")
         assert result["business_result"]["query_type"] == "capability_boundary"
         assert "暂不支持产品价格查询" in result["business_result"]["answer"]
 
-    
     def test_query_bidding_data(self):
         """测试招标查询正常返回。"""
         intent = _make_intent(
@@ -474,7 +469,6 @@ class TestIntegration:
         result = _query_bidding_data(intent)
         assert "records" in result
 
-    
     def test_query_all_tables(self):
         """测试 all 兜底模式。"""
         intent = _make_intent(
@@ -484,7 +478,6 @@ class TestIntegration:
         result = _query_all_tables(intent)
         assert "records" in result
 
-    
     def test_node_price_inquiry_end_to_end(self):
         """测试 node_price_inquiry 端到端（需要完整 Agent 环境）。"""
         from agent.nodes.price_inquiry import node_price_inquiry
@@ -501,10 +494,10 @@ class TestIntegration:
 # 性能基准测试
 # ═════════════════════════════════════════════════════════
 
+@pytest.mark.integration
 class TestPerformance:
     """性能基准测试（需要数据库连接）。"""
 
-    
     def test_fulltext_performance_company_info(self):
         """company_info FULLTEXT 查询耗时。"""
         start = time.perf_counter()
@@ -513,7 +506,6 @@ class TestPerformance:
         elapsed = time.perf_counter() - start
         assert elapsed < 5.0, f"company_info 查询过慢：{elapsed:.2f}s"
 
-    
     def test_fulltext_performance_product_info(self):
         """product_info FULLTEXT 查询耗时。"""
         start = time.perf_counter()
@@ -522,7 +514,6 @@ class TestPerformance:
         elapsed = time.perf_counter() - start
         assert elapsed < 5.0, f"product_info 查询过慢：{elapsed:.2f}s"
 
-    
     def test_fulltext_performance_bid_project(self):
         """bid_project FULLTEXT 查询耗时。"""
         start = time.perf_counter()
@@ -531,7 +522,6 @@ class TestPerformance:
         elapsed = time.perf_counter() - start
         assert elapsed < 5.0, f"bid_project 查询过慢：{elapsed:.2f}s"
 
-    
     def test_fulltext_performance_company_penalty(self):
         """company_penalty FULLTEXT 查询耗时。"""
         start = time.perf_counter()

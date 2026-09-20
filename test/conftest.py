@@ -9,6 +9,34 @@ from __future__ import annotations
 
 import pytest
 
+# ── 非 live 用例的网络闸门（P1-1）──────────────────────────────────
+#
+# 为什么放在这里、且是**第一个** autouse fixture：任何随后的 fixture（如
+# `_hermetic_backends` 重置后端单例）都可能触发连接，闸门必须先就位，
+# 否则失败会以"连接被拒"而非"你该补 mock"的形式出现，定位成本高。
+# `_hermetic_backends` 显式依赖本 fixture（参数注入）以固化这个顺序。
+#
+# 放行的两类：标了 integration / e2e 的用例 —— 它们**本来就需要**真实服务。
+# 注意与下方 `pytest_collection_modifyitems` 的分工：那个决定"跑不跑"，
+# 这个决定"跑的时候能不能联网"。默认跳过 + 跑起来就放行，二者互补。
+
+@pytest.fixture(autouse=True)
+def _network_gate(request):
+    """非 live 用例禁用网络出口；integration / e2e 用例放行。"""
+    if (request.node.get_closest_marker("integration")
+            or request.node.get_closest_marker("e2e")):
+        yield
+        return
+
+    from _support.hermetic import NetworkGate
+
+    gate = NetworkGate()
+    gate.install(nodeid=request.node.nodeid)
+    try:
+        yield
+    finally:
+        gate.uninstall()
+
 
 @pytest.fixture(autouse=True)
 def _reset_retrieval_cache():
@@ -51,7 +79,7 @@ def _reset_inflight_gate():
 
 
 @pytest.fixture(autouse=True)
-def _hermetic_backends(monkeypatch):
+def _hermetic_backends(monkeypatch, _network_gate):
     """C4：把缓存/限流后端钉在进程内，让测试与开发机的 .env 解耦。
 
     为什么必须钉：若开发者把 .env 切成 `CACHE_BACKEND=redis` / `RATE_LIMIT_BACKEND=redis`，
@@ -100,26 +128,14 @@ def fake_doc_embeddings(monkeypatch):
     经 monkeypatch ``core.embeddings.get_embeddings`` 注入——``core.doc_index`` 与
     ``agent.doc_context`` 都在函数体内 ``from core.embeddings import get_embeddings``，
     故替换模块属性即对二者同时生效。字符重叠 → 余弦相似，足以验证排序与融合。
+
+    实现取自 `test/_support/fakes.py`（P1-3 假件集中）：此处只做装配，不再内联一份，
+    避免"同一语义的假件在多个地方各写一遍"——那正是漏 mock 类 bug 的温床。
     """
-    import numpy as np
-
     import core.embeddings as ce
+    from _support.fakes import CharCountEmbeddings
 
-    vocab = "投标保证金金额评标委员会成员人数招标方式废标条款工期质量验收标准合同价款支付"
-
-    class _FakeEmbeddings:
-        def _vec(self, text: str):
-            return np.array(
-                [float(text.count(ch)) for ch in vocab], dtype=np.float32
-            ).tolist()
-
-        def embed_documents(self, texts):
-            return [self._vec(t) for t in texts]
-
-        def embed_query(self, text):
-            return self._vec(text)
-
-    monkeypatch.setattr(ce, "get_embeddings", lambda settings=None: _FakeEmbeddings())
+    monkeypatch.setattr(ce, "get_embeddings", lambda settings=None: CharCountEmbeddings())
 
 
 # ── 测试分层：integration / e2e 默认跳过 ─────────────────────────────
@@ -144,3 +160,36 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if item.get_closest_marker("integration") or item.get_closest_marker("e2e"):
             item.add_marker(skip)
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """会话结束汇报：哪些非 live 用例试图联网。
+
+    这是拦截之外的**补充信号**：拦截只能暴露"失败得响"的用例；还有一类更隐蔽 ——
+    联网失败后走项目自带的降级路径（本项目 `_with_fallback` / LLM 失败降级到关键词
+    提取等），断言又恰好成立，于是**测试通过但从未真正验证过**。实测
+    `test_sub_route.py::TestIntegration` 就是如此：MySQL 连不上时返回空结果，
+    宽松断言照样绿。故"拦了还要记"，会话结束汇总。
+
+    注意 `_BLOCKED_ATTEMPTS` 是模块级累积的，清空后重跑才不会串。
+    """
+    from _support.hermetic import blocked_attempts, clear_blocked_attempts
+
+    attempts = blocked_attempts()
+    if not attempts:
+        return
+
+    by_node: dict = {}
+    for nodeid, addr in attempts:
+        by_node.setdefault(nodeid, set()).add(addr)
+
+    terminalreporter.write_sep(
+        "=", f"网络闸门：{len(by_node)} 个非 live 用例试图联网（含降级后碰巧通过的）"
+    )
+    for nodeid in sorted(by_node):
+        terminalreporter.write_line(f"  {nodeid}")
+        terminalreporter.write_line(f"      → {', '.join(sorted(by_node[nodeid]))}")
+    terminalreporter.write_line(
+        "  修法：补 mock（见 test/_support/fakes.py）或标 @pytest.mark.integration"
+    )
+    clear_blocked_attempts()

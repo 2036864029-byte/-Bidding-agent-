@@ -9,12 +9,10 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+import price_engine.reference as ref
+from _support.fakes import ZeroEmbeddings, patch_embeddings
 from api import inquiry_reference as ir
 from api.inquiry_reference import search_reference
-from api.server import create_app
-import price_engine.reference as ref
-from core.vectorstore.namespace import PROJECT_ANNOUNCEMENT_COLLECTION
-
 
 # ── 假 Milvus / 假 MySQL ──────────────────────────────────────────
 
@@ -187,16 +185,14 @@ class TestSearchReference:
             _FakeHit("A4", 0.28),  # 低于阈值 0.30 → 应被丢弃
         ]
         monkeypatch.setattr(ref, "_milvus_client", lambda s: FakeMilvus(hits))
-        monkeypatch.setattr(
-            ref, "get_embeddings",
-            lambda s: type("E", (), {"embed_query": lambda self, t: [0.0] * 1024})(),
-        )
+        patch_embeddings(monkeypatch, ZeroEmbeddings(), ref)
         # 回表结果与 Milvus 顺序不同，验证按 score 重排 + 金额过滤
         conn = _make_conn(
             announcements=[
                 ("A2", "PNO2", "项目二", "采购人B", "北京市", 8_000_000.0, None, "https://ccgp.gov.cn/2"),
                 ("A3", "PNO3", "项目三", "采购人C", "广东省", 500.0, None, "https://ccgp.gov.cn/3"),  # ≤1000 脏行 → 过滤
-                ("A1", "PNO1", "项目一", "采购人A", "新疆维吾尔自治区", 2_000_000.0, None, "https://ccgp.gov.cn/1"),
+                ("A1", "PNO1", "项目一", "采购人A", "新疆维吾尔自治区",
+                 2_000_000.0, None, "https://ccgp.gov.cn/1"),
             ],
             products=[
                 ("A1", "监控摄像机", "监控摄像机", "海康", "DS-2CD", "10", "台", "1500"),
@@ -227,10 +223,7 @@ class TestSearchReference:
         monkeypatch.setattr(ref, "_milvus_client", lambda s: FakeMilvus([_FakeHit("A1", 0.10)]))
         # 必须同时 patch embedder：漏了它会真发 POST 到 127.0.0.1:18003，
         # 本用例便随"开发机有没有跑模型隧道"红绿漂移（本文件自称零网络）。
-        monkeypatch.setattr(
-            ref, "get_embeddings",
-            lambda s: type("E", (), {"embed_query": lambda self, t: [0.0] * 1024})(),
-        )
+        patch_embeddings(monkeypatch, ZeroEmbeddings(), ref)
         result = search_reference(_settings(), "采购120台监控摄像头用于校园安防")
         assert result["total"] == 0
         assert result["projects"] == []
@@ -239,10 +232,7 @@ class TestSearchReference:
     def test_region_passed_as_filter(self, monkeypatch):
         client = FakeMilvus([_FakeHit("A1", 0.75)])
         monkeypatch.setattr(ref, "_milvus_client", lambda s: client)
-        monkeypatch.setattr(
-            ref, "get_embeddings",
-            lambda s: type("E", (), {"embed_query": lambda self, t: [0.0] * 1024})(),
-        )
+        patch_embeddings(monkeypatch, ZeroEmbeddings(), ref)
         conn = _make_conn(
             announcements=[("A1", "PNO", "项目", "采购人", "新疆维吾尔自治区",
                             5_000_000.0, None, "https://ccgp.gov.cn/1")],
@@ -256,10 +246,7 @@ class TestSearchReference:
     def test_min_amount_wan_raises_floor(self, monkeypatch):
         hits = [_FakeHit("A1", 0.9), _FakeHit("A2", 0.8)]
         monkeypatch.setattr(ref, "_milvus_client", lambda s: FakeMilvus(hits))
-        monkeypatch.setattr(
-            ref, "get_embeddings",
-            lambda s: type("E", (), {"embed_query": lambda self, t: [0.0] * 1024})(),
-        )
+        patch_embeddings(monkeypatch, ZeroEmbeddings(), ref)
         seen_floor = {}
 
         class _Cur:

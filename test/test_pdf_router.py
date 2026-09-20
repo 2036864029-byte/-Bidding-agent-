@@ -10,7 +10,6 @@ from core.config.settings import Settings
 from public_kb.ingestion.normalizers.pdf.pdf_router import PdfRouter
 from public_kb.services.mineru_parser import MinerUParser
 
-
 # ── 开关关闭 → 回退 MinerUParser（M1 行为）───────────────────
 
 
@@ -91,7 +90,6 @@ def test_router_end_to_end_with_mocked_mineru(tmp_path, monkeypatch):
     """
     import pymupdf
 
-    from public_kb.ingestion.normalizers.pdf.pdf_mineru_router import MinerURouter
 
     # 构造 5 页单栏 PDF
     src = tmp_path / "src.pdf"
@@ -110,7 +108,6 @@ def test_router_end_to_end_with_mocked_mineru(tmp_path, monkeypatch):
     s.pdf_tiered_allow_partial = False
 
     # 用 fake 替换 MinerURouter 的远端解析
-    from public_kb.services.mineru_api_parser import MinerUApiParser
 
     class _FakeApi:
         """替身 MinerUApiParser：返回固定 Markdown，记录调用。"""
@@ -175,6 +172,12 @@ def test_tier_a_excludes_range_covered_pages_and_fills_route(tmp_path):
     class _FakeApi(MinerUApiParser):
         def health(self):  # noqa: D102
             return {"parser_version": "1.3.12"}
+
+        def resolve_parser_version(self):  # noqa: D102
+            # 必须覆盖：PDF 编排器（pdf_router.py）会调它补 manifest 的版本字段，
+            # 基类实现是真探测 GET /health → 打模型隧道 18002。不覆盖就是"测试
+            # 自称离线、实际联网"，且探测失败走回退后断言照样过（环境依赖被掩盖）。
+            return "1.3.12"
 
         def parse(self, pdf_path, *, page_range=None):  # noqa: D102
             return "<!-- mineru fake -->\n"

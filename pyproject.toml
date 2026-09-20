@@ -61,6 +61,11 @@ default = true
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 
+[tool.ruff.lint.isort]
+# `test/_support/` 是测试共用基建包（P1 新增）。它不在仓库根下，ruff 默认会把它
+# 当第三方模块 —— 显式声明为 first-party，导入分组才与项目内模块一致。
+known-first-party = ["_support"]
+
 [tool.ruff.lint.per-file-ignores]
 # 入口脚本需先改 sys.path 再导入项目模块（E402 属有意为之）
 "api/cli.py" = ["E402"]
