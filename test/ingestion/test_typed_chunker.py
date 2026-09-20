@@ -96,7 +96,7 @@ def test_content_normalized_no_markdown_markers():
     """内容归一化：chunk 内容不含 `#` 标题标记，标题文本保留（不入 markdown 残渣）。"""
     docs = TypedChunker(_settings()).chunk(_LAW_MD, "demo_law", DocType.LAW)
     for d in docs:
-        assert not any(l.lstrip().startswith("#") for l in d.page_content.split("\n"))
+        assert not any(line.lstrip().startswith("#") for line in d.page_content.split("\n"))
     first = next(d for d in docs if "第一条" in d.metadata["article_number"])
     assert first.page_content.startswith("第一条")
 

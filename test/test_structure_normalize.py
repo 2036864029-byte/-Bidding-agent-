@@ -10,7 +10,6 @@ from public_kb.ingestion.transforms.structure import (
     split_inline_articles,
 )
 
-
 # ── A3-1 标题级归一 ───────────────────────────────────────
 
 def test_pattern_headings_fixed_levels():

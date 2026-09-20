@@ -10,7 +10,6 @@ from public_kb.ingestion.transforms.structure import (
     repair_structure,
 )
 
-
 # ── A3-5 前置页标记 ───────────────────────────────────────
 
 def test_front_matter_marked_before_first_anchor():

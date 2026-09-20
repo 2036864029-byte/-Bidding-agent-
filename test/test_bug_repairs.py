@@ -272,8 +272,8 @@ class TestIntegration(unittest.TestCase):
 
     def test_output_templates_project_detail_required_matches_answer_temp(self):
         """验证 output_templates.py 的 project_detail required 字段与 answer_templates.py 一致。"""
-        from price_engine.rendering.output_templates import get_template
         from price_engine.rendering.answer_templates import ANSWER_TEMPLATES
+        from price_engine.rendering.output_templates import get_template
 
         ot = get_template("bidding_query", "project_detail")
         at = ANSWER_TEMPLATES["project_detail"]
@@ -286,8 +286,8 @@ class TestIntegration(unittest.TestCase):
 
     def test_output_templates_bidder_query_required_matches_answer_temp(self):
         """验证 output_templates.py 的 bidder_query required 字段与 answer_templates.py 一致。"""
-        from price_engine.rendering.output_templates import get_template
         from price_engine.rendering.answer_templates import ANSWER_TEMPLATES
+        from price_engine.rendering.output_templates import get_template
 
         ot = get_template("bidding_query", "bidder_query")
         at = ANSWER_TEMPLATES["bidder_query"]

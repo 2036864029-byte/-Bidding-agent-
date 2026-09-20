@@ -13,7 +13,6 @@
 
 泛化护栏：合并/识别全部为模式与标点驱动，无页码/书名常量。
 """
-import pytest
 
 from public_kb.ingestion.normalizers.pdf.pdf_markdown_assembler import (
     ParsedPage,

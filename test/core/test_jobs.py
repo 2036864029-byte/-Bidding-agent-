@@ -164,9 +164,10 @@ def test_status_error_visible_across_workers():
 
 def test_non_json_result_keeps_status():
     """结果不可 JSON 化时只丢结果，状态照常可查（跨进程状态表不承载任意对象）。"""
+    import fakeredis
+
     from core.jobs import TaskQueue
     from core.jobs.queue import _RedisStatusStore
-    import fakeredis
 
     store = _RedisStatusStore(ttl=60, url="", client=fakeredis.FakeRedis())
     q = TaskQueue(max_workers=1, status_store=store)
@@ -187,7 +188,7 @@ def test_memory_status_store_expires():
 
 def test_status_store_falls_back_when_redis_unreachable(monkeypatch):
     """Redis 挂掉不能让异步上传整体失效：降级进程内并留痕。"""
-    from core.jobs.queue import _MemoryStatusStore, _build_status_store
+    from core.jobs.queue import _build_status_store, _MemoryStatusStore
 
     monkeypatch.setenv("CACHE_REDIS_URL", "redis://127.0.0.1:1/0")
     store = _build_status_store(ttl=60, backend="redis", url="redis://127.0.0.1:1/0")
@@ -196,7 +197,7 @@ def test_status_store_falls_back_when_redis_unreachable(monkeypatch):
 
 
 def test_status_store_memory_by_default():
-    from core.jobs.queue import _MemoryStatusStore, _build_status_store
+    from core.jobs.queue import _build_status_store, _MemoryStatusStore
 
     assert isinstance(_build_status_store(ttl=60, backend="memory", url=""), _MemoryStatusStore)
 

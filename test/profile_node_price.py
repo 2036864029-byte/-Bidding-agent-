@@ -1,8 +1,8 @@
 """对重构后的 price_inquiry 节点进行一次端到端 profile。"""
 
 import logging
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -12,6 +12,7 @@ logging.basicConfig(
 )
 
 from langchain_core.messages import HumanMessage
+
 from agent.nodes.price_inquiry import node_price_inquiry  # type: ignore
 
 if __name__ == "__main__":

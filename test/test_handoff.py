@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from core.config.settings import Settings
 from public_kb.ingestion.handoff import (
     chunk_markdown,
     dump_documents_jsonl,
-    ingest_markdown_dir,
     load_documents_jsonl,
     prepare_handoff,
 )
@@ -65,8 +62,8 @@ def test_clean_markdown_splits_inline_and_removes_toc():
 def test_chunk_markdown_equals_split_chain():
     """兼容壳 chunk_markdown == clean_markdown → chunk_cleaned_markdown（确定性）。"""
     from public_kb.ingestion.handoff import (
-        clean_markdown,
         chunk_cleaned_markdown,
+        clean_markdown,
     )
 
     s = _settings()
@@ -110,7 +107,7 @@ def test_jsonl_roundtrip(tmp_path):
 def test_markdown_path_matches_jsonl_path(tmp_path):
     """两条导入路径一致：assembled.md 重新分块 == 导出的 jsonl（uid 集合相同）。"""
     s = _settings()
-    docs = prepare_md = chunk_markdown(_MD, "demo", s)
+    docs = chunk_markdown(_MD, "demo", s)
     from public_kb.ingestion.handoff import _freeze_chunk_uid
     docs = _freeze_chunk_uid(docs)
     jsonl_path = tmp_path / "demo.documents.jsonl"

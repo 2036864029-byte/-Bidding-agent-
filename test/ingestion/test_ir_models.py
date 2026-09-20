@@ -6,7 +6,6 @@ import warnings
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-import pytest
 
 from public_kb.ingestion.ir import (
     NormalizedDocument,

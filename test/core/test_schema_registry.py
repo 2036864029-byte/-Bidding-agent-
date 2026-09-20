@@ -9,7 +9,6 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 from core.config.settings import Settings
 from core.vectorstore.namespace import KB_PUBLIC_COLLECTION, PRICE_SEMANTIC_COLLECTION
 from public_kb.schema_registry import (
-    COLLECTION_REGISTRY,
     get_collection_meta,
     get_registered_collections,
     validate_embedding_config,

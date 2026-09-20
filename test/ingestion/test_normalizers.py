@@ -17,7 +17,6 @@ from public_kb.ingestion.normalizers import (
 )
 from public_kb.ingestion.router import FormatRouter
 
-
 # ── E-5 TextNormalizer ─────────────────────────────────────
 
 def test_text_normalizer_passthrough(tmp_path):

@@ -99,7 +99,9 @@ def test_builtin_nodespecs_have_callable_entries():
 def test_capability_enabled_override_forces_on(monkeypatch):
     """CAPABILITY_ENABLED 可把声明为 disabled 的能力拉起来（不改代码）。"""
     from agent.registry import (
-        get_default_registry, reset_capability_overrides, reset_default_registry,
+        get_default_registry,
+        reset_capability_overrides,
+        reset_default_registry,
     )
 
     monkeypatch.setenv("CAPABILITY_ENABLED", "deep_agent")
@@ -118,7 +120,9 @@ def test_capability_enabled_override_forces_on(monkeypatch):
 def test_capability_disabled_override_forces_off(monkeypatch):
     """CAPABILITY_DISABLED 可停用内置能力（应急开关）。"""
     from agent.registry import (
-        get_default_registry, reset_capability_overrides, reset_default_registry,
+        get_default_registry,
+        reset_capability_overrides,
+        reset_default_registry,
     )
 
     monkeypatch.setenv("CAPABILITY_DISABLED", "price_inquiry")
@@ -134,7 +138,9 @@ def test_capability_disabled_override_forces_off(monkeypatch):
 def test_capability_override_full_width_comma(monkeypatch):
     """全角逗号也要能分隔（中文配置里很常见）。"""
     from agent.registry import (
-        get_default_registry, reset_capability_overrides, reset_default_registry,
+        get_default_registry,
+        reset_capability_overrides,
+        reset_default_registry,
     )
 
     monkeypatch.setenv("CAPABILITY_ENABLED", "deep_agent，doc_agent")
@@ -150,7 +156,7 @@ def test_capability_override_full_width_comma(monkeypatch):
 
 def test_capability_override_takes_precedence_over_disabled_list(monkeypatch):
     """同时在两个名单里时，启用优先（避免配置矛盾导致意外停用）。"""
-    from agent.registry import is_capability_enabled, CapabilitySpec, reset_capability_overrides
+    from agent.registry import CapabilitySpec, is_capability_enabled, reset_capability_overrides
 
     monkeypatch.setenv("CAPABILITY_ENABLED", "x")
     monkeypatch.setenv("CAPABILITY_DISABLED", "x")

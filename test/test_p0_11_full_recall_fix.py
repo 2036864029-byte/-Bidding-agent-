@@ -21,12 +21,11 @@ if _PROJECT_ROOT not in sys.path:
 from agent.nodes.price_inquiry import (
     HardFilters,
     SearchIntent,
-    _strip_preference_filters,
+    _build_unified_guidance,
     _has_preference_filters,
     _has_valid_query_entity,
-    _build_unified_guidance,
+    _strip_preference_filters,
 )
-
 
 # ═════════════════════════════════════════════════════════
 # 1. _strip_preference_filters 核心实体保留验证

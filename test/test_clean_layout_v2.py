@@ -14,14 +14,12 @@
 
 泛化护栏：不引入书名/页码常量；降级/保留规则全部模式驱动。
 """
-import pytest
 
 from core.config.settings import Settings
 from public_kb.ingestion.handoff import (
     _leading_doc_title_heading,
     clean_markdown,
 )
-
 
 # ── A3-5 书名恢复守卫（Step2b，2026-09-06）──────────────
 

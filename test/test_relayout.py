@@ -3,14 +3,13 @@
 """覆盖 transforms.relayout 的 R1/R2 与 clean_markdown 接线（书路径）。"""
 from __future__ import annotations
 
+from core.config.settings import Settings
 from public_kb.ingestion.handoff import clean_markdown
 from public_kb.ingestion.transforms.relayout import (
     demote_citation_headings,
     drop_toc_leader_headings,
     relayout_pipeline,
 )
-from core.config.settings import Settings
-
 
 # ── R1 目录点线残标题剔除 ──────────────────────────────────
 

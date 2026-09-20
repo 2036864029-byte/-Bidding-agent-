@@ -11,7 +11,6 @@ from langchain_core.messages import AIMessage
 
 from agent.tool_agent import build_tool_agent_node, run_tool_agent
 
-
 # ── 夹具 ──────────────────────────────────────────────────────
 
 def _tc(name, args, cid):

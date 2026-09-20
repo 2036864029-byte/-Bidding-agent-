@@ -11,7 +11,6 @@ from public_kb.ingestion.ir import compute_source_hash, simhash
 from public_kb.ingestion.ledger import IngestLedger
 from public_kb.ingestion.router import FormatRouter
 
-
 # ── E-2 FormatRouter ───────────────────────────────────────
 
 def test_router_classifies_by_extension(tmp_path):

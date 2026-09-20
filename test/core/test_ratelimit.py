@@ -14,7 +14,6 @@ import redis as redis_mod
 
 from core.ratelimit import InMemoryLimiter, RedisLimiter, build_limiter
 
-
 # ── 进程内限流器 ─────────────────────────────────────────────
 
 def test_inmemory_allows_burst_then_blocks():

@@ -28,6 +28,7 @@ QUANSHU = (
 
 def _extract_golden_page(doc, idx, label, header_candidates):
     """复刻 router worker 的单页抽取（与 build_golden_pages 同一口径）。"""
+    from core.config.settings import Settings
     from public_kb.ingestion.normalizers.pdf.pdf_fast_text import (
         extract_page_markdown,
         iter_lines,
@@ -38,8 +39,6 @@ def _extract_golden_page(doc, idx, label, header_candidates):
     from public_kb.ingestion.normalizers.pdf.pdf_two_column_reflow import (
         reflow_page_markdown,
     )
-
-    from core.config.settings import Settings
 
     settings = Settings()
     page = doc.load_page(idx)

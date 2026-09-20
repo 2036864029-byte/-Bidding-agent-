@@ -22,14 +22,12 @@
 import pytest
 
 from public_kb.ingestion.normalizers.pdf.pdf_fast_text import TextLine
-
 from public_kb.ingestion.normalizers.pdf.pdf_paragraph import (  # noqa: F401
     ColumnMetrics,
-    compute_column_metrics,
     assemble_paragraphs,
+    compute_column_metrics,
     paragraph_markdown,
 )
-
 
 # ── 合成页工具：A4 单栏，左边距 72、右边距 523，正文 10.5pt ──
 PW_LEFT, PW_RIGHT, BODY = 72.0, 523.0, 10.5
@@ -509,7 +507,7 @@ def test_paragraph_markdown_idempotent():
                        "条件限制或者排斥潜在投标人，不得妨碍公平竞争。",
                        indent_first=True)
     once = paragraph_markdown(lines)
-    again = paragraph_markdown_lines = paragraph_markdown(
+    again = paragraph_markdown(
         [mk(ln, y0=100.0 + i * BODY * 1.5) for i, ln in enumerate(once.split("\n"))]
     )
     assert again == once
@@ -518,6 +516,7 @@ def test_paragraph_markdown_idempotent():
 def test_no_book_or_page_hardcode_in_module():
     """泛化护栏：实现模块不得含书名/页码常量。"""
     import inspect
+
     import public_kb.ingestion.normalizers.pdf.pdf_paragraph as mod
     src = inspect.getsource(mod)
     for banned in ("白如银", "1200问", "法律法规全书", "page: ", "page_idx =="):

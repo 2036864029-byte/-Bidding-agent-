@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Tuple
 
-from core.retrieval.base import RecallOutcome, RecallStage
+from core.retrieval.base import RecallStage
 from core.retrieval.pipeline import RecallPipeline
 
 

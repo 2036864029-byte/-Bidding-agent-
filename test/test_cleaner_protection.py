@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from public_kb.ingestion.transforms.cleaner import TextCleaner
 
-
 # ── 短行白名单：第X条/第X章 不被删 ────────────────────────
 
 # 正文需 >10 字符，避免被既有"短行(<10)删除"规则正常清理，混淆断言目标

@@ -7,9 +7,9 @@
 from __future__ import annotations
 
 import agent.doc_context as dc
-from core.filestore import FileRecord
 from core import doc_index
 from core.config.settings import Settings
+from core.filestore import FileRecord
 
 
 def _markdown(sections: int) -> str:

@@ -81,6 +81,7 @@ def test_idempotent():
 
 def test_no_book_or_page_hardcode():
     import inspect
+
     import public_kb.ingestion.normalizers.pdf.pdf_markdown_assembler as mod
     src = inspect.getsource(mod)
     for banned in ("白如银", "1200问", "法律法规全书", "== 145"):

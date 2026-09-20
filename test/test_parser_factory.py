@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from core.config.settings import Settings
-from public_kb.ingestion.parser_factory import build_pdf_parser
 from public_kb.ingestion.normalizers.pdf.pdf_router import PdfRouter
+from public_kb.ingestion.parser_factory import build_pdf_parser
 from public_kb.services.mineru_parser import MinerUParser
 
 

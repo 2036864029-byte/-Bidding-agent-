@@ -101,7 +101,7 @@ def test_tenant_header_isolates_thread_id():
     assert r1.json()["session_id"] == "s1"  # 回传客户端的是原始 id（不带租户前缀）
     t_a = fake.last_thread
 
-    r2 = client.post(
+    client.post(
         "/chat", json={"question": "q", "session_id": "s1"},
         headers={"X-Tenant-ID": "tenantB"},
     )

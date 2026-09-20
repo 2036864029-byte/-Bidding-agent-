@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import json
-
 from pathlib import Path
 
 GOLDEN = Path(__file__).resolve().parent.parent.parent / "eval" / "agent_golden_set.json"

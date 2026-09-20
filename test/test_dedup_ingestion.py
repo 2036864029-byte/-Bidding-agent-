@@ -9,15 +9,15 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 from typing import Any
+from unittest.mock import patch
 
 from langchain_core.documents import Document
 
 from core.config.settings import Settings
+from core.vectorstore.milvus_client import MilvusStoreManager
 from public_kb.ingestion.pipeline import FileIngestionPipeline
 from public_kb.ingestion.sinks.milvus_sink import MilvusSink
-from core.vectorstore.milvus_client import MilvusStoreManager
 
 
 class FakeMilvusClient:
@@ -191,8 +191,6 @@ class DedupIngestionTests(unittest.TestCase):
         self.assertEqual(len(client.stored_uids), 2)
 
     def test_query_failure_falls_back_to_write_all(self) -> None:
-        client = FakeMilvusClient()
-
         class BrokenQueryClient(FakeMilvusClient):
             def query(self, **kwargs: Any):
                 raise RuntimeError("mock 判重查询失败")

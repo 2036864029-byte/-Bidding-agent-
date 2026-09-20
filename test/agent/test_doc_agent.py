@@ -10,7 +10,6 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from agent.tool_agent import run_tool_agent
 
-
 # ── 夹具（与 test_tool_agent 同构）────────────────────────────
 
 def _tc(name, args, cid):

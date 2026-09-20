@@ -2,11 +2,11 @@
 数据库探查工具 - 快速扫描MySQL数据库，生成数据概览报告
 适用于包含大量表（数万张）的数据库，帮助快速了解数据结构
 """
+import argparse
 import json
 import os
-import argparse
 from collections import defaultdict
-from datetime import datetime, date
+from datetime import date, datetime
 from decimal import Decimal
 
 # ========== 数据库配置 ==========

@@ -16,15 +16,14 @@
 
 泛化护栏：阈值全部为页宽/行宽相对比例；合成页不含书名/页码硬编码。
 """
-import pytest
 
 from public_kb.ingestion.normalizers.pdf.pdf_fast_text import TextLine
+from public_kb.ingestion.normalizers.pdf.pdf_page_profile import (  # noqa: F401
+    detect_two_columns,
+)
 from public_kb.ingestion.normalizers.pdf.pdf_two_column_reflow import (  # noqa: F401
     needs_two_column_defense,
     reflow_two_columns_v2,
-)
-from public_kb.ingestion.normalizers.pdf.pdf_page_profile import (  # noqa: F401
-    detect_two_columns,
 )
 
 PAGE_W = 595.0
@@ -137,6 +136,7 @@ def test_single_col_not_detected_by_x1():
 
 def test_no_page_or_book_hardcode():
     import inspect
+
     import public_kb.ingestion.normalizers.pdf.pdf_two_column_reflow as mod
     src = inspect.getsource(mod)
     for banned in ("白如银", "1200问", "法律法规全书", "== 145", "==145"):

@@ -23,13 +23,12 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from agent.nodes.price_inquiry import (
+    HardFilters,
+    SearchIntent,
     _build_constraint_conditions,
     _extract_project_number_candidate,
     _looks_like_code,
-    HardFilters,
-    SearchIntent,
 )
-
 
 # ═════════════════════════════════════════════════════════
 # 1. 确定性项目编号提取（各类自然语言输入场景）

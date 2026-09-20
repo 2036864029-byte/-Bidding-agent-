@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 from typing import List
 
@@ -15,7 +14,6 @@ from public_kb.ingestion.normalizers.pdf.pdf_mineru_router import (
     compute_cache_key,
 )
 from public_kb.services.mineru_api_parser import MinerUApiParser
-
 
 # ── 缓存 key ────────────────────────────────────────────────
 

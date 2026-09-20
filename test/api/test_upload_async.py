@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 
 def _client():
     from api.server import create_app
-    from api.middleware.auth import ApiKeyAuthMiddleware
 
     return TestClient(create_app(get_agent_fn=lambda: _FakeAgent()))
 
@@ -152,8 +151,7 @@ def _long_markdown(sections: int) -> str:
 
 def test_async_upload_builds_doc_index(fake_doc_embeddings, monkeypatch):
     """轮询到 done 时索引必然已就绪——否则上传后立刻提问会打空、退化成全文。"""
-    from core import filestore
-    from core import doc_index
+    from core import doc_index, filestore
     from core.observability.context import tenant_scoped
 
     md = _long_markdown(15)
@@ -174,8 +172,7 @@ def test_async_upload_builds_doc_index(fake_doc_embeddings, monkeypatch):
 
 
 def test_async_upload_skips_index_for_small_doc(fake_doc_embeddings):
-    from core import filestore
-    from core import doc_index
+    from core import doc_index, filestore
     from core.observability.context import tenant_scoped
 
     filestore.reset_store()

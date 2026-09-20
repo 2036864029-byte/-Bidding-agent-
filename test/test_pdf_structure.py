@@ -3,14 +3,13 @@
 
 from __future__ import annotations
 
-from public_kb.ingestion.transforms.chunker import SemanticChunker
 from public_kb.ingestion.normalizers.pdf.pdf_structure import (
     adapt_pdf_markdown,
     detect_reflow_suspect,
     split_table_blocks,
     strip_toc_noise,
 )
-
+from public_kb.ingestion.transforms.chunker import SemanticChunker
 
 # ── split_table_blocks ────────────────────────────────────
 

@@ -21,17 +21,16 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from agent.nodes.price_inquiry import (
-    _is_valid_company_name,
-    _has_valid_query_entity,
-    _looks_like_code,
-    _build_search_term,
-    _build_unified_guidance,
-    _UNIFIED_GUIDANCE_TEXT,
     _QUERY_INTENT_KEYWORDS,
+    _UNIFIED_GUIDANCE_TEXT,
     HardFilters,
     SearchIntent,
+    _build_search_term,
+    _build_unified_guidance,
+    _has_valid_query_entity,
+    _is_valid_company_name,
+    _looks_like_code,
 )
-
 
 # ═════════════════════════════════════════════════════════
 # 1. 工商主体名称格式校验

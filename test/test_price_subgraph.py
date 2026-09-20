@@ -15,13 +15,11 @@ from langchain_core.messages import HumanMessage
 
 import agent.nodes.price_inquiry.subgraph as sg
 from agent.nodes.price_inquiry.subgraph import (
-    _UNIFIED_GUIDANCE_TEXT,
     _build_capability_boundary_answer,
     _build_unified_guidance,
     build_price_subgraph,
 )
 from price_engine.models import HardFilters, SearchIntent
-
 
 # ── 夹具 ──────────────────────────────────────────────────────
 
@@ -270,6 +268,7 @@ def test_subgraph_as_parent_node_isolates_pg_keys(monkeypatch):
     monkeypatch.setattr(sg, "get_query_pool", lambda: executor)
 
     from langgraph.graph import END, StateGraph
+
     from agent.state import AgentState
 
     sub = build_price_subgraph()

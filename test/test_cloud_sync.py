@@ -14,7 +14,7 @@ import unittest
 from unittest import mock
 
 import pytest
-from pymilvus import MilvusClient, DataType
+from pymilvus import DataType, MilvusClient
 
 try:  # cloud_sync.* 非本仓库组件：缺失时整文件跳过（不删除，供存在该组件的环境）
     import cloud_sync  # noqa: F401

@@ -15,7 +15,6 @@ sys.path.insert(0, "..")
 
 import os
 
-
 DB_CONFIG = {
     "host": "192.168.10.120",
     "user": "iflytek",

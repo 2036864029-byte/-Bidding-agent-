@@ -10,18 +10,15 @@
 
 from __future__ import annotations
 
-import pytest
-
-from price_engine import alias
-from price_engine.alias import resolve_company_families, strip_region_prefix
-from price_engine.intent import _extract_product_demand, detect_product_demand
-from price_engine.models import HardFilters, SearchIntent
-from price_engine.guards import has_valid_query_entity
-from price_engine.rendering.answer_templates import render_answer
-from price_engine.rendering.output_templates import _apply_output_template, get_template
-
 import price_engine.queries as queries_mod
 import price_engine.reference as reference_mod
+from price_engine import alias
+from price_engine.alias import resolve_company_families, strip_region_prefix
+from price_engine.guards import has_valid_query_entity
+from price_engine.intent import _extract_product_demand, detect_product_demand
+from price_engine.models import HardFilters, SearchIntent
+from price_engine.rendering.answer_templates import render_answer
+from price_engine.rendering.output_templates import _apply_output_template, get_template
 
 
 def _intent(**hf):

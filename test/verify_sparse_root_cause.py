@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
@@ -24,7 +23,10 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(_ROOT, ".env"))
 
 from pymilvus import (
-    DataType, MilvusClient, Function, FunctionType,
+    DataType,
+    Function,
+    FunctionType,
+    MilvusClient,
 )
 
 HOST = os.getenv("MILVUS_HOST", "")
@@ -96,13 +98,13 @@ def t2_function_compat() -> bool:
         # 立刻 describe_collection 验证 Functions 是否真在服务端
         info = client.describe_collection(TEST_COLL)
         fns = info.get("functions", [])
-        print(f"  集合创建成功")
+        print("  集合创建成功")
         print(f"  describe_collection 返回 Functions: {fns}")
         if fns:
-            print(f"  → ✅ Functions 被服务端保留（不是 pymilvus 兼容性问题）")
+            print("  → ✅ Functions 被服务端保留（不是 pymilvus 兼容性问题）")
             cleanup()
             return True
-        print(f"  → ❌ Functions 被服务端丢弃 → 确认是 pymilvus 3.0.1 ↔ Milvus 2.4.0 protobuf 不兼容")
+        print("  → ❌ Functions 被服务端丢弃 → 确认是 pymilvus 3.0.1 ↔ Milvus 2.4.0 protobuf 不兼容")
         cleanup()
         return False
     except Exception as e:
@@ -117,8 +119,8 @@ def t3_fulltext_search() -> bool:
     # 在 T2 已尝试的情况下，本项已在原理上可推断：
     # Milvus 2.4.0 没有 Full-Text Search 索引（无 inverted 索引类型用于 text 字段）
     # 若 T2 失败 + 版本 < 2.5 → T3 必然失败
-    print(f"  Milvus 2.4.0 未实现 FULLTEXT 索引；2.5+ 才有")
-    print(f"  → 推断：T3 失败（需要升级）")
+    print("  Milvus 2.4.0 未实现 FULLTEXT 索引；2.5+ 才有")
+    print("  → 推断：T3 失败（需要升级）")
     return False
 
 
@@ -127,9 +129,9 @@ def t4_alter_add_field() -> bool:
     heading("T4  在线 ALTER COLLECTION 加列（能否避免重建）")
     # Milvus 2.4.x 限制：已经创建的集合不允许加新字段
     # pymilvus 也没有 add_field 这种 API；要新增字段只能重建
-    print(f"  Milvus 2.4.x：集合已创建后不允许 add_field")
-    print(f"  pymilvus 3.0.1：不暴露 add_field API")
-    print(f"  → 推断：要支持 sparse_vector 必须重建集合")
+    print("  Milvus 2.4.x：集合已创建后不允许 add_field")
+    print("  pymilvus 3.0.1：不暴露 add_field API")
+    print("  → 推断：要支持 sparse_vector 必须重建集合")
     return False
 
 

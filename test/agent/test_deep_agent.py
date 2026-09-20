@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 
 from agent.nodes.deep_agent import build_deep_agent_node, run_deep_agent
 
-
 # ── 夹具 ──────────────────────────────────────────────────────
 
 class _RecTool:

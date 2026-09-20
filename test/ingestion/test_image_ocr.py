@@ -69,7 +69,6 @@ def test_image_ocr_degraded_when_engine_missing():
     """引擎不可用 → 降级产出（quality<0.8），不抛错、不产出乱码。"""
     from public_kb.ingestion.normalizers.image import ImageOcrNormalizer
 
-    n = ImageOcrNormalizer(engine=None)
     # 不触发进程单例（那会尝试加载真实模型）→ 直接测降级分支：注入一个"加载失败"的
     # 引擎对象即可模拟。这里用会抛异常的假 engine 走 ocr_error 分支。
     engine = SimpleNamespace(__call__=lambda path: (_ for _ in ()).throw(RuntimeError("boom")))

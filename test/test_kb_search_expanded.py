@@ -15,10 +15,9 @@ from langchain_core.messages import HumanMessage
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-from public_kb.tools import kb_search_expanded, _split_clauses  # noqa: E402
-
 import agent.nodes.knowledge_qa.subgraph as subgraph_mod  # noqa: E402
 from agent.nodes.knowledge_qa.subgraph import _retrieve_node  # noqa: E402
+from public_kb.tools import _split_clauses, kb_search_expanded  # noqa: E402
 
 
 def _doc(content: str, **meta) -> Document:

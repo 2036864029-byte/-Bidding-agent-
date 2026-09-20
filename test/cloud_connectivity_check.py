@@ -17,7 +17,6 @@ import os
 import socket
 import sys
 import time
-from urllib.parse import urlparse
 
 # 让脚本可直接 python test/cloud_connectivity_check.py 跑
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -49,7 +48,7 @@ def _print_header(title: str) -> None:
 def _tcp_probe(host: str, port: int, timeout: float = 5.0) -> bool:
     """裸 TCP 探测：能建立三次握手即视为端口可达。"""
     try:
-        with socket.create_connection((host, port), timeout=timeout) as s:
+        with socket.create_connection((host, port), timeout=timeout):
             return True
     except socket.timeout:
         print(f"  ✗ TCP 超时（>{timeout}s）")

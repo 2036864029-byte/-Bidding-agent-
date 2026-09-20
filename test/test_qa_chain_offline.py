@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import requests
-
-from langchain_core.documents import Document
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
 from core.config.settings import Settings

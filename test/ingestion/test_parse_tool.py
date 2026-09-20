@@ -48,8 +48,8 @@ def test_parse_file_no_parsable_text_raises(tmp_path):
 
 def test_parse_file_does_not_touch_milvus(monkeypatch, tmp_path):
     """9.3 D-4 防污染：FileParseTool 不创建 MilvusSink / MilvusStoreManager。"""
-    import public_kb.ingestion.sinks.milvus_sink as milvus_sink
     import core.vectorstore.milvus_client as milvus_client
+    import public_kb.ingestion.sinks.milvus_sink as milvus_sink
 
     calls: list[str] = []
     monkeypatch.setattr(

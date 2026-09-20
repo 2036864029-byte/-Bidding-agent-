@@ -10,13 +10,12 @@ from langchain_core.documents import Document
 
 from core.config.settings import Settings
 from core.contracts import build_effective_expr
+from core.vectorstore.milvus_client import MilvusStoreManager
 from public_kb.retrieval.milvus_search import (
     hybrid_search_with_full_fields,
     search_with_full_fields,
 )
 from public_kb.retrieval.retriever import HybridRetriever
-from core.vectorstore.milvus_client import MilvusStoreManager
-
 
 # ── build_effective_expr 纯函数 ────────────────────────────
 

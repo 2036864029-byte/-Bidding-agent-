@@ -7,7 +7,6 @@ import time
 
 import pytest
 
-from core.concurrency import limits
 from core.concurrency.limits import InflightGate, get_inflight_gate, reset_inflight_gate
 
 

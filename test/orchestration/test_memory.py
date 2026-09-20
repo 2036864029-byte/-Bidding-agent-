@@ -15,7 +15,6 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from orchestration.main_graph import build_supervisor_graph
 
-
 # ── fake agent 子图 ───────────────────────────────────────────
 
 def _fake_price(state, config=None):

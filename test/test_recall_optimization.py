@@ -12,12 +12,12 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.nodes.price_inquiry import (  # noqa: E402
-    HardFilters,
-    SearchIntent,
     _HARDCODED_SCHEMA,
     _MYSQL_SEMANTIC_PER_TABLE_LIMIT,
     _MYSQL_SEMANTIC_THRESHOLD,
     _MYSQL_SEMANTIC_TOP_K,
+    HardFilters,
+    SearchIntent,
     _build_constraint_conditions,
     _build_full_scan_sql,
     _build_preference_conditions,
