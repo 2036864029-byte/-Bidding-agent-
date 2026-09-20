@@ -25,7 +25,8 @@ from typing import Any, Dict, List, Optional, Sequence
 from langchain_core.documents import Document
 
 from core.contracts.chunk_ids import compute_chunk_uid
-from .checkpoint import StageCheckpoint, STAGE_A, STAGE_C
+
+from .checkpoint import STAGE_A, STAGE_C, StageCheckpoint
 from .ir import NormalizedDocument, simhash
 from .ledger import IngestLedger
 from .normalizers import build_normalizer
@@ -209,8 +210,9 @@ class FileIngestionPipeline:
 
     def _chunk_ir(self, ir: NormalizedDocument, path: Path) -> List[Document]:
         """markdown IR → 清洗 + 分块 + 元数据/幂等键固化。"""
-        from .handoff import chunk_markdown  # 懒加载避免 pipeline↔handoff 循环
         from core.contracts import validate_ingestion_documents
+
+        from .handoff import chunk_markdown  # 懒加载避免 pipeline↔handoff 循环
 
         doc_name = path.stem  # 与 handoff 的 doc_name 口径一致（跨机器稳定）
         doc_type: Optional[str] = None

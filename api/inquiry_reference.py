@@ -14,6 +14,7 @@ MySQL `bidding` 库回表（主信息 + 产品明细）→ 金额统一万元 �
 
 from __future__ import annotations
 
+from core.vectorstore.namespace import PROJECT_ANNOUNCEMENT_COLLECTION  # noqa: F401
 from price_engine.reference import (  # noqa: F401  # 薄转发：核心在引擎层
     DEFAULT_MIN_AMOUNT,
     DEFAULT_TOP_K,
@@ -28,7 +29,6 @@ from price_engine.reference import (  # noqa: F401  # 薄转发：核心在引�
     _retrieve,
     search_reference,
 )
-from core.vectorstore.namespace import PROJECT_ANNOUNCEMENT_COLLECTION  # noqa: F401
 
 __all__ = [
     "search_reference",

@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from core.rdb.mysql_pool import _CLEAN_DB
 from core.retrieval.base import RecallStage
 
-from .recall import _execute_sql_with_timeout, _get_settings
 from .models import SearchIntent
+from .recall import _execute_sql_with_timeout, _get_settings
 from .sql_builders import (
     _build_candidate_sql,
     _build_exact_constraint_sql,

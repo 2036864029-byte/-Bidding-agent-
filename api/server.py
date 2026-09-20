@@ -48,13 +48,13 @@ from core.session import get_session_registry
 from core.streaming.sink import StreamSink, set_active_sink
 
 from .deps import get_agent
+from .inquiry_reference import search_reference
 from .middleware import (
     ApiKeyAuthMiddleware,
     RateLimitMiddleware,
     RequestContextMiddleware,
 )
 from .modules import build_kanban_overview, build_supplier_overview
-from .inquiry_reference import search_reference
 from .schemas import ChatRequest, ChatResponse, ReferenceRequest
 
 logger = logging.getLogger(__name__)

@@ -40,16 +40,20 @@ from price_engine import (
     _parse_unified_intent,
     _safe_parse_intent,
 )
-from price_engine.alias import resolve_company_families
-from price_engine.intent import detect_product_demand
 from price_engine import queries as _queries_module
+from price_engine.alias import resolve_company_families
 from price_engine.guards import (
     QUERY_INTENT_KEYWORDS,
     has_valid_query_entity,
     normalize_project_number,
 )
+from price_engine.intent import detect_product_demand
 from price_engine.rendering.answer_templates import CAPABILITY_GUIDANCE, render_answer
-from price_engine.rendering.output_templates import OutputRecords, _apply_output_template, get_template
+from price_engine.rendering.output_templates import (
+    OutputRecords,
+    _apply_output_template,
+    get_template,
+)
 
 logger = logging.getLogger(__name__)
 

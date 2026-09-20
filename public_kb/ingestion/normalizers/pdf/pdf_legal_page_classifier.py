@@ -22,7 +22,6 @@ reason），对应三档路由计划 §6 T1 的分类输出：
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
 
 from .pdf_page_profile import PageProfile
 

@@ -22,14 +22,19 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
 
-from .transforms.chunker import SemanticChunker
-from .transforms.cleaner import TextCleaner
+# 注意：`save_chunks_to_markdown` 是**刻意再导出**（sinks/markdown_sink 与
+# test_public_kb_layout 依赖本模块转出），故带 `# noqa: F401` —— 不能删。
+# 原先只用普通注释说明意图，ruff 不认，`ruff --fix` 把它当未用导入删掉了
+# （2026-09-20 实测踩到，markdown_sink 直接 ImportError）。
+# 凡"刻意再导出"都必须用 noqa 显式声明，光写注释挡不住自动修。
 from .csv_loader_structure import (
     _CN_LEGAL_HEADING_RE,  # 标题提取复用（M5 Step B 拆出后单源定义）
-    _MD_HEADING_RE,        # 供本模块内部标题检测使用
-    save_chunks_to_markdown,  # re-export：既有外部导入路径保持可用（见 __init__ / cli）
-    structure_plain_text,     # 同上
+    _MD_HEADING_RE,  # 供本模块内部标题检测使用
+    save_chunks_to_markdown,  # noqa: F401
+    structure_plain_text,  # 同上
 )
+from .transforms.chunker import SemanticChunker
+from .transforms.cleaner import TextCleaner
 
 logger = logging.getLogger(__name__)
 

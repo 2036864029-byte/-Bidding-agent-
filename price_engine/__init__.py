@@ -18,6 +18,10 @@ from core.rdb.mysql_pool import (  # noqa: F401
     _settings_cache,
 )
 
+from .alias import (
+    resolve_company_families,
+    strip_region_prefix,
+)
 from .enum_norm import (
     _ENUM_CACHE,
     _ENUM_CACHE_LOCK,
@@ -57,10 +61,6 @@ from .intent import (
 from .models import (
     HardFilters,
     SearchIntent,
-)
-from .alias import (
-    resolve_company_families,
-    strip_region_prefix,
 )
 from .queries import (
     _query_all_tables,

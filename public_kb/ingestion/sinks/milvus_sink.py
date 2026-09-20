@@ -16,7 +16,6 @@ from langchain_core.documents import Document
 
 from core.contracts import validate_ingestion_documents
 
-
 MilvusSinkMode = Literal["initialize", "append"]
 
 

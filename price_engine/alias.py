@@ -16,10 +16,9 @@
 from __future__ import annotations
 
 import logging
-import re
-from typing import Optional
 
-from core.rdb.mysql_pool import _get_connection, _release_connection, _get_settings
+from core.rdb.mysql_pool import _get_connection, _get_settings, _release_connection
+
 from .intent import _is_valid_company_name
 from .models import SearchIntent
 

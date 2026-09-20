@@ -12,8 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from langchain_core.documents import Document
 
 from core.contracts.chunk_ids import compute_chunk_uid
-from .citations_models import Citation, _UNKNOWN_CHAPTER, _UNKNOWN_DOC_NAME
 
+from .citations_models import _UNKNOWN_CHAPTER, _UNKNOWN_DOC_NAME, Citation
 
 # ============================================================
 #  构建与渲染

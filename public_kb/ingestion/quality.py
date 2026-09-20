@@ -7,7 +7,6 @@ Normalizer 在 IR metadata 写入 quality_score（约定见 normalizers/base.py�
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import List, Tuple

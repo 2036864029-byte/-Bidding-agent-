@@ -14,9 +14,9 @@ import csv
 import logging
 from typing import List
 
+from ..csv_loader import CsvLoader
 from ..ir import NormalizedDocument
 from .base import Normalizer
-from ..csv_loader import CsvLoader
 
 logger = logging.getLogger(__name__)
 

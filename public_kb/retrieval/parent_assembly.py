@@ -12,10 +12,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 from langchain_core.documents import Document
-
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Callable, List, Optional
+from typing import Callable, List, Optional
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
@@ -36,8 +36,8 @@ DOC_AGENT_SYSTEM_PROMPT = (
 
 
 def _doc_agent_tools() -> List[BaseTool]:
-    from public_kb.tools import kb_search_as_tool
     from price_engine.tools import price_query_as_tool
+    from public_kb.tools import kb_search_as_tool
 
     return [kb_search_as_tool(), price_query_as_tool()]
 

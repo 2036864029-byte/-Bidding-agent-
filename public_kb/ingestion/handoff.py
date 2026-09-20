@@ -30,8 +30,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from langchain_core.documents import Document
 
-from core.contracts.chunk_ids import compute_chunk_uid
 from core.config.settings import Settings
+from core.contracts.chunk_ids import compute_chunk_uid
+
+from .normalizers.pdf.pdf_structure import adapt_pdf_markdown
 from .sinks.milvus_sink import MilvusSink, MilvusSinkMode
 from .transforms import (
     SemanticChunker,
@@ -39,7 +41,6 @@ from .transforms import (
     TypedChunker,
     detect_doc_type,
 )
-from .normalizers.pdf.pdf_structure import adapt_pdf_markdown
 
 logger = logging.getLogger(__name__)
 

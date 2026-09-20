@@ -64,8 +64,8 @@ def _preview(markdown: str, limit: int = _PREVIEW_CHARS) -> str:
 
 def _parse_path(path: Path, settings: Settings) -> tuple[str, str, list]:
     """对文件路径跑三段式 Stage A 规范化，返回 (format, markdown_joined, irs)。"""
-    from .router import FormatRouter
     from .normalizers import build_normalizer
+    from .router import FormatRouter
 
     router = FormatRouter()
     fmt = router.classify(path)
@@ -117,8 +117,8 @@ def parse_file(
     if not markdown.strip():
         raise ValueError(f"文件「{name}」未解析出可读文本")
 
-    from .transforms import TextCleaner
     from .handoff import chunk_markdown
+    from .transforms import TextCleaner
 
     cleaned = TextCleaner().clean(markdown)
     docs = chunk_markdown(cleaned, name, settings)

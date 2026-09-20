@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 from core.config.settings import Settings
+
 from ....services.mineru_api_parser import MinerUApiParser
 from .pdf_complex_range import ComplexRange, write_subpdf
 from .pdf_markdown_assembler import ParsedPage

@@ -31,8 +31,8 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 # PyMuPDF 在调用处 lazy import（_profile_and_classify / _total_pages /
 # _dispatch_tier_a worker 内），便于测试环境即使没装 pymupdf 也能 import 模块。
-
 from core.config.settings import Settings
+
 from ....services.mineru_api_parser import MinerUApiParser
 from ....services.mineru_parser import MinerUParser
 from .pdf_complex_range import (
@@ -232,8 +232,10 @@ class PdfRouter:
         不可跨线程共享），最后按 page_idx 升序汇合保证确定性。
         """
         # 延迟导入避免循环 + 仅在开关开启时强依赖
-        import pymupdf
         from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        import pymupdf
+
         from .pdf_page_profile import build_page_profile
 
         assert self._classifier is not None
@@ -455,6 +457,7 @@ class PdfRouter:
 
         def worker(items: Sequence[PageRouteDecision]):
             import pymupdf
+
             from .pdf_fast_text import (
                 remove_header_lines,
                 remove_page_numbers,

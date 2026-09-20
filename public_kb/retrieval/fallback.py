@@ -12,10 +12,10 @@ from langchain_milvus import Milvus as MilvusVectorStore
 from core.config.settings import Settings
 from core.contracts import MilvusCollectionContract
 from core.vectorstore.index_params import build_dense_search_params
+
 from .entities import entity_to_doc
 from .milvus_search import search_with_full_fields
 from .parent_assembly import dedupe_by_parent
-
 
 logger = logging.getLogger(__name__)
 

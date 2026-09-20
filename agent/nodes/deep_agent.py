@@ -655,8 +655,8 @@ def run_deep_agent(
 
 
 def _default_tools() -> List[BaseTool]:
-    from public_kb.tools import kb_search_as_tool
     from price_engine.tools import price_query_as_tool
+    from public_kb.tools import kb_search_as_tool
 
     from ..doc_context import read_file_as_tool
 

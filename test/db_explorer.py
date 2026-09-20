@@ -48,7 +48,7 @@ def get_table_summary(database):
     try:
         with conn.cursor() as cursor:
             sql = """
-                SELECT 
+                SELECT
                     TABLE_NAME,
                     TABLE_ROWS,
                     ROUND(DATA_LENGTH / 1024 / 1024, 2) AS DATA_SIZE_MB,
@@ -76,7 +76,7 @@ def get_table_columns(database, table_name):
     try:
         with conn.cursor() as cursor:
             sql = """
-                SELECT 
+                SELECT
                     COLUMN_NAME,
                     COLUMN_TYPE,
                     IS_NULLABLE,
@@ -154,7 +154,7 @@ def search_tables_by_keyword(database, keyword):
             sql = """
                 SELECT TABLE_NAME, TABLE_ROWS, TABLE_COMMENT
                 FROM information_schema.TABLES
-                WHERE TABLE_SCHEMA = %s 
+                WHERE TABLE_SCHEMA = %s
                   AND (TABLE_NAME LIKE %s OR TABLE_COMMENT LIKE %s)
                 ORDER BY TABLE_NAME
                 LIMIT 100

@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional
 
 from core.config.settings import Settings
 
-
 logger = logging.getLogger(__name__)
 
 _OUTPUT_FIELDS_ALL = ["*"]

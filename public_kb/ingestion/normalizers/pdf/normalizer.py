@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, List
 
 from ...ir import NormalizedDocument
 from ..base import Normalizer

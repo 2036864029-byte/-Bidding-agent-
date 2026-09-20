@@ -4,22 +4,21 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from core.config.settings import Settings
-from .csv_loader import CsvLoader
 from core.embeddings import get_embeddings
 from core.vectorstore.milvus_client import MilvusStoreManager
-from .pipeline import FileIngestionPipeline, FileIngestionResult
-from .checkpoint import StageCheckpoint
-from .ledger import IngestLedger
-from .quality import QualityGate
-from .router import FormatRouter
-from .sinks.milvus_sink import MilvusSink, MilvusSinkMode
 
+from .checkpoint import StageCheckpoint
+from .csv_loader import CsvLoader
+from .ledger import IngestLedger
+from .pipeline import FileIngestionPipeline, FileIngestionResult
+from .quality import QualityGate
+from .sinks.milvus_sink import MilvusSink, MilvusSinkMode
 
 logger = logging.getLogger(__name__)
 

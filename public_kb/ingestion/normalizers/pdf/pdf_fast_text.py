@@ -17,7 +17,7 @@ import re
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 # 独立页码：如 "12"
 _PAGE_NUMBER_RE = re.compile(r"^\s*\d{1,4}\s*$")

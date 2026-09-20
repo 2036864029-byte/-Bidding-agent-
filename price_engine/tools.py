@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
+from .alias import resolve_company_families
 from .enum_norm import _normalize_intent_enums
 from .guards import QUERY_INTENT_KEYWORDS, has_valid_query_entity, normalize_project_number
 from .intent import (
@@ -26,7 +27,6 @@ from .intent import (
     detect_product_demand,
 )
 from .queries import _query_all_tables, _query_bidding_data, _query_company_data
-from .alias import resolve_company_families
 
 logger = logging.getLogger(__name__)
 

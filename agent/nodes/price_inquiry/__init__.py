@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import price_engine as _pe
 from price_engine import *  # noqa: F401,F403  # 引擎 + 连接池符号
+
+from .node import node_price_inquiry
 from .subgraph import (
     _QUERY_INTENT_KEYWORDS,
     _SUB_ROUTE_MAP,
@@ -20,6 +22,5 @@ from .subgraph import (
     _has_valid_query_entity,
     get_price_subgraph,
 )
-from .node import node_price_inquiry
 
 __all__ = list(_pe.__all__) + ['_QUERY_INTENT_KEYWORDS', '_SUB_ROUTE_MAP', '_UNIFIED_GUIDANCE_TEXT', '_build_capability_boundary_answer', '_build_unified_guidance', '_get_query_fn', '_has_valid_query_entity', 'get_price_subgraph', 'node_price_inquiry']

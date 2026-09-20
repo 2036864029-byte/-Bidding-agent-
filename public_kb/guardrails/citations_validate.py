@@ -7,19 +7,18 @@
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from core.config.settings import CitationRuleConfig
+
 from .citations_models import (
-    Citation,
-    RuleResult,
-    CitationValidationReport,
-    _compute_cited_sets,
     _UNKNOWN_CHAPTER,
     _UNKNOWN_DOC_NAME,
-    parse_citation_markers,
+    Citation,
+    CitationValidationReport,
+    RuleResult,
+    _compute_cited_sets,
 )
-
 
 # ============================================================
 #  校验器
