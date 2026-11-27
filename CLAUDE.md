@@ -160,3 +160,9 @@ Run all with: `python -m pytest test/ -v`
 ## Reference docs
 
 `docs/project_overview.md` is the comprehensive reference (v2.0, ~1100 lines). It covers architecture, setup, deployment, troubleshooting, technical debt register, and architecture decision records. Consult it for detailed explanations before modifying core flows.
+
+> ⚠️ 动依赖 / CI / 测试之前先读 **`docs/踩坑_本地绿CI红.md`**：2026-11-27 首次接入 GitHub Actions
+> 连跑 6 次才全绿，四次失败全来自「本地环境掩盖隐式依赖」（解释器版本未钉、`pytest` 与
+> `python -m pytest` 的 `sys.path` 差异、测试依赖 `.env` 真 key 与本机 Milvus/Redis、覆盖率基线跨平台）。
+> 硬规则摘要见 `AGENTS.md` 的「本地绿 ≠ CI 绿」一节。
+

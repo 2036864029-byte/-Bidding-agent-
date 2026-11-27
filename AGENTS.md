@@ -118,6 +118,31 @@ The `test/` directory contains both diagnostic scripts and pytest-compatible tes
 
 Run all with: `python -m pytest test/ -v`
 
+## 本地绿 ≠ CI 绿（改依赖 / 改 CI / 写测试前必读）
+
+> 背景：2026-11-27 首次接入 GitHub Actions，连跑 6 次才全绿；四次失败**没有一次是业务逻辑 bug**，
+> 全部是「本地环境替 CI 掩盖了隐式依赖」。完整复盘与判定树见
+> **[`docs/踩坑_本地绿CI红.md`](docs/踩坑_本地绿CI红.md)**。
+
+- **R1 解释器版本必须显式钉。** CI 用 `UV_PYTHON: "3.12"`；本地 venv / Dockerfile（`python:3.11-slim`）/ CI
+  三处要对齐。注意 `requires-python` 目前仍是 `>=3.11`（**无上界**）—— 任何人直接 `uv sync` 都可能装到
+  3.14，而 `tiktoken==0.8.0` 没有 cp314 wheel → 回退源码编译 → PyO3 0.22 上限 3.13 → 失败。
+- **R2 导入路径靠配置，不靠调用方式。** `pyproject.toml` 的 `pythonpath = ["."]` 是必需的：
+  `pytest`（console script）不会把 CWD 放进 `sys.path`，而 `python -m pytest` 会；差别会导致
+  `import core` 命中 `test/core/`（namespace 包）。
+- **R3 测试不得依赖本机环境。** 不读 `.env`、不连 `127.0.0.1`、模型客户端一律用 conftest 的占位凭据 + mock。
+  这条仓库里早就有出处：`test/conftest.py` 头注释、`test/_support/fakes.py:125`（两个检索入口要一起打桩）、
+  `test/conftest.py::_hermetic_backends`。**违反它的典型症状是「服务在时反而绿」**。
+- **R4 质量门禁阈值跨平台留容差。** 覆盖率基线在不同 OS / Python 版本上差约 0.09pp；
+  `scripts/ci/ratchet.py` 对 `coverage` 有 0.15pp 容差，且必须仍能拦住真实回退。
+- **R5 本地不等价，推之前自检**：`python -m pytest` 与 `uv run pytest` **两种调用都跑**；
+  把 `.env` 改名后再跑一遍全量测试；最后跑 `scripts/ci/local_ci.py`。
+- **R6 GitHub 的 Re-run 只验抖动。** 它固定重跑**当时那个提交**，不能用来验证「代码改了是否通过」——
+  必须产生新 run（新 push 或 workflow_dispatch）。
+
 ## Reference docs
 
 `docs/project_overview.md` is the comprehensive reference (v2.0, ~1100 lines). It covers architecture, setup, deployment, troubleshooting, technical debt register, and architecture decision records. Consult it for detailed explanations before modifying core flows.
+
+CI / 环境相关的踩坑与判定树：**`docs/踩坑_本地绿CI红.md`**（本地绿、CI 红时先读这个）。
+
