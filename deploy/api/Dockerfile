@@ -16,11 +16,15 @@ ARG BASE_IMAGE=python:3.11-slim
 FROM ${BASE_IMAGE}
 
 # pip 走阿里云镜像：本机与服务器实测均可达（pypi.org 跨境在服务器上仅 36~60 KB/s）
+# UV_NO_CACHE=1：uv 默认把下载/解包缓存留在 /root/.cache，**实测占 891 MB**（镜像 2.74 GB 里
+# 有近三分之一是这份缓存，构建时又完全用不上）。关掉后镜像直接降到 ~1.85 GB，
+# 推送/拉取时间与服务器磁盘占用同步减少。**别删这一行**。
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
     PIP_TRUSTED_HOST=mirrors.aliyun.com \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    UV_NO_CACHE=1
 
 # uv：项目用它管理依赖（pyproject + uv.lock），容器内也用同一套保证版本一致
 RUN pip install --no-cache-dir uv
@@ -34,7 +38,9 @@ COPY pyproject.toml uv.lock ./
 #    --frozen             严格按 uv.lock（lock 过期会失败，需先 uv lock）
 #    --no-dev             生产不带评测依赖（ragas 等）
 #    --no-install-project 本项目不是包（无 [build-system]），只装依赖
-RUN uv sync --frozen --no-dev --no-install-project
+#    末尾清 /root/.cache 是兜底：即便某天有人去掉 UV_NO_CACHE，也不会把缓存打进镜像
+RUN uv sync --frozen --no-dev --no-install-project \
+    && rm -rf /root/.cache /tmp/*
 
 # ③ 再拷业务代码（含包内的运行时资源：
 #    core/config/profiles/models.yaml、orchestration/routing_rules.yaml 等）
