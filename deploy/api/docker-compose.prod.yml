@@ -1,0 +1,36 @@
+# ============================================================
+# 生产覆盖层（**服务器专用**，与 docker-compose.yml 叠加使用）
+# ============================================================
+# ⚠️ 这是一个**新文件、叠加层**，不修改 docker-compose.yml。
+#    本地开发命令一个字都不用变，行为与现在完全一致：
+#       docker compose -f deploy/api/docker-compose.yml up -d
+#    只有服务器上才带第二个 -f（后者覆盖前者同名标量）：
+#       docker compose -f deploy/api/docker-compose.yml \
+#                      -f deploy/api/docker-compose.prod.yml up -d api
+#
+# 为什么必须有这一层：
+#   基础文件的 environment 段是**本机开发**取值，其中两项指向本地 SSH 隧道，
+#   服务器上没有这些端口：
+#     EMBEDDING_BASE_URL → http://host.docker.internal:18003/v1   （本机隧道）
+#     PDF_PARSE_BASE_URL → http://host.docker.internal:18002      （本机隧道）
+#   不覆盖的话，容器里 embedding 会连 18003 超时 → **所有问答失败**，
+#   而报错表现为网络超时，很难一眼看出是这个原因（这是本项目部署手册 §7 的坑之一）。
+#
+# 保持不动、无需在这里重复的项：
+#   MILVUS_HOST / MYSQL_HOST / CACHE_REDIS_URL / CHECKPOINTER_POSTGRES_URL
+#     —— 基础文件已指向 host.docker.internal（容器访问宿主的正确取值）
+#   MILVUS_URI / MILVUS_TOKEN
+#     —— 由 .env 提供；`Settings.resolved_milvus_uri` 里 **URI 优先于 host:port**，
+#        所以 MILVUS_HOST 那行在云向量库模式下不生效，无需删改
+# ============================================================
+
+services:
+  api:
+    environment:
+      # 云端 embedding（本机走隧道，服务器走公网直连）
+      EMBEDDING_BASE_URL: "https://api.siliconflow.cn/v1"
+      # PDF 解析走官方 API（.env 里 PDF_PARSE_BACKEND=official），该 URL 本就不参与，
+      # 清空是为了避免维护者误以为"这里有个隧道可用"
+      PDF_PARSE_BASE_URL: ""
+      # 服务器不跑 Langfuse（省 1.5G 内存），tracing 双保险关掉
+      ENABLE_TRACING: "false"
