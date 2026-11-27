@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+# 云向量库档位（含 Zilliz API Key，见 docs/向量库双后端切换方案.md）
+.env.cloud
 # .env 的备份（含真实密钥，勿提交）——注意规则必须单独一行，
 # 与注释同行会被 git 当带尾部空格的 pattern，静默失效
 .env.bak*
@@ -106,3 +108,30 @@ delivery_package/
 docker/infra/pg_data/
 docker/infra/redis_data/
 .hallmark/
+
+# ===== 部署实测采样产物（deploy/ops/mem_probe.py 生成，每次测量不同，不入仓） =====
+deploy/ops/reports/
+
+# ===== �������� env������Կ���ɱ������ɣ�=====
+.env.server
+
+# ===== 服务器版 env（含密钥，由本地生成）=====
+.env.server
+
+# ===== 个人与本地产物 — 不入仓库（2026-11-27 首次推送前补）=====
+# AI 助手的工作记忆，含个人工作笔记
+.workbuddy/
+# 可视化/图表生成产物，可随时重跑生成（2.6 MB）
+.archify/
+# 个人简历草稿：是否公开由本人决定，默认不公开
+简历_*.md
+# 根目录导出产物（源文件在 docs/ 下）
+chunking-optimization-plan.html
+# 根目录 node_modules（前端依赖在 frontend/node_modules）
+node_modules/
+# 数据/评测集快照备份（*.jsonl 已被全局忽略，这里兜住 .bak 变体）
+*.bak2
+*.bak_2*
+eval/*.bak
+DATA/eval_rag/*.bak_*
+DATA/eval_rag/remap_manifest_*.json
