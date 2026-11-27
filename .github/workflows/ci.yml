@@ -29,6 +29,12 @@ jobs:
   # 因有 `from __future__ import annotations` 而不报错，但 get_type_hints 会崩。
   lint:
     runs-on: ubuntu-latest
+    env:
+      # 项目 pyproject 里的默认 index 是阿里云镜像（本机在国内，用它快）。
+      # GitHub runner 在境外，访问国内镜像会超时/被拦 —— 2026-11-27 首次 CI：
+      # lint/test/contract 三个 job 全部挂在 `uv sync` 这一行，而走官方源的
+      # frontend job 正常。CI 侧统一指回 PyPI，本机行为不受影响。
+      UV_DEFAULT_INDEX: https://pypi.org/simple
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -48,6 +54,9 @@ jobs:
   # 这是测试分层（P1）的收益：CI 不必知道哪些用例需要真实服务。
   test:
     runs-on: ubuntu-latest
+    env:
+      # 同 lint：CI 走 PyPI，绕开国内镜像（见 lint job 的说明）
+      UV_DEFAULT_INDEX: https://pypi.org/simple
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -74,6 +83,9 @@ jobs:
   # 独立成 job 的理由：契约漂移的失败信息只有这一处能给出，混在测试里会被淹没。
   contract:
     runs-on: ubuntu-latest
+    env:
+      # 同 lint：CI 走 PyPI，绕开国内镜像（见 lint job 的说明）
+      UV_DEFAULT_INDEX: https://pypi.org/simple
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
