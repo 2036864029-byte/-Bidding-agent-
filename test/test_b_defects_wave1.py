@@ -75,11 +75,16 @@ def test_validate_question_rejects_blank_with_contract_error():
 
 def test_subgraph_blank_question_friendly(monkeypatch):
     import agent.nodes.knowledge_qa.subgraph as sg
+    from _support.fakes import KB_SEARCH_ENTRY_POINTS
 
     def _boom(question):
         raise KnowledgeBaseContractError("question 不能为空")
 
-    monkeypatch.setattr(sg, "kb_search", _boom)
+    # 必须把**两个**检索入口一起打桩：_retrieve_node 按 settings.kb_light_decompose 二选一
+    # （默认 True → 走 kb_search_expanded）。只补 kb_search 时，本机（Milvus 在跑）会静默走
+    # 真实检索照样能过；CI（无 Milvus）则直接连接失败 —— 详见 test/_support/fakes.py:125。
+    for _entry in KB_SEARCH_ENTRY_POINTS:
+        monkeypatch.setattr(sg, _entry, _boom)
     sub = sg.build_knowledge_qa_subgraph()
     out = sub.invoke({"messages": [HumanMessage(content="   ")]})
 
