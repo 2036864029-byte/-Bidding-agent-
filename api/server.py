@@ -38,6 +38,7 @@ from core.errors.handlers import (
     register_exception_handlers,
     unhandled_envelope,
 )
+from core.events import emit
 from core.observability.audit import record_audit
 from core.observability.context import set_session_id, tenant_scoped
 from core.observability.logging import setup_logging
@@ -48,6 +49,7 @@ from core.session import get_session_registry
 from core.streaming.sink import StreamSink, set_active_sink
 
 from .deps import get_agent
+from .feishu_oauth import router as feishu_router
 from .inquiry_reference import search_reference
 from .middleware import (
     ApiKeyAuthMiddleware,
@@ -55,7 +57,7 @@ from .middleware import (
     RequestContextMiddleware,
 )
 from .modules import build_kanban_overview, build_supplier_overview
-from .schemas import ChatRequest, ChatResponse, ReferenceRequest
+from .schemas import ChatRequest, ChatResponse, ReferenceRequest, ResumeRequest
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +158,41 @@ def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
     finally:
         gate.release()
     latency_ms = int((time.perf_counter() - t0) * 1000)
+    return _finish_response(result, session_id, latency_ms, "chat", req.question)
+
+
+def _finish_response(
+    result: dict,
+    session_id: str,
+    latency_ms: int,
+    action: str,
+    question: str,
+) -> ChatResponse:
+    """图输出 → ChatResponse（含**中断**分支）。
+
+    中断（HITL_CLARIFY=true 且 clarify 挂起）时不是错误、也不是空回答：返回
+    `interrupted=true` + 反问文案 + 候选，客户端据此渲染，再用 /chat/resume 续跑。
+    """
+    if result.get("interrupted"):
+        payload = result.get("interrupt") or {}
+        logger.info("图停在中断点: session=%s type=%s", session_id, payload.get("type"))
+        record_audit(
+            action=action, status="ok", session_id=session_id,
+            question=question, latency_ms=latency_ms,
+        )
+        return ChatResponse(
+            answer=str(payload.get("question") or ""),
+            reply_type="clarify",
+            intent="clarify",
+            data={
+                "candidates": payload.get("candidates") or [],
+                "original": payload.get("original"),
+            },
+            session_id=session_id,
+            latency_ms=latency_ms,
+            interrupted=True,
+            interrupt=payload,
+        )
     fallback_biz = {"branch": "fallback", "answer": "", "data": None}
     business_result = result.get("business_result") or fallback_biz
     reply = to_reply(
@@ -164,14 +201,37 @@ def _invoke_response(agent: AgentGraph, req: ChatRequest) -> ChatResponse:
         latency_ms=latency_ms,
     )
     record_audit(
-        action="chat",
+        action=action,
         status="ok" if not reply.error_code else "error",
         session_id=session_id,
-        question=req.question,
+        question=question,
         latency_ms=latency_ms,
         error_code=reply.error_code,
     )
     return ChatResponse(**reply_to_response(reply), session_id=session_id)
+
+
+def _resume_response(agent: AgentGraph, req: ResumeRequest) -> ChatResponse:
+    """中断续跑：`Command(resume=答复)` 从 checkpoint 断点继续，不重跑已完成的节点。"""
+    session_id = _resolve_session_id(req.session_id)
+    set_session_id(session_id)
+    session_scope = tenant_scoped(session_id)
+    from core.observability.tracing import session_attrs, tag_current_span
+
+    tag_current_span(**session_attrs())
+    get_session_registry().touch(session_scope)
+    value = req.candidate or req.answer or ""
+    t0 = time.perf_counter()
+    gate = get_inflight_gate()
+    if not gate.acquire():
+        logger.warning("在飞闸门打满，续跑快速失败: limit=%d", gate.limit)
+        raise ServiceBusyError(retry_after=max(1, int(gate.wait_timeout)))
+    try:
+        result = agent.resume(session_scope, value)
+    finally:
+        gate.release()
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+    return _finish_response(result, session_id, latency_ms, "chat_resume", value)
 
 
 def _run_stream_worker(
@@ -214,6 +274,13 @@ def _run_stream_worker(
             gate.release()
 
     latency_ms = int((time.perf_counter() - t0) * 1000)
+    if result.get("interrupted"):
+        # HITL 挂起：不是失败，是"等你答复"——按终态下发 interrupted 标记 + 候选，
+        # 客户端据此渲染反问，再走 POST /chat/resume 续跑本 thread。
+        resp = _finish_response(result, session_id, latency_ms, "chat_stream", req.question)
+        sink.put_event("result", resp.model_dump())
+        sink.put_event("done", None)
+        return
     fallback_biz = {"branch": "fallback", "answer": "", "data": None}
     business_result = result.get("business_result") or fallback_biz
     reply = to_reply(
@@ -233,6 +300,11 @@ def _run_stream_worker(
     )
     sink.put_event("result", payload)
     sink.put_event("done", None)
+    # 并行线 A：长提问完成事件（绑定飞书的用户收到「回答就绪」摘要推送）
+    emit({
+        "kind": "chat_result", "session_id": session_id,
+        "answer": business_result.get("answer", ""),
+    })
 
 
 async def _sse_stream(
@@ -549,9 +621,23 @@ def create_app(
             本回调仍在**主进程**（队列 worker 线程）里跑：解析产物要交给
             filestore，而子进程只做纯解析。多 worker 下 filestore 走 Redis，
             其他 worker 也能读到（见 core/filestore.py）。
+
+            并行线 A：解析各里程碑经 core.events 发出（绑定飞书的用户会收到
+            手机推送）。解析失败仍 re-raise，让队列把任务置 error（前端照常报错）。
             """
             fid = _current_task_id.get()
-            res = _parse_upload(data, name)
+            emit({
+                "kind": "upload_started", "session_id": session,
+                "file_name": name, "task_id": fid,
+            })
+            try:
+                res = _parse_upload(data, name)
+            except Exception as exc:  # noqa: BLE001  失败也发事件，再交给队列置 error
+                emit({
+                    "kind": "upload_failed", "session_id": session,
+                    "file_name": name, "reason": str(exc),
+                })
+                raise
             record = filestore.FileRecord(
                 file_id=fid,
                 source_name=res["source_name"],
@@ -566,6 +652,10 @@ def create_app(
             # C1：索引先于任务完成态落库——轮询到 status=done 时索引必然已就绪
             # （否则上传后立刻提问会打空，退化成全文模式）
             doc_context.build_index_for(record)
+            emit({
+                "kind": "upload_succeeded", "session_id": session,
+                "file_name": record.source_name, "chunk_count": record.chunk_count,
+            })
             return {
                 "file_id": fid,
                 "source_name": res["source_name"],
@@ -703,6 +793,26 @@ def create_app(
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    @app.post("/chat/resume", response_model=ChatResponse)
+    def chat_resume(
+        req: ResumeRequest, agent: AgentGraph = Depends(get_agent_fn),
+    ) -> ChatResponse:
+        """中断续跑（HITL）：把用户答复写回挂起的 clarify。
+
+        前置：上一轮 /chat 返回 ``interrupted=true``，且 session_id 原样带回
+        （它同时是 checkpointer 的 thread_id）。续跑**不重跑**已完成节点，
+        答复作为新的用户消息回到 supervisor 重新路由。
+        """
+        return _resume_response(agent, req)
+
+    app.include_router(feishu_router)  # 并行线 A：/feishu/auth_url | /oauth/callback | /binding
+
+    # 装配进度推送器（订阅 core.events；幂等进程级单例）。无 FEISHU_APP_ID 时
+    # FeishuPusher 为 no-op，事件被消费但不推送——本地未配凭据也能安全常驻。
+    from channels.feishu.push import get_progress_notifier
+
+    get_progress_notifier()
 
     return app
 

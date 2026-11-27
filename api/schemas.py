@@ -44,6 +44,32 @@ class ChatResponse(BaseModel):
         None,
         description="统一错误码（W2-3；正常回答为 null，见 core.errors.codes.ErrorCode）",
     )
+    interrupted: bool = Field(
+        False,
+        description="图是否停在中断点（HITL_CLARIFY=true 时澄清挂起）；"
+                    "为 true 时客户端应调用 POST /chat/resume 续跑",
+    )
+    interrupt: Optional[Dict[str, Any]] = Field(
+        None,
+        description="中断载荷（type=clarification 时含 question + candidates），"
+                    "前端据此渲染反问与候选 chips",
+    )
+
+
+class ResumeRequest(BaseModel):
+    """POST /chat/resume —— 中断续跑：把用户答复写回挂起点。
+
+    只有上一轮响应 `interrupted=true` 时才有意义；`session_id` 必须与挂起那轮一致
+    （它同时是 checkpointer 的 thread_id，答复靠它找回断点）。
+    """
+
+    session_id: str = Field(..., description="挂起那轮响应回传的 session_id")
+    answer: str = Field(
+        "", max_length=2000, description="用户自由文本答复（与 candidate 二选一）",
+    )
+    candidate: Optional[str] = Field(
+        None, max_length=200, description="用户点选的候选意图（优先于 answer）",
+    )
 
 
 class ReferenceRequest(BaseModel):
