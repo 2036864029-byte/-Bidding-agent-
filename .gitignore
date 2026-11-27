@@ -135,3 +135,6 @@ node_modules/
 eval/*.bak
 DATA/eval_rag/*.bak_*
 DATA/eval_rag/remap_manifest_*.json
+
+# 知识库交付包（4.5 MB 二进制，本地保留，不入代码仓；2026-11-27 移除）
+知识库交接_*.zip
