@@ -23,7 +23,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage
@@ -38,6 +38,9 @@ from core.contracts.trace import (
     trace_payload,
 )
 from core.streaming.sink import emit_token
+
+if TYPE_CHECKING:  # 仅类型引用：policy 运行期按需导入，避免 nodes ↔ policy 循环
+    from ..policy import ToolPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -413,12 +416,30 @@ def _extract_sources(result: Any) -> List[str]:
     return out
 
 
-def _execute_step(step: PlanStep, tool_map: Dict[str, BaseTool], round_id: int = 1) -> StepRecord:
-    """执行单步：按工具契约注入默认参数，观察摘要限长落轨迹。"""
+def _execute_step(
+    step: PlanStep,
+    tool_map: Dict[str, BaseTool],
+    round_id: int = 1,
+    policy: Optional["ToolPolicy"] = None,
+) -> StepRecord:
+    """执行单步：按工具契约注入默认参数，观察摘要限长落轨迹。
+
+    `policy` 非空时先做**执行期越权校验**：规划器/LLM 给出未声明工具 → 不调用，
+    status="denied" + 回写拒绝原因（装配期已经过滤过工具清单，这里是第二道闸）。
+    """
     started = time.monotonic()
 
     def elapsed_ms() -> int:
         return int((time.monotonic() - started) * 1000)
+
+    if policy is not None and not policy.is_allowed(step.tool):
+        logger.warning("deep_agent 越权工具调用被拒绝: %s（能力=%s）",
+                       step.tool, policy.capability_id)
+        return StepRecord(
+            step_id=step.id, tool=step.tool, query=step.query, round=round_id,
+            status="denied", observation_head=policy.deny_message(step.tool),
+            records_count=0,
+        )
 
     tool = tool_map.get(step.tool)
     if tool is None:
@@ -455,7 +476,10 @@ def _execute_step(step: PlanStep, tool_map: Dict[str, BaseTool], round_id: int =
 
 
 def _execute_steps(
-    plan: Sequence[PlanStep], tool_map: Dict[str, BaseTool], round_id: int = 1
+    plan: Sequence[PlanStep],
+    tool_map: Dict[str, BaseTool],
+    round_id: int = 1,
+    policy: Optional["ToolPolicy"] = None,
 ) -> List[StepRecord]:
     """并发执行计划步骤（步间无数据依赖，工具调用 I/O 主导）。
 
@@ -466,7 +490,10 @@ def _execute_steps(
     """
     with ThreadPoolExecutor(max_workers=min(max(1, len(plan)), 4)) as ex:
         futures = [
-            ex.submit(contextvars.copy_context().run, _execute_step, st, tool_map, round_id)
+            ex.submit(
+                contextvars.copy_context().run,
+                _execute_step, st, tool_map, round_id, policy,
+            )
             for st in plan
         ]
         records = [f.result() for f in futures]
@@ -580,6 +607,7 @@ def run_deep_agent(
     reflect: bool = True,
     max_exec_rounds: int = DEFAULT_MAX_EXEC_ROUNDS,
     replan_enabled: bool = True,
+    policy: Optional["ToolPolicy"] = None,
 ) -> Dict[str, Any]:
     """执行 Deep Agent 管线：规划 → 执行（有界回灌轮）→ 综合 → 反思。
 
@@ -592,6 +620,7 @@ def run_deep_agent(
         reflect: 是否执行反思阶段（False = 只到 Plan-and-Execute）。
         max_exec_rounds: 执行轮次上限（1 = 一次性计划，旧行为）。
         replan_enabled: False = 不补检索（等价 max_exec_rounds=1，便于回滚）。
+        policy: 工具白名单（None = 不启用校验，注入自建工具的测试走这条）。
 
     Returns:
         {"answer": str, "trace": dict（AgentTrace JSON），"rounds": int,
@@ -617,7 +646,7 @@ def run_deep_agent(
         if not batch:
             break
         rounds_used = round_id
-        steps.extend(_execute_steps(batch, tool_map, round_id))
+        steps.extend(_execute_steps(batch, tool_map, round_id, policy))
         if round_id >= budget:
             break
         batch = _replan(question, steps, llm, tools, max_steps)
@@ -654,13 +683,35 @@ def run_deep_agent(
 # ── 节点形态 ──────────────────────────────────────────────────
 
 
-def _default_tools() -> List[BaseTool]:
+def _tool_catalog() -> Dict[str, Callable[[], BaseTool]]:
+    """声明名 → 工具工厂（供 ToolPolicy 按 registry 装配，不在装配期创建多余工具）。"""
     from price_engine.tools import price_query_as_tool
     from public_kb.tools import kb_search_as_tool
 
     from ..doc_context import read_file_as_tool
 
-    return [kb_search_as_tool(), price_query_as_tool(), read_file_as_tool()]
+    return {
+        "kb_search": kb_search_as_tool,
+        "price_query": price_query_as_tool,
+        "read_file": read_file_as_tool,
+    }
+
+
+def _bound_tools(capability_id: str = "deep_agent"):
+    """按 registry 声明装配工具 + 白名单（P5：Tool Policy 落地）。
+
+    Returns:
+        `agent.policy.BoundTools`（tools + policy）—— 二者必须一起用：
+        只给工具不给策略，执行期就退回"模型给什么就调什么"。
+    """
+    from ..policy import bind_capability_tools
+
+    return bind_capability_tools(capability_id, _tool_catalog())
+
+
+def _default_tools(capability_id: str = "deep_agent") -> List[BaseTool]:
+    """声明驱动装配的工具清单（保持返回 list 的旧签名，供评测/诊断脚本复用）。"""
+    return list(_bound_tools(capability_id).tools)
 
 
 def _slot_llm_factory() -> BaseChatModel:
@@ -694,7 +745,12 @@ def build_deep_agent_node(
     """
     if llm is None and llm_factory is None:
         raise ValueError("llm 与 llm_factory 至少提供一个")
-    tools = list(tools) if tools is not None else _default_tools()
+    policy: Optional[ToolPolicy] = None
+    if tools is not None:
+        tools = list(tools)  # 注入工具（测试 / 定制装配）：不启用白名单
+    else:
+        bound = _bound_tools(agent_name)  # 声明驱动装配 + 白名单
+        tools, policy = list(bound.tools), bound.policy
 
     def _rounds() -> Tuple[int, bool]:
         if max_exec_rounds is not None or replan_enabled is not None:
@@ -735,20 +791,27 @@ def build_deep_agent_node(
         result = run_deep_agent(
             question, llm=llm_, tools=tools,
             system_prompt=system_prompt, max_steps=max_steps, reflect=reflect,
-            max_exec_rounds=rounds, replan_enabled=replan,
+            max_exec_rounds=rounds, replan_enabled=replan, policy=policy,
         )
         trace = result["trace"]
         reflection = trace.get("reflection") or {}
+        denied = [s for s in trace.get("steps", []) if s.get("status") == "denied"]
         logger.info(
-            "deep_agent[%s]: plan=%d 步 exec_rounds=%d reflect=%s",
+            "deep_agent[%s]: plan=%d 步 exec_rounds=%d reflect=%s denied=%d",
             agent_name, len(trace.get("plan", [])), trace.get("rounds", 0),
-            reflection.get("verdict"),
+            reflection.get("verdict"), len(denied),
         )
+        data: Dict[str, Any] = {"trace": trace, "draft_answer": result["draft_answer"]}
+        if denied:
+            # 越权尝试进业务结果：可审计、可告警，不静默吞掉
+            data["denied_tools"] = [s.get("tool") for s in denied]
+        if policy is not None:
+            data["tool_policy"] = policy.describe()
         return {
             "business_result": {
                 "branch": agent_name,
                 "answer": result["answer"],
-                "data": {"trace": trace, "draft_answer": result["draft_answer"]},
+                "data": data,
             },
             "messages": [AIMessage(content=result["answer"])],
         }

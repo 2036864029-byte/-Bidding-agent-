@@ -40,6 +40,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 #    core/config/profiles/models.yaml、orchestration/routing_rules.yaml 等）
 COPY agent/ ./agent/
 COPY api/ ./api/
+# channels/ 是运行期依赖：api/server.py 在 create_app() 里**无条件**导入
+# channels.feishu.push（未配 FEISHU_APP_ID 时该推送器是 no-op）。漏拷会导致
+# 容器启动即 ModuleNotFoundError，而不是功能降级 —— 2026-12 实测踩过。
+COPY channels/ ./channels/
 COPY core/ ./core/
 COPY orchestration/ ./orchestration/
 COPY price_engine/ ./price_engine/

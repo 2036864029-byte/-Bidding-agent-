@@ -216,6 +216,17 @@ def build_supervisor_graph(
             return handoff["to"]
         return "end"
 
+    def _route_after_clarify(state: SupervisorState) -> str:
+        """clarify 出边：续跑拿到答复 → 回 supervisor 重判；取消/同步终态 → 结束。
+
+        挂起（`interrupt()`）期间不求值 —— 图在节点内暂停，等 `Command(resume=...)`。
+        """
+        br = state.get("business_result") or {}
+        data = br.get("data") if isinstance(br.get("data"), dict) else {}
+        if data.get("resolved") and data.get("answer"):
+            return "supervisor"
+        return "end"
+
     for name, fn in agent_nodes.items():
         graph.add_node(
             name,
@@ -252,7 +263,12 @@ def build_supervisor_graph(
     )
     for name in agent_nodes:
         graph.add_edge(name, "handoff_decider")
-    graph.add_edge("clarify", END)  # 澄清是终态，不走 handoff
+    # Phase 3 / P5：clarify 续跑拿到答复 → 回 supervisor 重新路由（中断续跑）；
+    # 取消或同步终态 → END。挂起期间本边不求值。
+    graph.add_conditional_edges(
+        "clarify", _route_after_clarify,
+        {"supervisor": "supervisor", "end": END},
+    )
     graph.add_conditional_edges(
         "handoff_decider", _route_after_decider,
         {name: name for name in agent_nodes} | {"end": END},

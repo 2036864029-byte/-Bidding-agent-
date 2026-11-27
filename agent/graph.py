@@ -50,6 +50,31 @@ def _route_by_intent(state: AgentState) -> str:
     return state.get("router_intent", "fallback")
 
 
+def _clarify_next(state: AgentState) -> str:
+    """clarify 出边：续跑拿到答复 → 回路由重新判定；取消/同步终态 → 结束。
+
+    挂起期间（`interrupt()`）本边不会被求值 —— 图在节点内暂停，checkpoint 落盘。
+    """
+    br = state.get("business_result") or {}
+    data = br.get("data") if isinstance(br.get("data"), dict) else {}
+    if data.get("resolved") and data.get("answer"):
+        return "router"
+    return "end"
+
+
+def _interrupt_payload(interrupts: Sequence[Any]) -> Optional[Dict[str, Any]]:
+    """把 LangGraph 的 Interrupt 摊平成可 JSON 化的载荷（取首个）。
+
+    形如 ``{"id": "...", "type": "clarification", "question": "...", "candidates": [...]}``。
+    """
+    for item in interrupts or []:
+        value = getattr(item, "value", item)
+        if isinstance(value, dict):
+            return {"id": getattr(item, "id", None), **value}
+        return {"id": getattr(item, "id", None), "value": value}
+    return None
+
+
 # ═════════════════════════════════════════════════════════
 # 图构建
 # ═════════════════════════════════════════════════════════
@@ -147,7 +172,10 @@ def build_graph(
     # 所有业务节点 → END（直接终止，无中间 format_output 层）
     for node_name in wired_nodes:
         graph.add_edge(node_name, END)
-    graph.add_edge("clarify", END)
+    # Phase 3 / P5：clarify 续跑拿到答复 → 回路由（中断续跑）；否则终态结束。
+    graph.add_conditional_edges(
+        "clarify", _clarify_next, {"router": "router", "end": END},
+    )
 
     # ── 编译 ──
     compiled = graph.compile(checkpointer=checkpointer)
@@ -260,17 +288,40 @@ class AgentGraph:
             {"messages": messages},
             config={"configurable": {"thread_id": thread_id}},
         )
+        return self._to_public_result(result)
 
-        # 提取回答文本
+    def resume(self, thread_id: str = "default", value: Any = None) -> Dict[str, Any]:
+        """从**中断处续跑**（HITL）：把用户答复写回挂起的 `interrupt()`。
+
+        前提：上一轮 `invoke` 返回 `interrupted=True`（clarify 挂起），且
+        checkpointer 后端可持久化（memory 仅在进程内有效）。`value` 为答复载荷
+        （字符串 / {"answer": ...} / {"candidate": ...}）。
+
+        Returns:
+            与 `invoke` 同构（可能再次 interrupted）。
+        """
+        from langgraph.types import Command
+
+        logger.info("续跑 session=%s value=%r", thread_id, str(value)[:60])
+        result = self._graph.invoke(
+            Command(resume=value),
+            config={"configurable": {"thread_id": thread_id}},
+        )
+        return self._to_public_result(result)
+
+    @staticmethod
+    def _to_public_result(result: Dict[str, Any]) -> Dict[str, Any]:
+        """图输出 → 对外契约（answer / intent / business_result / 中断信息）。"""
+        interrupts = result.get("__interrupt__") or []
         messages = result.get("messages", [])
         answer = str(messages[-1].content) if messages else ""
-
-        business_result = result.get("business_result", {})
 
         return {
             "answer": answer,
             "intent": result.get("router_intent", "unknown"),
-            "business_result": business_result,
+            "business_result": result.get("business_result", {}),
+            "interrupted": bool(interrupts),
+            "interrupt": _interrupt_payload(interrupts),
         }
 
     def stream(

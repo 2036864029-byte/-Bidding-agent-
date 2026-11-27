@@ -54,6 +54,11 @@ _LLM_ERRORS_TOTAL = Counter(
 _CACHE_ACCESS_TOTAL = Counter(
     "retrieval_cache_access_total", "检索缓存访问次数", ["cache", "result"],
 )
+#: 飞书**出站推送**（进度通知）。入站收消息在独立进程里，指标不在这里，
+#: 见 `channels/feishu/telemetry.py`。
+_FEISHU_PUSH_TOTAL = Counter(
+    "feishu_push_total", "飞书进度推送结果", ["result"],
+)
 
 
 def record_cache_access(cache: str, *, hit: bool) -> None:
@@ -109,6 +114,11 @@ def record_llm_error(slot: str, model: str) -> None:
     logger.warning("metric llm_error slot=%s model=%s", slot, model or "?")
 
 
+def record_feishu_push(result: str) -> None:
+    """飞书进度推送结果（ok / disabled / no_token / api_error / exception）。"""
+    _FEISHU_PUSH_TOTAL.labels(result=result or "unknown").inc()
+
+
 def render_metrics() -> bytes:
     """Prometheus 文本格式快照（供 /metrics 端点）。"""
     return generate_latest()
@@ -140,6 +150,7 @@ __all__ = [
     "content_type",
     "record_branch_latency",
     "record_cache_access",
+    "record_feishu_push",
     "record_guardrail_fail",
     "record_llm_error",
     "record_llm_latency",

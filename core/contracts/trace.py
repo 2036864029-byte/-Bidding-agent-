@@ -47,7 +47,7 @@ class StepRecord(BaseModel):
     args: Dict[str, Any] = Field(default_factory=dict, description="实际调用参数（不含 question）")
     #: 第几轮执行（Plan-and-Execute：1 = 首轮计划，2+ = observation 回灌后的补检索轮）。
     round: int = Field(1, description="执行轮次（1 起）")
-    status: str = Field("ok", description="ok / empty / error")
+    status: str = Field("ok", description="ok / empty / error / denied（越权被 ToolPolicy 拒绝）")
     observation_head: str = Field("", description="观察摘要（前 OBSERVATION_HEAD_CHARS 字）")
     records_count: int = Field(0, description="结果条数（0=无结果）")
     latency_ms: Optional[int] = Field(None, description="单步耗时（毫秒）")

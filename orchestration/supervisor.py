@@ -6,9 +6,10 @@
       **自动附着**（服务端按会话带文件）→ 让过 L1 后生效（A3）
   L1 `classify_rules`      规则快路径（问候 / 项目编号 / 文档关键词，确定性，零成本）
   L2 `classify_semantic`   语义相似度（BGE-M3 嵌入 × registry examples 余弦，
-                           **默认关闭**——embedder 为 API（SiliconFlow），每请求 13+ 次
-                           embed 调用成本高；`SUPERVISOR_SEMANTIC_ROUTE=true` 开启，
-                           离线测试注入 fake embedder）
+                           **默认开启**——能力示例向量进程内预计算一次缓存，
+                           单请求只剩 1 次嵌入（问题本身），成本与一次路由调用同量级；
+                           embedder 不可用时自动降级 L3，不阻断路由；
+                           `SUPERVISOR_SEMANTIC_ROUTE=false` 可关闭）
   L3 `route_llm`           复用既有 `build_router_node`（registry 驱动 LLM 分类，
                            temperature=0，router.py:155）
 
@@ -20,8 +21,10 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -38,11 +41,62 @@ from .routing_rules import RoutingRules, load_rules_cached
 
 logger = logging.getLogger(__name__)
 
-# ── L2 语义路由开关（默认关：embedder 为 API，成本高；离线测试注入 fake）──
-SEMANTIC_ROUTE_ENABLED = os.getenv("SUPERVISOR_SEMANTIC_ROUTE", "false").lower() in {
+# ── L2 语义路由开关（默认开：能力向量预计算，单请求 1 次嵌入）──
+# 关闭条件：`SUPERVISOR_SEMANTIC_ROUTE=false`（严格省成本 / 无网环境）。
+# 注意：这是**导入期**常量，测试改它请 monkeypatch 模块属性。
+SEMANTIC_ROUTE_ENABLED = os.getenv("SUPERVISOR_SEMANTIC_ROUTE", "true").lower() in {
     "1", "true", "yes",
 }
 SEMANTIC_ROUTE_THRESHOLD = 0.5
+
+#: 能力示例向量缓存：key=(embedder 身份, 能力集签名) → (embedder 引用, [向量...])。
+#: 存 embedder 引用是为了防 `id()` 复用（对象被回收后新对象拿到同一 id 会误命中）。
+_EXAMPLE_VECTORS: Dict[Tuple, Tuple[Any, List[Tuple[str, List[float]]]]] = {}
+_EXAMPLE_VECTORS_LOCK = threading.Lock()
+
+
+def reset_semantic_cache() -> None:
+    """清空示例向量缓存（测试 / 热更新 registry examples 后调用）。"""
+    with _EXAMPLE_VECTORS_LOCK:
+        _EXAMPLE_VECTORS.clear()
+
+
+def _registry_signature(registry: CapabilityRegistry) -> Tuple:
+    """能力集签名：id + 示例条数 + 首例文本（examples 改了就自动失效）。"""
+    return tuple(
+        (spec.id, len(spec.examples), spec.examples[0] if spec.examples else "")
+        for spec in registry.enabled_specs()
+    )
+
+
+def _capability_vectors(
+    registry: CapabilityRegistry, embedder: Any
+) -> List[Tuple[str, List[float]]]:
+    """取（或首次构建）能力示例向量表：**每个示例只嵌入一次**。
+
+    why：原实现每次请求都为全部能力示例重新嵌入（6 能力 × 2~3 示例 ≈ 14 次 API
+    调用），成本高到只能默认关闭语义路由。示例是静态数据，向量本可复用 ——
+    预计算后单请求只剩 1 次嵌入，语义层才有资格默认开启。
+    """
+    key = (type(embedder).__module__, type(embedder).__qualname__, id(embedder),
+           _registry_signature(registry))
+    with _EXAMPLE_VECTORS_LOCK:
+        cached = _EXAMPLE_VECTORS.get(key)
+    if cached is not None and cached[0] is embedder:
+        return cached[1]
+
+    t0 = time.perf_counter()
+    vectors: List[Tuple[str, List[float]]] = []
+    for spec in registry.enabled_specs():
+        for example in spec.examples:
+            vectors.append((spec.id, embedder.embed_query(example)))
+    with _EXAMPLE_VECTORS_LOCK:
+        _EXAMPLE_VECTORS[key] = (embedder, vectors)
+    logger.info(
+        "语义路由示例向量预计算: %d 条 / %d 能力 / %.2fs（此后单请求仅 1 次嵌入）",
+        len(vectors), len(registry.enabled_specs()), time.perf_counter() - t0,
+    )
+    return vectors
 
 
 # ── L0 文档上下文（B2/A3：本轮带了上传文件 → 走 doc_qa）──────────
@@ -120,20 +174,27 @@ def classify_semantic(
         registry: 能力注册表（默认进程级）。
         embedder: 注入的 embedder（须有 embed_query(text) -> list[float]）；None 时
             惰性构建默认 BGE-M3。离线测试注入 fake 避免网络。
+
+    成本：示例向量走进程内缓存，**本函数每请求只做 1 次嵌入**（问题）。
+    容错：嵌入失败 / 无示例 → 返回 None（由调用方降级到 L3），不阻断路由。
     """
     if not SEMANTIC_ROUTE_ENABLED and embedder is None:
         return None
     embedder = embedder or _get_default_embedder()
     reg = registry or get_default_registry()
 
-    q_vec = embedder.embed_query(question)
+    try:
+        q_vec = embedder.embed_query(question)
+        vectors = _capability_vectors(reg, embedder)
+    except Exception as exc:  # noqa: BLE001  嵌入不可用 → 让过 L2，交给 L3
+        logger.warning("语义路由不可用，降级 L3: %s", exc)
+        return None
+
     best_id, best_score = None, 0.0
-    for cap in reg.enabled_specs():
-        if not cap.examples:
-            continue
-        score = max(_cosine(q_vec, embedder.embed_query(e)) for e in cap.examples)
+    for cap_id, vec in vectors:
+        score = _cosine(q_vec, vec)
         if score > best_score:
-            best_id, best_score = cap.id, score
+            best_id, best_score = cap_id, score
 
     if best_id is not None and best_score >= SEMANTIC_ROUTE_THRESHOLD:
         logger.info("supervisor L2 语义路由 → %s (score=%.3f)", best_id, best_score)
