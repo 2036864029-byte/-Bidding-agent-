@@ -64,3 +64,59 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+
+  # ============================================================
+  # 飞书通道（入站：收消息 → 调 /chat → 回消息）
+  # ============================================================
+  # 为什么是**独立服务**而不是塞进 api：
+  #   1. 飞书用出站 WebSocket 长连接（`lark_oapi.ws.Client`），`ws.start()` 是阻塞调用
+  #      且 SDK 没有 `stop()` —— 放进 FastAPI lifespan 无法优雅关停，`--reload` 还会反复建连；
+  #   2. API 支持 `API_WORKERS>1`，每多一个 worker 就多一条长连接，事件被分摊，
+  #      某个 worker 重启的窗口里消息会丢；
+  #   3. 设计上（channels/feishu/backend.py）通道只通过 HTTP 调后端，
+  #      **不在进程内再起一张 AgentGraph**。
+  # 但"独立"不等于"手动"：和 api 一起 `docker compose up -d` 起来，
+  # `restart: unless-stopped` 保活，健康检查读心跳文件。
+  #
+  # 它**不需要任何入站端口**（长连接是出站）；容器需能出网访问 open.feishu.cn。
+  feishu:
+    # 与 api 同一个镜像：Dockerfile 已 COPY channels/
+    image: ztb-api:latest
+    container_name: ztb-feishu
+    restart: unless-stopped
+    command: ["python", "-m", "channels.feishu"]
+
+    # 等 api 健康再起：否则 bot 启动后第一批消息会撞到"后端不可用"
+    depends_on:
+      api:
+        condition: service_healthy
+
+    env_file:
+      - ../../.env
+
+    environment:
+      # 缺这三个时入口会直接 exit(2)，配了 restart 会变成重启循环 —— 上线前必须确认
+      FEISHU_ENABLED: "true"
+      # ⚠️ 容器内的 127.0.0.1 是它自己：必须用 compose 服务名
+      FEISHU_BACKEND_BASE_URL: "http://api:8000"
+      # 心跳/指标：健康检查与 Prometheus 抓取用
+      FEISHU_HEARTBEAT_PATH: "/app/DATA/feishu_heartbeat.json"
+      FEISHU_METRICS_PORT: "9100"
+
+    volumes:
+      # 心跳文件落在共享的 DATA 卷里（也可让 api 侧读来做聚合健康检查）
+      - ../../DATA:/app/DATA
+
+    # 需要本机抓取指标时再打开（只绑回环，不对外）
+    # ports:
+    #   - "127.0.0.1:9100:9100"
+
+    healthcheck:
+      # 判"通道还活着"：心跳新鲜 + 状态不是 stopped/failed。
+      # 比 ping 进程更准 —— 进程在但长连接僵死同样会失败。
+      test: ["CMD", "python", "-m", "channels.feishu.telemetry",
+             "--check", "/app/DATA/feishu_heartbeat.json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s

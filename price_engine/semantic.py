@@ -65,13 +65,26 @@ def _get_embeddings() -> OpenAIEmbeddings:
     return _EMBEDDINGS_CACHE
 
 def _get_milvus_uri(settings: Settings) -> str:
-    return f"http://{settings.milvus_host}:{settings.milvus_port}"
+    """统一走 ``settings.resolved_milvus_uri``：显式 URI 优先，未配置时回退 host/port。
+
+    这里曾经硬编码 ``f"http://{host}:{port}"``。云托管 Milvus（阿里云 Milvus 版 /
+    Zilliz Cloud）只给 ``https://...`` 端点并要求 token，硬编码的 URI 必然连不上；
+    而 ``_get_semantic_milvus_client`` 会把异常吞成 ``return None`` —— 线上不报错，
+    只表现为「询价召回悄悄变差」，是最难排查的一类降级。回退分支保证本地容器行为不变。
+    """
+    return settings.resolved_milvus_uri
 
 def _get_semantic_milvus_client(settings: Settings) -> Optional[MilvusClient]:
     global _SEMANTIC_MILVUS_CLIENT
     if _SEMANTIC_MILVUS_CLIENT is None:
         try:
-            _SEMANTIC_MILVUS_CLIENT = MilvusClient(uri=_get_milvus_uri(settings))
+            conn: dict[str, Any] = {
+                "uri": _get_milvus_uri(settings),
+                "timeout": settings.milvus_timeout,
+            }
+            if settings.milvus_token:
+                conn["token"] = settings.milvus_token
+            _SEMANTIC_MILVUS_CLIENT = MilvusClient(**conn)
         except Exception as e:
             logger.warning("连接 MySQL 语义 Milvus 失败: %s", e)
             return None

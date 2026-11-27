@@ -63,6 +63,16 @@ class CitationRuleConfig:
     enforce_all_context_cited: bool = False
 
 
+def _vector_backend_from_env() -> str:
+    """``VECTOR_BACKEND`` 归一化：空 / local / milvus 视为自建，cloud 视为云托管。
+
+    独立成函数是为了让 ``Settings`` 里两处 default_factory 读到**同一个**判定，
+    避免「索引类型按 cloud 算、URI 按 local 算」这种半切换状态。
+    """
+    raw = os.getenv("VECTOR_BACKEND", "").strip().lower()
+    return "cloud" if raw == "cloud" else ""
+
+
 @dataclass
 class Settings:
     """公共知识库全局配置，所有字段均可通过构造参数覆盖。"""
@@ -82,6 +92,11 @@ class Settings:
     milvus_token: str = field(
         default_factory=lambda: os.getenv("MILVUS_TOKEN", "")
     )
+    # 向量后端档位（T-向量库云化）："" / local / milvus → 自建容器；cloud → 云托管。
+    #   cloud 只改两件事：dense 索引默认 AUTOINDEX（云上迁移生成的集合就是 AUTOINDEX），
+    #   以及启动日志会打印后端名，便于确认「官网到底连的哪一边」。
+    #   URI / token / 超时仍由上面三项决定，不引入第二套配置源。
+    vector_backend: str = field(default_factory=_vector_backend_from_env)
     milvus_timeout: int = field(
         default_factory=lambda: int(os.getenv("MILVUS_TIMEOUT", "30"))
     )
@@ -101,8 +116,19 @@ class Settings:
     milvus_protected_collection: str = "public_kb"
     # dense 语义检索索引（2026-09-08 由 IVF_FLAT 迁移 HNSW）；HNSW 建索引参数见下，
     # 检索参数走 core/vectorstore/index_params.build_dense_search_params（HNSW→ef）。
-    milvus_dense_index_type: str = "HNSW"
-    milvus_sparse_index_type: str = "SPARSE_INVERTED_INDEX"
+    # 云托管默认 AUTOINDEX 的原因：Zilliz 的**迁移流程**会自动给迁入的集合建 AUTOINDEX
+    # （实测云上也接受 HNSW / IVF_FLAT，所以这**不是**平台限制），默认对齐迁移产物可以避免
+    # 「集合是 AUTOINDEX 却按 HNSW 发 ef」的错配——实测 ef 会被静默忽略、不报错，因此更难发现。
+    # 显式设 MILVUS_DENSE_INDEX_TYPE 可覆盖。
+    milvus_dense_index_type: str = field(
+        default_factory=lambda: os.getenv("MILVUS_DENSE_INDEX_TYPE")
+        or ("AUTOINDEX" if _vector_backend_from_env() == "cloud" else "HNSW")
+    )
+    milvus_sparse_index_type: str = field(
+        default_factory=lambda: os.getenv(
+            "MILVUS_SPARSE_INDEX_TYPE", "SPARSE_INVERTED_INDEX"
+        )
+    )
     # HNSW 建索引参数（Milvus v2.6.x 合法范围：M∈[4,64]、efConstruction∈[8,512]）
     milvus_hnsw_m: int = 16
     milvus_hnsw_ef_construction: int = 128
@@ -116,6 +142,11 @@ class Settings:
     def resolved_milvus_uri(self) -> str:
         """返回显式 URI；未配置时兼容现有 host/port。"""
         return self.milvus_uri or f"http://{self.milvus_host}:{self.milvus_port}"
+
+    @property
+    def is_cloud_vector_backend(self) -> bool:
+        """当前是否指向云托管向量库（仅用于日志/运维判断，不改变连接行为）。"""
+        return self.vector_backend == "cloud"
 
     # ============================================================
     # Embedding 模型
@@ -176,6 +207,16 @@ class Settings:
         )
     )
 
+    # ── PDF 解析后端（热切换，改 .env 一行即可，不改代码）──
+    #   local      本地 magic-pdf CLI（MinerUParser）——**默认**，本地开发行为不变
+    #   official   MinerU 官方 API（mineru.net）——云服务器用，无需装 MinerU/GPU
+    #   selfhosted 自建 /parse 服务（MinerUApiParser，部署补充方案 §4 既有协议）
+    # 非法值由 parser_factory 回退 local（fail-safe：宁可本地解析失败，也不要
+    # 静默把文档传到付费云 API）。
+    pdf_parse_backend: str = field(
+        default_factory=lambda: os.getenv("PDF_PARSE_BACKEND", "local").strip().lower()
+    )
+
     # ── MinerU 远程解析服务（三档路由 Tier C / 部署补充方案 §4）──
     # 本地侧只依赖 HTTP 协议，换部署位置只改 base_url（PDF_PARSE_BASE_URL 优先）。
     mineru_api_base_url: str = field(
@@ -188,6 +229,30 @@ class Settings:
     )
     mineru_api_timeout: int = field(
         default_factory=lambda: int(os.getenv("MINERU_API_TIMEOUT", "1800"))
+    )
+
+    # ── MinerU 官方 API（pdf_parse_backend=official）──
+    # 协议（https://mineru.net/apiManage/docs）：批量申请上传链接 → PUT 上传
+    # → 轮询 batch 结果 → 下载 zip 取 full.md。Token 复用 mineru_api_token。
+    # 官方接口无 health/版本端点，故 poll 与超时为本类自有参数。
+    mineru_official_base_url: str = field(
+        default_factory=lambda: os.getenv(
+            "MINERU_OFFICIAL_BASE_URL", "https://mineru.net/api/v4"
+        ).rstrip("/")
+    )
+    # pipeline（默认，快）| vlm（准，慢）| MinerU-HTML（仅 html 文件）
+    mineru_official_model_version: str = field(
+        default_factory=lambda: os.getenv("MINERU_OFFICIAL_MODEL_VERSION", "pipeline")
+    )
+    mineru_official_language: str = field(
+        default_factory=lambda: os.getenv("MINERU_OFFICIAL_LANGUAGE", "ch")
+    )
+    # 同步轮询：间隔秒数 与 总超时秒数（超时抛 RuntimeError，不静默返回空）
+    mineru_official_poll_interval: float = field(
+        default_factory=lambda: float(os.getenv("MINERU_OFFICIAL_POLL_INTERVAL", "3"))
+    )
+    mineru_official_poll_timeout: int = field(
+        default_factory=lambda: int(os.getenv("MINERU_OFFICIAL_POLL_TIMEOUT", "600"))
     )
 
     # ── PDF 三档路由（三档路由计划 §7）──
@@ -693,6 +758,16 @@ class Settings:
         in {"1", "true", "yes"}
     )
 
+    # 澄清挂起模式（HITL）：true 时 clarify 节点用 LangGraph `interrupt()` **挂起**
+    # 整个图（checkpoint 落盘后返回 __interrupt__），客户端调用 /chat/resume 用
+    # `Command(resume=用户答复)` 从断点续跑，答复作为新的用户消息回到 supervisor。
+    # false（默认）：clarify 直接作为终态返回反问 + 候选，由前端本地接答后重发。
+    # 两者业务语义一致，差别在"谁保存断点"——默认关是为了兼容既有前端交互。
+    hitl_clarify: bool = field(
+        default_factory=lambda: os.getenv("HITL_CLARIFY", "false").lower()
+        in {"1", "true", "yes"}
+    )
+
     # ============================================================
     # 内容安全前置（W3-4）— 路由前的确定性输入闸门
     # ============================================================
@@ -788,6 +863,76 @@ class Settings:
     )
     job_queue_ttl_seconds: int = field(
         default_factory=lambda: int(os.getenv("JOB_QUEUE_TTL_SECONDS", "3600"))
+    )
+
+    # ============================================================
+    # 飞书（并行线 A：任务进度推送；OAuth 绑定 + 主动发消息）
+    # ============================================================
+    # 空 app_id/secret = 飞书能力关闭（OAuth 端点 503、推送器 no-op）。
+    # domain 固定 https://open.feishu.cn；国际版 Lark 可改。
+    feishu_app_id: str = field(
+        default_factory=lambda: os.getenv("FEISHU_APP_ID", "")
+    )
+    feishu_app_secret: str = field(
+        default_factory=lambda: os.getenv("FEISHU_APP_SECRET", "")
+    )
+    feishu_domain: str = field(
+        default_factory=lambda: os.getenv("FEISHU_DOMAIN", "https://open.feishu.cn")
+    )
+    # OAuth 回调地址，须与开发者后台安全设置白名单一致（P0-7）。
+    feishu_redirect_uri: str = field(
+        default_factory=lambda: os.getenv("FEISHU_REDIRECT_URI", "")
+    )
+    # 授权回调后浏览器回跳的前端地址（回调不带 redirect 参数，不能依赖它）。
+    # 如 http://192.168.0.101:5173；空则回跳同源根路径。
+    feishu_frontend_url: str = field(
+        default_factory=lambda: os.getenv("FEISHU_FRONTEND_URL", "")
+    )
+    # 仅取 open_id 需要的基础权限；换 token 响应直接含 open_id。
+    feishu_oauth_scope: str = field(
+        default_factory=lambda: os.getenv(
+            "FEISHU_OAUTH_SCOPE", "contact:user.base:readonly"
+        )
+    )
+    # 网页会话 ↔ 飞书 open_id 绑定的有效期。
+    feishu_binding_ttl_seconds: int = field(
+        default_factory=lambda: int(os.getenv("FEISHU_BINDING_TTL_S", "86400"))
+    )
+    # 绑定表后端：memory（进程内，默认）| redis（多 worker 共享，仿 file_store）。
+    feishu_binding_backend: str = field(
+        default_factory=lambda: os.getenv("FEISHU_BINDING_BACKEND", "memory")
+    )
+    feishu_binding_redis_url: str = field(
+        default_factory=lambda: (
+            os.getenv("FEISHU_BINDING_REDIS_URL", "")
+            or os.getenv("CACHE_REDIS_URL", "redis://localhost:6379/0")
+        )
+    )
+    # 进度推送的线程池大小（单机小值即可；emit 只做线程池提交，不阻塞业务线程）。
+    feishu_push_max_workers: int = field(
+        default_factory=lambda: int(os.getenv("FEISHU_PUSH_MAX_WORKERS", "2"))
+    )
+    # ── 机器人问答主线（channels/feishu 常驻进程）──────────────────
+    # 通道进程调用本地后端 /chat 的地址；换机器只改这里。
+    feishu_backend_base_url: str = field(
+        default_factory=lambda: os.getenv(
+            "FEISHU_BACKEND_BASE_URL", "http://127.0.0.1:8000"
+        )
+    )
+    feishu_backend_api_key: str = field(
+        default_factory=lambda: os.getenv("FEISHU_BACKEND_API_KEY", "")
+    )
+    # 单次问答超时（deep_agent 慢，给足）。
+    feishu_backend_timeout_s: int = field(
+        default_factory=lambda: int(os.getenv("FEISHU_BACKEND_TIMEOUT_S", "120"))
+    )
+    # 同时处理的消息数（保护单机）。
+    feishu_max_concurrency: int = field(
+        default_factory=lambda: int(os.getenv("FEISHU_MAX_CONCURRENCY", "4"))
+    )
+    # 总开关（false = 通道进程启动即退出，回滚用）。
+    feishu_enabled: bool = field(
+        default_factory=lambda: os.getenv("FEISHU_ENABLED", "false").lower() == "true"
     )
 
     # ============================================================

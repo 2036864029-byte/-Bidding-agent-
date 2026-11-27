@@ -67,6 +67,15 @@ class MilvusStoreManager:
         self._client = client or MilvusClient(**self._connection_args)
         self._contract = MilvusCollectionContract()
         self._contract.validate()
+        # 双后端（本地 / 云托管）切换的最关键一行：确认「官网到底连的哪一边」。
+        # 只打 URI 与索引类型，不打 token（token 泄漏进日志 = 云端库被完全接管）。
+        logger.info(
+            "向量后端=%s | uri=%s | dense_index=%s | bm25=%s",
+            self._settings.vector_backend or "local",
+            self._uri,
+            self._settings.milvus_dense_index_type,
+            self._settings.enable_bm25,
+        )
 
     def initialize_collection(
         self,
