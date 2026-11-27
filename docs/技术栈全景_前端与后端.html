@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>招投标智能助手 · 技术栈全景（前端 / 后端）</title>
+<style>
+:root{--fe:#2563eb;--be:#0f766e;--ink:#1e293b;--mut:#64748b;--line:#e2e8f0;--bg:#f6f8fb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+ font-family:Inter,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;line-height:1.75;font-size:14.5px}
+.wrap{display:flex;max-width:1500px;margin:0 auto;gap:28px;padding:0 24px}
+nav.toc{position:sticky;top:0;align-self:flex-start;width:238px;flex:0 0 238px;
+ max-height:100vh;overflow:auto;padding:26px 0 40px}
+nav.toc .t{font-size:11px;letter-spacing:.14em;color:var(--mut);font-weight:700;margin-bottom:10px}
+nav.toc a{display:block;text-decoration:none;color:var(--mut);font-size:13px;padding:5px 10px;
+ border-left:2px solid var(--line)}
+nav.toc a.l2{font-weight:600;color:var(--ink);margin-top:8px}
+nav.toc a.l3{font-size:12.5px;padding-left:20px}
+nav.toc a.l4{font-size:12px;padding-left:32px;color:#94a3b8}
+nav.toc a:hover{color:var(--fe);border-left-color:var(--fe);background:#fff}
+main{flex:1;min-width:0;background:#fff;padding:0 46px 80px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+header.hd{padding:44px 0 26px;border-bottom:3px solid var(--ink);margin-bottom:30px}
+h1{font-size:28px;margin:0 0 12px;letter-spacing:-.4px}
+.sub{color:var(--mut);font-size:14px;margin:0}
+.badges{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+.b{font-size:11.5px;padding:3px 11px;border-radius:20px;font-weight:600}
+.b.fe{background:#eff6ff;color:var(--fe)} .b.be{background:#f0fdfa;color:var(--be)}
+.b.n{background:#f1f5f9;color:var(--mut)}
+h2{font-size:20px;margin:46px 0 14px;padding-bottom:9px;border-bottom:1px solid var(--line);letter-spacing:-.2px}
+h3{font-size:16px;margin:30px 0 10px;color:#0f172a}
+h4{font-size:13.5px;margin:22px 0 8px;padding:6px 11px;background:#f8fafc;color:#0f172a}
+h4.fe-h{color:var(--fe);border-left:3px solid var(--fe)}
+h4.be-h{color:var(--be);border-left:3px solid var(--be)}
+p{margin:10px 0}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:13px;background:#fff}
+th{background:#f1f5f9;text-align:left;padding:9px 11px;font-weight:700;border:1px solid var(--line);
+ font-size:12.5px;white-space:nowrap}
+td{padding:8px 11px;border:1px solid var(--line);vertical-align:top}
+tr:nth-child(even) td{background:#fcfdfe}
+code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:12.5px;
+ font-family:"JetBrains Mono",Consolas,monospace}
+blockquote{margin:16px 0;padding:12px 16px;background:#fffbeb;border-left:3px solid #f59e0b;
+ color:#78350f;font-size:13px;border-radius:0 6px 6px 0}
+blockquote p{margin:0}
+figure{margin:26px 0}
+.fig{border:1px solid var(--line);border-radius:10px;padding:14px;background:#fff;overflow-x:auto}
+.fig svg{width:100%;height:auto;display:block}
+figcaption{text-align:center;font-size:12.5px;color:var(--mut);margin-top:9px;font-weight:600}
+hr{border:0;border-top:1px solid var(--line);margin:38px 0}
+@media print{
+ nav.toc{display:none} body{background:#fff} main{box-shadow:none;padding:0}
+ h2{page-break-after:avoid} figure,table{page-break-inside:avoid}
+}
+@media (max-width:1080px){nav.toc{display:none} main{padding:0 20px 60px}}
+</style></head><body>
+<div class="wrap">
+<nav class="toc"><div class="t">目 录</div><a class="l2" href="#目录">目录</a><a class="l2" href="#1-技术栈总览">1. 技术栈总览</a><a class="l2" href="#2-前端技术栈">2. 前端技术栈</a><a class="l3" href="#2-1-分层视图">2.1 分层视图</a><a class="l3" href="#2-2-按功能模块细分">2.2 按功能模块细分</a><a class="l4" href="#F1-工程构建层">F1 · 工程构建层</a><a class="l4" href="#F2-语言与运行时">F2 · 语言与运行时</a><a class="l4" href="#F3-路由与页面骨架">F3 · 路由与页面骨架</a><a class="l4" href="#F4-设计系统与-UI-组件">F4 · 设计系统与 UI 组件</a><a class="l4" href="#F5-动效与交互">F5 · 动效与交互</a><a class="l4" href="#F6-状态与数据">F6 · 状态与数据</a><a class="l4" href="#F7-流式通信">F7 · 流式通信</a><a class="l4" href="#F8-内容渲染">F8 · 内容渲染</a><a class="l4" href="#F9-数据可视化">F9 · 数据可视化</a><a class="l4" href="#F10-质量保障">F10 · 质量保障</a><a class="l2" href="#3-后端技术栈">3. 后端技术栈</a><a class="l3" href="#3-1-分层视图">3.1 分层视图</a><a class="l3" href="#3-2-按功能模块细分">3.2 按功能模块细分</a><a class="l4" href="#B1-语言与工程">B1 · 语言与工程</a><a class="l4" href="#B2-服务接入层-api">B2 · 服务接入层（api/）</a><a class="l4" href="#B3-Agent-编排层-agent-orchestration">B3 · Agent 编排层（agent/ + orchestration/）</a><a class="l4" href="#B4-专业知识问答-RAG-引擎-public_kb">B4 · 专业知识问答（RAG 引擎 public_kb/）</a><a class="l4" href="#B5-结构化数据查询-price_engine-MySQL">B5 · 结构化数据查询（price_engine/ + MySQL）</a><a class="l4" href="#B6-模型服务">B6 · 模型服务</a><a class="l4" href="#B7-文档解析与入库-public_kb-ingestion">B7 · 文档解析与入库（public_kb/ingestion/）</a><a class="l4" href="#B8-缓存与限流">B8 · 缓存与限流</a><a class="l4" href="#B9-可观测性">B9 · 可观测性</a><a class="l4" href="#B10-评测体系">B10 · 评测体系</a><a class="l2" href="#4-前后端协同技术">4. 前后端协同技术</a><a class="l2" href="#5-基础设施与部署技术栈">5. 基础设施与部署技术栈</a><a class="l2" href="#6-依赖治理与版本约束">6. 依赖治理与版本约束</a><a class="l2" href="#7-选型决策摘要">7. 选型决策摘要</a></nav>
+<main>
+<header class="hd">
+<h1>招投标智能助手 · 技术栈全景</h1>
+<p class="sub">按<b>前端技术栈</b>与<b>后端技术栈</b>两大类梳理，逐功能模块说明各项技术在本项目中的作用与代码落点</p>
+<div class="badges"><span class="b fe">前端 · TypeScript 5.9 / React 19 / Vite 6</span>
+<span class="b be">后端 · Python 3.11 / FastAPI / LangGraph</span>
+<span class="b n">编制 2026-09-16 · v1.0</span></div>
+</header>
+<h1>招投标智能助手 — 技术栈全景（前端 / 后端）</h1>
+<blockquote>
+<p>文档版本：v1.0　|　编制日期：2026-09-16　|　适用范围：项目汇报 / 技术交接</p>
+<p>本文按<strong>前端技术栈</strong>与<strong>后端技术栈</strong>两大类组织，每类再按<strong>功能模块</strong>细分，逐项说明该技术在项目中的实际作用与代码落点。所有版本号均取自 <code>frontend/package.json</code>、<code>requirements.txt</code> / <code>pyproject.toml</code>、<code>deploy/</code>、<code>core/config/profiles/models.yaml</code>，不以文档旧述为准。</p>
+</blockquote>
+<hr />
+<h2 id="目录">目录</h2>
+<ul>
+<li><a href="#1-技术栈总览">1. 技术栈总览</a></li>
+<li><a href="#2-前端技术栈">2. 前端技术栈</a></li>
+<li><a href="#3-后端技术栈">3. 后端技术栈</a></li>
+<li><a href="#4-前后端协同技术">4. 前后端协同技术</a></li>
+<li><a href="#5-基础设施与部署技术栈">5. 基础设施与部署技术栈</a></li>
+<li><a href="#6-依赖治理与版本约束">6. 依赖治理与版本约束</a></li>
+<li><a href="#7-选型决策摘要">7. 选型决策摘要</a></li>
+</ul>
+<hr />
+<h2 id="1-技术栈总览">1. 技术栈总览</h2>
+<p>系统采用<strong>前后端完全分离</strong>架构：前端为独立 npm 包 <code>ztb-frontend</code>，后端为 Python 服务，二者仅通过 <strong>HTTP REST + SSE</strong> 通信。开发期由 Vite 代理 <code>/api → 127.0.0.1:8000</code>（rewrite 去掉 <code>/api</code> 前缀），生产环境由反向代理同域转发。</p>
+<figure><div class="fig"><svg viewBox="0 0 980 546" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="100%" height="100%" fill="#ffffff"/><rect x="30" y="14" width="400" height="30" rx="8" fill="#2563eb" opacity="0.10"/><text x="230" y="34" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="13" font-weight="700" fill="#2563eb">前端技术栈 · ztb-frontend（浏览器）</text><rect x="550" y="14" width="400" height="30" rx="8" fill="#0f766e" opacity="0.10"/><text x="750" y="34" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="13" font-weight="700" fill="#0f766e">后端技术栈 · ztb（Docker 服务）</text><rect x="30" y="54" width="400" height="40" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><rect x="30" y="54" width="4" height="40" rx="2" fill="#2563eb"/><text x="46" y="71" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">工程构建</text><text x="46" y="86" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">Vite 6 · TypeScript 5.9 · Tailwind v4</text><rect x="550" y="54" width="400" height="40" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><rect x="550" y="54" width="4" height="40" rx="2" fill="#0f766e"/><text x="566" y="71" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">语言与工程</text><text x="566" y="86" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">Python 3.11 · uv · pydantic v2</text><rect x="30" y="101" width="400" height="40" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><rect x="30" y="101" width="4" height="40" rx="2" fill="#2563eb"/><text x="46" y="118" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">语言与运行时</text><text x="46" y="133" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">React 19.3 · react-dom 19.3</text><rect x="550" y="101" width="400" height="40" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><rect x="550" y="101" width="4" height="40" rx="2" fill="#0f766e"/><text x="566" y="118" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">服务接入层</text><text x="566" y="133" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">FastAPI · uvicorn · SSE · UploadFile</text><rect x="30" y="148" width="400" height="40" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><rect x="30" y="148" width="4" height="40" rx="2" fill="#2563eb"/><text x="46" y="165" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">路由与页面骨架</text><text x="46" y="180" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">react-router 8 · lazy / Suspense</text><rect x="550" y="148" width="400" height="40" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><rect x="550" y="148" width="4" height="40" rx="2" fill="#0f766e"/><text x="566" y="165" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">Agent 编排层</text><text x="566" y="180" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">LangGraph · LangChain · 能力注册表</text><rect x="30" y="195" width="400" height="40" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><rect x="30" y="195" width="4" height="40" rx="2" fill="#2563eb"/><text x="46" y="212" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">设计系统与 UI 组件</text><text x="46" y="227" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">Shadcn · Radix · CVA · lucide · @theme</text><rect x="550" y="195" width="400" height="40" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><rect x="550" y="195" width="4" height="40" rx="2" fill="#0f766e"/><text x="566" y="212" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">知识问答 RAG</text><text x="566" y="227" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">Milvus · BM25 · RRF · Reranker</text><rect x="30" y="242" width="400" height="40" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><rect x="30" y="242" width="4" height="40" rx="2" fill="#2563eb"/><text x="46" y="259" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">动效与交互</text><text x="46" y="274" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">Framer Motion 13 · reducedMotion</text><rect x="550" y="242" width="400" height="40" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><rect x="550" y="242" width="4" height="40" rx="2" fill="#0f766e"/><text x="566" y="259" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">结构化数据查询</text><text x="566" y="274" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">MySQL · FULLTEXT ngram · 降级召回</text><rect x="30" y="289" width="400" height="40" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><rect x="30" y="289" width="4" height="40" rx="2" fill="#2563eb"/><text x="46" y="306" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">状态与数据</text><text x="46" y="321" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">Zustand 5 · 适配层 · Mock/API 开关</text><rect x="550" y="289" width="400" height="40" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><rect x="550" y="289" width="4" height="40" rx="2" fill="#0f766e"/><text x="566" y="306" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">模型服务</text><text x="566" y="321" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">DeepSeek · BGE-M3 · bge-reranker-v2-m3</text><rect x="30" y="336" width="400" height="40" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><rect x="30" y="336" width="4" height="40" rx="2" fill="#2563eb"/><text x="46" y="353" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">流式通信</text><text x="46" y="368" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">fetch-event-source · SSE · 轮询</text><rect x="550" y="336" width="400" height="40" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><rect x="550" y="336" width="4" height="40" rx="2" fill="#0f766e"/><text x="566" y="353" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">文档解析入库</text><text x="566" y="368" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">PyMuPDF · MinerU · 分档路由</text><rect x="30" y="383" width="400" height="40" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><rect x="30" y="383" width="4" height="40" rx="2" fill="#2563eb"/><text x="46" y="400" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">内容渲染</text><text x="46" y="415" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">react-markdown · remark-gfm · 渲染器</text><rect x="550" y="383" width="400" height="40" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><rect x="550" y="383" width="4" height="40" rx="2" fill="#0f766e"/><text x="566" y="400" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">缓存与限流</text><text x="566" y="415" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">Redis 8.1 · cachetools TTL</text><rect x="30" y="430" width="400" height="40" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><rect x="30" y="430" width="4" height="40" rx="2" fill="#2563eb"/><text x="46" y="447" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">数据可视化</text><text x="46" y="462" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">Recharts 3 · 路由懒加载隔离</text><rect x="550" y="430" width="400" height="40" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><rect x="550" y="430" width="4" height="40" rx="2" fill="#0f766e"/><text x="566" y="447" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">可观测性</text><text x="566" y="462" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">OpenTelemetry · Prometheus · Langfuse</text><rect x="30" y="477" width="400" height="40" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><rect x="30" y="477" width="4" height="40" rx="2" fill="#2563eb"/><text x="46" y="494" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">质量保障</text><text x="46" y="509" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">Vitest 5 · jsdom · Testing Library</text><rect x="550" y="477" width="400" height="40" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><rect x="550" y="477" width="4" height="40" rx="2" fill="#0f766e"/><text x="566" y="494" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">评测体系</text><text x="566" y="509" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9.5" fill="#475569">RAGAS 0.3 · evals runners · pytest</text><rect x="445" y="54" width="90" height="463" rx="10" fill="#fef2f2" stroke="#fecaca"/><text x="490" y="255.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#dc2626">HTTP</text><text x="490" y="273.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#dc2626">REST</text><text x="490" y="295.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#dc2626">+</text><text x="490" y="315.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#dc2626">SSE</text><text x="490" y="335.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9" fill="#475569">流式</text><text x="490" y="349.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="9" fill="#475569">唯一通道</text></svg></div><figcaption>图 1 · 技术栈全景：前端 / 后端双塔与唯一通信通道</figcaption></figure>
+<p><strong>统计概览</strong></p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">维度</th>
+<th style="text-align: left;">前端</th>
+<th style="text-align: left;">后端</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">主语言</td>
+<td style="text-align: left;">TypeScript 5.9</td>
+<td style="text-align: left;">Python 3.11</td>
+</tr>
+<tr>
+<td style="text-align: left;">直接依赖</td>
+<td style="text-align: left;">19 项（dependencies）</td>
+<td style="text-align: left;">18 项（requirements.txt 顶层）</td>
+</tr>
+<tr>
+<td style="text-align: left;">开发依赖</td>
+<td style="text-align: left;">14 项（devDependencies）</td>
+<td style="text-align: left;">dev 组由 uv 管理（含 ragas）</td>
+</tr>
+<tr>
+<td style="text-align: left;">核心框架</td>
+<td style="text-align: left;">React 19 + Vite 6</td>
+<td style="text-align: left;">FastAPI + LangGraph</td>
+</tr>
+<tr>
+<td style="text-align: left;">构建 / 包管理</td>
+<td style="text-align: left;">Vite 6.4 / npm</td>
+<td style="text-align: left;">uv（<code>uv sync --frozen --no-dev</code>）</td>
+</tr>
+<tr>
+<td style="text-align: left;">测试框架</td>
+<td style="text-align: left;">Vitest 5 + Testing Library</td>
+<td style="text-align: left;">pytest + RAGAS</td>
+</tr>
+<tr>
+<td style="text-align: left;">运行时形态</td>
+<td style="text-align: left;">浏览器静态资源</td>
+<td style="text-align: left;">Docker 容器 + GPU 模型服务</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-前端技术栈">2. 前端技术栈</h2>
+<h3 id="2-1-分层视图">2.1 分层视图</h3>
+<figure><div class="fig"><svg viewBox="0 0 980 390" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="100%" height="100%" fill="#ffffff"/><text x="16" y="36.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#2563eb">L1 工程构建</text><line x1="140" y1="16" x2="140" y2="48" stroke="#bfdbfe" stroke-width="2"/><rect x="295.0" y="16" width="70.2" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="330.1" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Vite 6.4</text><rect x="375.2" y="16" width="104.9" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="427.6" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">TypeScript 5.9</text><rect x="490.0" y="16" width="87.5" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="533.8" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Tailwind v4</text><rect x="587.5" y="16" width="122.2" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="648.6" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">@tailwindcss/vite</text><rect x="719.7" y="16" width="93.3" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="766.4" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">plugin-react</text><text x="16" y="82.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#2563eb">L2 语言运行时</text><line x1="140" y1="62" x2="140" y2="94" stroke="#bfdbfe" stroke-width="2"/><rect x="415.6" y="62" width="81.8" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="456.5" y="82.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">React 19.3</text><rect x="507.4" y="62" width="104.9" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="559.8" y="82.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">react-dom 19.3</text><rect x="622.2" y="62" width="70.2" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="657.3" y="82.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">@types/*</text><text x="16" y="128.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#2563eb">L3 路由与骨架</text><line x1="140" y1="108" x2="140" y2="140" stroke="#bfdbfe" stroke-width="2"/><rect x="386.7" y="108" width="104.9" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="439.2" y="128.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">react-router 8</text><rect x="501.6" y="108" width="110.6" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="556.9" y="128.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">lazy + Suspense</text><rect x="622.2" y="108" width="99.1" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="671.7" y="128.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">RouteFallback</text><text x="16" y="174.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#2563eb">L4 设计系统 UI</text><line x1="140" y1="154" x2="140" y2="186" stroke="#bfdbfe" stroke-width="2"/><rect x="200.7" y="154" width="76.0" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="238.6" y="174.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Shadcn UI</text><rect x="286.6" y="154" width="70.2" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="321.7" y="174.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Radix UI</text><rect x="366.8" y="154" width="47.1" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="390.4" y="174.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">vaul</text><rect x="423.9" y="154" width="41.3" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="444.6" y="174.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">CVA</text><rect x="475.3" y="154" width="110.6" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="530.6" y="174.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">clsx + tw-merge</text><rect x="595.9" y="154" width="93.3" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="642.5" y="174.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">lucide-react</text><rect x="699.2" y="154" width="93.3" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="745.8" y="174.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">@theme Token</text><rect x="802.5" y="154" width="104.9" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="854.9" y="174.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">@fontsource ×3</text><text x="16" y="220.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#2563eb">L5 动效</text><line x1="140" y1="200" x2="140" y2="232" stroke="#bfdbfe" stroke-width="2"/><rect x="495.8" y="200" width="116.4" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="554.0" y="220.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Framer Motion 13</text><text x="16" y="266.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#2563eb">L6 状态与数据</text><line x1="140" y1="246" x2="140" y2="278" stroke="#bfdbfe" stroke-width="2"/><rect x="232.1" y="246" width="76.0" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="270.1" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Zustand 5</text><rect x="318.1" y="246" width="110.6" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="373.4" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">services/api.ts</text><rect x="438.7" y="246" width="133.7" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="505.6" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">services/backend.ts</text><rect x="582.4" y="246" width="81.8" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="623.3" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">adapters/*</text><rect x="674.2" y="246" width="64.4" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="706.4" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">types/*</text><rect x="748.6" y="246" width="58.7" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="777.9" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">mock/*</text><rect x="817.2" y="246" width="58.7" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="846.6" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">hooks/</text><text x="16" y="312.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#2563eb">L7 渲染与可视化</text><line x1="140" y1="292" x2="140" y2="324" stroke="#bfdbfe" stroke-width="2"/><rect x="303.6" y="292" width="122.2" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="364.7" y="312.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">react-markdown 10</text><rect x="435.8" y="292" width="93.3" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="482.5" y="312.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">remark-gfm 4</text><rect x="539.1" y="292" width="87.5" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="582.9" y="312.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">renderers/*</text><rect x="636.6" y="292" width="76.0" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="674.6" y="312.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Citations</text><rect x="722.6" y="292" width="81.8" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="763.5" y="312.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Recharts 3</text><text x="16" y="358.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#2563eb">L8 质量保障</text><line x1="140" y1="338" x2="140" y2="370" stroke="#bfdbfe" stroke-width="2"/><rect x="368.9" y="338" width="70.2" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="404.0" y="358.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Vitest 5</text><rect x="449.1" y="338" width="70.2" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="484.2" y="358.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">jsdom 30</text><rect x="529.3" y="338" width="110.6" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="584.6" y="358.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Testing Library</text><rect x="650.0" y="338" width="89.1" height="32" rx="6" fill="#eff6ff" stroke="#bfdbfe"/><text x="694.5" y="358.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">tsc 类型门禁</text></svg></div><figcaption>图 2 · 前端技术栈分层（L1 工程构建 → L8 质量保障）</figcaption></figure>
+<p>前端自上而下分为七层：<strong>工程构建 → 语言与运行时 → 路由与页面骨架 → 设计系统与 UI 组件 → 状态与数据 → 内容渲染与可视化 → 质量保障</strong>。</p>
+<h3 id="2-2-按功能模块细分">2.2 按功能模块细分</h3>
+<h4 id="F1-工程构建层" class="fe-h">F1 · 工程构建层</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+<th style="text-align: left;">落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Vite</td>
+<td style="text-align: left;">^6.4.3</td>
+<td style="text-align: left;">开发服务器（端口 5173）、HMR、生产构建（Rollup）；配置 <code>/api</code> 代理并 rewrite 掉前缀，解决前后端端口分离</td>
+<td style="text-align: left;"><code>frontend/vite.config.ts</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">@vitejs/plugin-react</td>
+<td style="text-align: left;">^4.7.0</td>
+<td style="text-align: left;">React JSX 转换与 Fast Refresh</td>
+<td style="text-align: left;"><code>vite.config.ts</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">TypeScript</td>
+<td style="text-align: left;">^5.9.3</td>
+<td style="text-align: left;">全量类型约束；<code>tsc -b</code> 作为 <code>build</code> 前置门禁与独立 <code>typecheck</code> 脚本</td>
+<td style="text-align: left;"><code>tsconfig*.json</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Tailwind CSS v4</td>
+<td style="text-align: left;">^4.3.3</td>
+<td style="text-align: left;"><strong>CSS-first</strong> 原子化样式，设计 token 以 <code>@theme</code> 直接声明在 CSS 中（不再需要 JS 配置文件）</td>
+<td style="text-align: left;"><code>src/styles/index.css</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">@tailwindcss/vite</td>
+<td style="text-align: left;">^4.3.3</td>
+<td style="text-align: left;">Tailwind v4 官方 Vite 插件，替代 PostCSS 管线</td>
+<td style="text-align: left;"><code>vite.config.ts</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="F2-语言与运行时" class="fe-h">F2 · 语言与运行时</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">React</td>
+<td style="text-align: left;">^19.3.0</td>
+<td style="text-align: left;">组件化 UI；使用 <code>lazy</code> / <code>Suspense</code> 做路由级代码分割，顶层 <code>MotionConfig</code> 统一动效策略</td>
+</tr>
+<tr>
+<td style="text-align: left;">react-dom</td>
+<td style="text-align: left;">^19.3.0</td>
+<td style="text-align: left;">浏览器渲染入口</td>
+</tr>
+<tr>
+<td style="text-align: left;">@types/react · @types/react-dom · @types/node</td>
+<td style="text-align: left;">^19.3 · ^26.5</td>
+<td style="text-align: left;">类型声明</td>
+</tr>
+</tbody>
+</table>
+<h4 id="F3-路由与页面骨架" class="fe-h">F3 · 路由与页面骨架</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+<th style="text-align: left;">落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">react-router</td>
+<td style="text-align: left;">^8.3.1</td>
+<td style="text-align: left;">单页路由：<code>/chat</code> 对话控制台（首页）、<code>/inquiry</code> 智能询价、<code>/kanban</code> 商机看板、<code>/supplier</code> 供应商全景、<code>/intro</code> <code>/faq</code> <code>/mobile</code> <code>/links</code> 导航页；未匹配路由重定向 <code>/chat</code></td>
+<td style="text-align: left;"><code>src/App.tsx</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">React.lazy + Suspense</td>
+<td style="text-align: left;">React 19 内置</td>
+<td style="text-align: left;">三个业务模块按需懒加载——它们依赖 Recharts（charts chunk 约 438 KB），懒加载后对话页与落地页首屏不再承担该体积</td>
+<td style="text-align: left;"><code>src/App.tsx</code>、<code>components/layout/RouteFallback.tsx</code></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>构建侧配套：<code>vite.config.ts</code> 将 <code>chunkSizeWarningLimit</code> 提至 600 KB。原因见文件注释——曾用 <code>manualChunks</code> 硬分 charts / markdown / motion，反而使入口静态 import 图表库并触发 <code>modulepreload</code> 提前拉取 438 KB，与懒加载初衷相反，故改为交由 Rollup 自动分包。</p>
+</blockquote>
+<h4 id="F4-设计系统与-UI-组件" class="fe-h">F4 · 设计系统与 UI 组件</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+<th style="text-align: left;">落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Shadcn UI</td>
+<td style="text-align: left;">new-york 风格</td>
+<td style="text-align: left;">组件交付范式（源码入仓、可任意改），已落地 Button、Badge</td>
+<td style="text-align: left;"><code>components.json</code>、<code>src/components/ui/</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Radix UI（react-dialog / react-slot）</td>
+<td style="text-align: left;">^1.1.23 / ^1.3.3</td>
+<td style="text-align: left;">无样式无障碍原语：Dialog 用于供应商详情弹窗，Slot 用于 <code>asChild</code> 组合</td>
+<td style="text-align: left;"><code>components/supplier/SupplierDetailModal.tsx</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">vaul</td>
+<td style="text-align: left;">^1.1.2</td>
+<td style="text-align: left;">移动端抽屉（Drawer）</td>
+<td style="text-align: left;">交互层</td>
+</tr>
+<tr>
+<td style="text-align: left;">class-variance-authority（CVA）</td>
+<td style="text-align: left;">^0.7.1</td>
+<td style="text-align: left;">组件变体（variant / size）声明式管理</td>
+<td style="text-align: left;"><code>components/ui/button.tsx</code>、<code>badge.tsx</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">clsx + tailwind-merge</td>
+<td style="text-align: left;">^2.1.1 / ^3.7.0</td>
+<td style="text-align: left;">条件类名拼接 + Tailwind 冲突类去重，封装为 <code>cn()</code></td>
+<td style="text-align: left;"><code>src/lib/utils.ts</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">lucide-react</td>
+<td style="text-align: left;">^1.45.0</td>
+<td style="text-align: left;">图标库（Shadcn 指定 iconLibrary）</td>
+<td style="text-align: left;">全站</td>
+</tr>
+<tr>
+<td style="text-align: left;">Tailwind v4 <code>@theme</code> Token</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;"><strong>Hallmark Cobalt</strong> 视觉体系：冷工程纸面 + 电钴蓝单一信号色 + 容器大圆角</td>
+<td style="text-align: left;"><code>src/styles/index.css</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">@fontsource/inter · space-grotesk · jetbrains-mono</td>
+<td style="text-align: left;">^5.3.0</td>
+<td style="text-align: left;">三套字体<strong>自托管</strong>（不依赖 CDN）：Space Grotesk 标题 / Inter 正文 / JetBrains Mono 数据与代码</td>
+<td style="text-align: left;"><code>src/styles/index.css</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="F5-动效与交互" class="fe-h">F5 · 动效与交互</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Framer Motion</td>
+<td style="text-align: left;">^13.2.0</td>
+<td style="text-align: left;">页面与组件动效（入场、悬浮、过渡）；顶层 <code>MotionConfig reducedMotion="user"</code> 尊重系统"减弱动效"偏好，兼顾无障碍</td>
+</tr>
+</tbody>
+</table>
+<h4 id="F6-状态与数据" class="fe-h">F6 · 状态与数据</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术 / 模块</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+<th style="text-align: left;">落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Zustand</td>
+<td style="text-align: left;">^5.0.15</td>
+<td style="text-align: left;">对话控制台状态机：消息列表、流式中状态、上传文件 chips、会话恢复</td>
+<td style="text-align: left;"><code>src/store/chat-window.ts</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">自研 <code>services/api.ts</code></td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;"><strong>Mock ↔ API 唯一开关</strong>（<code>dataConfig</code>）：kanban / supplier / reference 默认 <code>api</code>，chat 默认 <code>mock</code>（可用 <code>VITE_CHAT_MODE=api</code> 或运行时切换）；页面组件只依赖本文件与 <code>types/</code>，禁止直连后端字段</td>
+<td style="text-align: left;"><code>src/services/api.ts</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">自研 <code>services/backend.ts</code></td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">HTTP 客户端封装：<code>sendChat</code> / <code>streamChat</code> / <code>uploadFile</code> / <code>getFileStatus</code> / <code>getKanbanOverview</code> / <code>getSuppliers</code> / <code>fetchReference</code>，统一 <code>BackendError</code>（携带 status）</td>
+<td style="text-align: left;"><code>src/services/backend.ts</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">自研 <code>adapters/*</code></td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">适配层（<strong>换数据的唯一接缝</strong>）：chat / kanban / reference / supplier 四个适配器，把后端原始字段归一为领域模型</td>
+<td style="text-align: left;"><code>src/adapters/</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">自研 <code>types/*</code></td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">领域类型：chat（含 <code>reply_type</code> 联合类型）、kanban、inquiry、supplier</td>
+<td style="text-align: left;"><code>src/types/</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">自研 <code>mock/*</code></td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">与真实返回<strong>同形状</strong>的 mock 数据，支持离线演示；mock 侧同样执行筛选语义，保证测试有效</td>
+<td style="text-align: left;"><code>src/mock/</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">自研 <code>lib/chat.ts</code> · <code>lib/format.ts</code></td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">会话 id 持久化、文本分块 <code>chunkText</code>、金额与日期格式化</td>
+<td style="text-align: left;"><code>src/lib/</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">自研 <code>hooks/use-async-data.ts</code></td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">异步数据加载 Hook（加载态 / 错误态 / 竞态处理）</td>
+<td style="text-align: left;"><code>src/hooks/</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="F7-流式通信" class="fe-h">F7 · 流式通信</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">@microsoft/fetch-event-source</td>
+<td style="text-align: left;">^2.0.1</td>
+<td style="text-align: left;"><strong>SSE 客户端</strong>：<code>POST /chat/stream</code> 逐 token 增量接收（原生 <code>EventSource</code> 不支持 POST 与自定义头，故采用此库）。配合 <code>AbortSignal</code> 支持用户中断；429 / 503 走退避重试并通过 <code>onRetry</code> 回调提示用户</td>
+</tr>
+<tr>
+<td style="text-align: left;">上传异步轮询</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">文件异步上传后按 1.5 s 间隔轮询状态（上限 5 分钟），pending → processing → done / error；404 识别为"文件过期（TTL 1 小时）"并引导重传</td>
+</tr>
+</tbody>
+</table>
+<h4 id="F8-内容渲染" class="fe-h">F8 · 内容渲染</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+<th style="text-align: left;">落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">react-markdown</td>
+<td style="text-align: left;">^10.1.0</td>
+<td style="text-align: left;">答案正文 Markdown 渲染（知识问答、文档问答、深度推理结果）</td>
+<td style="text-align: left;"><code>components/chat/Markdown.tsx</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">remark-gfm</td>
+<td style="text-align: left;">^4.0.1</td>
+<td style="text-align: left;">GFM 扩展：表格、任务列表、删除线——询价结果表格依赖此插件</td>
+<td style="text-align: left;">同上</td>
+</tr>
+<tr>
+<td style="text-align: left;">自研渲染器分发</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;"><code>ReplyRenderer</code> 按 <code>reply_type</code> 分派：<code>KbAnswer</code>（知识问答 + 引用）、<code>DocQa</code>、<code>PriceRecords</code>、<code>DeepAgent</code>（推理轨迹）、<code>Clarify</code>（澄清追问）、<code>PlainText</code>（兜底）</td>
+<td style="text-align: left;"><code>components/chat/renderers/</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">自研 <code>Citations.tsx</code></td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">引用溯源展示，与后端 R1~R7 引用护栏输出的 <code>citations</code> 结构对齐</td>
+<td style="text-align: left;"><code>components/chat/Citations.tsx</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="F9-数据可视化" class="fe-h">F9 · 数据可视化</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+<th style="text-align: left;">落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Recharts</td>
+<td style="text-align: left;">^3.10.1</td>
+<td style="text-align: left;"><code>IndustryTrendChart</code>（行业趋势折线）、<code>IndustryBars</code>（行业柱状）、<code>RegionHeatmap</code>（区域热力）、<code>StatTiles</code>（指标卡）、<code>ChartCard</code>（图表容器）；随路由懒加载隔离到 charts chunk</td>
+<td style="text-align: left;"><code>components/kanban/</code>、<code>components/common/ChartCard.tsx</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="F10-质量保障" class="fe-h">F10 · 质量保障</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Vitest</td>
+<td style="text-align: left;">^5.0.0</td>
+<td style="text-align: left;">单元与组件测试运行器（<code>environment: 'jsdom'</code>，setup 见 <code>src/test/setup.ts</code>）</td>
+</tr>
+<tr>
+<td style="text-align: left;">jsdom</td>
+<td style="text-align: left;">^30.0.1</td>
+<td style="text-align: left;">浏览器环境模拟</td>
+</tr>
+<tr>
+<td style="text-align: left;">@testing-library/react · jest-dom · user-event</td>
+<td style="text-align: left;">^16.3.3 · ^7.0.1 · ^14.6.7</td>
+<td style="text-align: left;">组件渲染与交互断言</td>
+</tr>
+<tr>
+<td style="text-align: left;">TypeScript 类型门禁</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;"><code>npm run typecheck</code>（<code>tsc -b --noEmit</code>）与 <code>build</code> 前置</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>测试覆盖 14 个用例文件：落地页、对话逻辑、渲染器分发、适配器字段归一、Mock/API 开关、看板页、询价页、供应商页、图表容器、窗口状态机、重试策略、流式与上传（live 类用例需真实后端）。</p>
+</blockquote>
+<hr />
+<h2 id="3-后端技术栈">3. 后端技术栈</h2>
+<h3 id="3-1-分层视图">3.1 分层视图</h3>
+<figure><div class="fig"><svg viewBox="0 0 980 344" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="100%" height="100%" fill="#ffffff"/><text x="16" y="36.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#0f766e">L1 接入层</text><line x1="140" y1="16" x2="140" y2="48" stroke="#99f6e4" stroke-width="2"/><rect x="252.3" y="16" width="64.4" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="284.5" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">FastAPI</text><rect x="326.7" y="16" width="64.4" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="359.0" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">uvicorn</text><rect x="401.2" y="16" width="47.1" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="424.7" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">CORS</text><rect x="458.3" y="16" width="122.2" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="519.4" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">StreamingResponse</text><rect x="590.4" y="16" width="81.8" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="631.3" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">UploadFile</text><rect x="682.2" y="16" width="93.3" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="728.8" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">InflightGate</text><rect x="785.5" y="16" width="70.2" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="820.6" y="36.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">/metrics</text><text x="16" y="82.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#0f766e">L2 编排层</text><line x1="140" y1="62" x2="140" y2="94" stroke="#99f6e4" stroke-width="2"/><rect x="182.7" y="62" width="76.0" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="220.7" y="82.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">LangGraph</text><rect x="268.7" y="62" width="139.5" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="338.4" y="82.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">langgraph-checkpoint</text><rect x="418.2" y="62" width="104.9" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="470.6" y="82.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">LangChain Core</text><rect x="533.0" y="62" width="116.4" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="591.2" y="82.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">langchain-openai</text><rect x="659.4" y="62" width="128.0" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="723.4" y="82.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">CapabilityRegistry</text><rect x="797.4" y="62" width="128.0" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="861.3" y="82.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">routing_rules.yaml</text><text x="16" y="128.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#0f766e">L3 业务能力</text><line x1="140" y1="108" x2="140" y2="140" stroke="#99f6e4" stroke-width="2"/><rect x="286.6" y="108" width="93.3" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="333.3" y="128.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">knowledge_qa</text><rect x="389.9" y="108" width="99.1" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="439.5" y="128.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">price_inquiry</text><rect x="499.0" y="108" width="81.8" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="539.9" y="128.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">deep_agent</text><rect x="590.8" y="108" width="58.7" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="620.1" y="128.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">doc_qa</text><rect x="659.4" y="108" width="93.3" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="706.1" y="128.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">general_chat</text><rect x="762.7" y="108" width="58.7" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="792.0" y="128.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">safety</text><text x="16" y="174.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#0f766e">L4 引擎层</text><line x1="140" y1="154" x2="140" y2="186" stroke="#99f6e4" stroke-width="2"/><rect x="404.0" y="154" width="99.1" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="453.6" y="174.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">public_kb RAG</text><rect x="513.1" y="154" width="93.3" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="559.8" y="174.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">price_engine</text><rect x="616.4" y="154" width="87.5" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="660.2" y="174.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">doc_context</text><text x="16" y="220.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#0f766e">L5 基础支撑</text><line x1="140" y1="200" x2="140" y2="232" stroke="#99f6e4" stroke-width="2"/><rect x="340.1" y="200" width="66.0" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="373.1" y="220.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">配置中心</text><rect x="416.1" y="200" width="83.3" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="457.8" y="220.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">日志 / 追踪</text><rect x="509.4" y="200" width="78.6" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="548.8" y="220.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">LLM 注册表</text><rect x="598.0" y="200" width="83.3" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="639.7" y="220.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">缓存 / 契约</text><rect x="691.4" y="200" width="76.5" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="729.6" y="220.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">并发与会话</text><text x="16" y="266.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#0f766e">L6 数据与模型</text><line x1="140" y1="246" x2="140" y2="278" stroke="#99f6e4" stroke-width="2"/><rect x="312.6" y="246" width="81.8" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="353.5" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Milvus 2.4</text><rect x="404.4" y="246" width="64.4" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="436.6" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">MySQL 8</text><rect x="478.8" y="246" width="76.0" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="516.8" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Redis 8.1</text><rect x="564.8" y="246" width="81.8" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="605.6" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">ztb-models</text><rect x="656.5" y="246" width="70.2" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="691.6" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">DeepSeek</text><rect x="736.7" y="246" width="58.7" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="766.1" y="266.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">MinerU</text><text x="16" y="312.0" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#0f766e">L7 可观测评测</text><line x1="140" y1="292" x2="140" y2="324" stroke="#99f6e4" stroke-width="2"/><rect x="352.7" y="292" width="99.1" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="402.3" y="312.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">OpenTelemetry</text><rect x="461.8" y="292" width="81.8" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="502.7" y="312.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Prometheus</text><rect x="553.5" y="292" width="70.2" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="588.6" y="312.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">Langfuse</text><rect x="633.8" y="292" width="52.9" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="660.2" y="312.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">RAGAS</text><rect x="696.6" y="292" width="58.7" height="32" rx="6" fill="#f0fdfa" stroke="#99f6e4"/><text x="726.0" y="312.0" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10" fill="#1e293b">pytest</text></svg></div><figcaption>图 3 · 后端技术栈分层（L1 接入层 → L7 可观测与评测）</figcaption></figure>
+<p>后端自上而下分为七层：<strong>接入层 → 编排层 → 业务能力层 → 引擎层 → 基础支撑层 → 数据与模型服务层 → 可观测与评测层</strong>。</p>
+<h3 id="3-2-按功能模块细分">3.2 按功能模块细分</h3>
+<h4 id="B1-语言与工程" class="be-h">B1 · 语言与工程</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本 / 规格</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Python</td>
+<td style="text-align: left;">3.11（<code>python:3.11-slim</code>）</td>
+<td style="text-align: left;">后端主语言</td>
+</tr>
+<tr>
+<td style="text-align: left;">uv</td>
+<td style="text-align: left;">latest</td>
+<td style="text-align: left;">依赖与虚拟环境；生产安装 <code>uv sync --frozen --no-dev --no-install-project</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">pydantic v2</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">请求 / 响应 / 契约模型与校验</td>
+</tr>
+<tr>
+<td style="text-align: left;">ruff / mypy / pytest</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">代码规范、渐进式类型检查、回归测试</td>
+</tr>
+</tbody>
+</table>
+<h4 id="B2-服务接入层-api" class="be-h">B2 · 服务接入层（<code>api/</code>）</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">FastAPI</td>
+<td style="text-align: left;">≥0.110</td>
+<td style="text-align: left;">REST 端点定义、依赖注入（鉴权 <code>Depends</code>）、请求校验</td>
+</tr>
+<tr>
+<td style="text-align: left;">uvicorn</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">ASGI 服务器</td>
+</tr>
+<tr>
+<td style="text-align: left;">CORSMiddleware</td>
+<td style="text-align: left;">FastAPI 内置</td>
+<td style="text-align: left;">跨域（开发态前端 5173）</td>
+</tr>
+<tr>
+<td style="text-align: left;">StreamingResponse</td>
+<td style="text-align: left;">FastAPI 内置</td>
+<td style="text-align: left;"><strong>SSE 流式输出</strong>（<code>/chat/stream</code>）</td>
+</tr>
+<tr>
+<td style="text-align: left;">UploadFile / File</td>
+<td style="text-align: left;">FastAPI 内置</td>
+<td style="text-align: left;">招标文件上传</td>
+</tr>
+<tr>
+<td style="text-align: left;">InflightGate + 进程池</td>
+<td style="text-align: left;">自研</td>
+<td style="text-align: left;">并发保护与 CPU 密集任务隔离</td>
+</tr>
+<tr>
+<td style="text-align: left;">Prometheus 指标端点</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;"><code>/metrics</code> 暴露系统层指标</td>
+</tr>
+</tbody>
+</table>
+<h4 id="B3-Agent-编排层-agent-orchestration" class="be-h">B3 · Agent 编排层（<code>agent/</code> + <code>orchestration/</code>）</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">LangGraph</td>
+<td style="text-align: left;">≥1.2.11, &lt;2.0.0</td>
+<td style="text-align: left;">状态机骨架：<code>StateGraph</code> 主图 + 子图（knowledge_qa / price_inquiry）、条件边、<code>handoff</code> 分支、三级路由抬升</td>
+</tr>
+<tr>
+<td style="text-align: left;">langgraph-checkpoint</td>
+<td style="text-align: left;">≥2.0.0</td>
+<td style="text-align: left;">Checkpointer：默认 <code>MemorySaver</code>，可一行切换到 sqlite / postgres / redis</td>
+</tr>
+<tr>
+<td style="text-align: left;">LangChain Core</td>
+<td style="text-align: left;">≥1.5.4, &lt;2.0.0</td>
+<td style="text-align: left;"><code>Runnable</code> / LCEL 链、结构化输出、工具绑定、流式</td>
+</tr>
+<tr>
+<td style="text-align: left;">langchain-openai</td>
+<td style="text-align: left;">≥1.5.0, &lt;2.0.0</td>
+<td style="text-align: left;"><strong>OpenAI 兼容统一接入</strong>：DeepSeek、Embedding、Reranker、评测判定模型共用同一协议客户端，换供应商只改 <code>.env</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">tiktoken</td>
+<td style="text-align: left;">≥0.7.0, &lt;0.9.0</td>
+<td style="text-align: left;">Token 计量（成本与上下文控制）</td>
+</tr>
+<tr>
+<td style="text-align: left;">CapabilityRegistry（自研）</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">数据驱动的能力注册表：新增分支只注册 <code>CapabilitySpec</code>（含 route_desc / route_tool_doc / examples），router 与 graph 自动采纳，不改 <code>router.py</code> / <code>graph.py</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">routing_rules.yaml</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">编排规则外置，规则变更不改代码</td>
+</tr>
+</tbody>
+</table>
+<h4 id="B4-专业知识问答-RAG-引擎-public_kb" class="be-h">B4 · 专业知识问答（RAG 引擎 <code>public_kb/</code>）</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本 / 规格</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Milvus（pymilvus）</td>
+<td style="text-align: left;">2.4.x</td>
+<td style="text-align: left;">向量存储与混合检索；集合 <code>public_kb</code>（法规知识）、<code>mysql_price_semantic</code>（价格语义）</td>
+</tr>
+<tr>
+<td style="text-align: left;">Dense 检索</td>
+<td style="text-align: left;">HNSW / COSINE，BGE-M3 1024 维</td>
+<td style="text-align: left;">语义召回</td>
+</tr>
+<tr>
+<td style="text-align: left;">Sparse 检索</td>
+<td style="text-align: left;"><strong>Milvus 服务端 BM25</strong></td>
+<td style="text-align: left;">关键词精确召回；稀疏计算在服务端完成，应用侧零开销</td>
+</tr>
+<tr>
+<td style="text-align: left;">RRF 融合</td>
+<td style="text-align: left;">k=60</td>
+<td style="text-align: left;">Dense + Sparse 倒数排序融合</td>
+</tr>
+<tr>
+<td style="text-align: left;">BGE-reranker-v2-m3</td>
+<td style="text-align: left;">远端 HTTP</td>
+<td style="text-align: left;">Cross-Encoder 精排，取 top-K（11）</td>
+</tr>
+<tr>
+<td style="text-align: left;">自适应阈值</td>
+<td style="text-align: left;">下限 0.45</td>
+<td style="text-align: left;">按得分分布动态过滤，避免固定阈值在长尾 query 上失效</td>
+</tr>
+<tr>
+<td style="text-align: left;">cachetools</td>
+<td style="text-align: left;">≥5.0（锁 7.1.7）</td>
+<td style="text-align: left;">检索结果版本化 TTL 缓存</td>
+</tr>
+<tr>
+<td style="text-align: left;">TypedChunker（自研）</td>
+<td style="text-align: left;">类型化两层切分</td>
+<td style="text-align: left;">法规 700 / 汇编 700 / 问答 900 / 实务 1000 字符</td>
+</tr>
+<tr>
+<td style="text-align: left;">引用护栏 R1~R7（自研）</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">引用溯源校验，输出 <code>chunk_uid</code> 与标准化 <code>citations</code></td>
+</tr>
+</tbody>
+</table>
+<h4 id="B5-结构化数据查询-price_engine-MySQL" class="be-h">B5 · 结构化数据查询（<code>price_engine/</code> + MySQL）</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">MySQL</td>
+<td style="text-align: left;">8.x（库 <code>ztb_clean</code> / <code>bidding</code>）</td>
+<td style="text-align: left;">公司信息、行政处罚、中标项目、产品与价格等结构化数据（只读）</td>
+</tr>
+<tr>
+<td style="text-align: left;">PyMySQL</td>
+<td style="text-align: left;">≥1.1.0</td>
+<td style="text-align: left;">驱动；模块级连接池复用</td>
+</tr>
+<tr>
+<td style="text-align: left;">FULLTEXT + ngram 解析器</td>
+<td style="text-align: left;"><code>ngram_token_size=2</code></td>
+<td style="text-align: left;">中文全文检索；优先索引可命中的精确匹配（<code>=</code> <code>&gt;=</code> <code>&lt;=</code>）与 FULLTEXT，避免 <code>LIKE '%…%'</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">多级降级召回（自研）</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">Milvus 语义 → FULLTEXT → LIKE → 全表扫描（逐级降权），弱条件下仍保证有结果</td>
+</tr>
+</tbody>
+</table>
+<h4 id="B6-模型服务" class="be-h">B6 · 模型服务</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本 / 规格</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">DeepSeek（<code>deepseek-chat</code>）</td>
+<td style="text-align: left;">temperature=0</td>
+<td style="text-align: left;">全部 6 个生成类槽位：router / kb_generation / price_intent / doc_agent / deep_agent / rewrite</td>
+</tr>
+<tr>
+<td style="text-align: left;">BAAI/bge-m3</td>
+<td style="text-align: left;">1024 维</td>
+<td style="text-align: left;">Embedding（入库与查询）</td>
+</tr>
+<tr>
+<td style="text-align: left;">BAAI/bge-reranker-v2-m3</td>
+<td style="text-align: left;">fp16，GPU</td>
+<td style="text-align: left;">精排</td>
+</tr>
+<tr>
+<td style="text-align: left;">自建 <code>ztb-models</code> 服务</td>
+<td style="text-align: left;">FastAPI + GPU 透传</td>
+<td style="text-align: left;">一体暴露 <code>POST /v1/embeddings</code>（OpenAI 兼容）与 <code>POST /v1/rerank</code>（SiliconFlow 兼容）；两模型共用同一 base_url（客户端 reranker 复用 embedding 的 base_url）；显存合计约 2.5 GB</td>
+</tr>
+<tr>
+<td style="text-align: left;">评测判定模型</td>
+<td style="text-align: left;">默认 <code>qwen3.8-flash</code>，DashScope 兼容端点</td>
+<td style="text-align: left;">RAGAS 判定，<strong>刻意与生成模型不同源</strong>，规避自评偏差</td>
+</tr>
+<tr>
+<td style="text-align: left;">models.yaml 模型槽位</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">换模型只改配置，业务代码零改动</td>
+</tr>
+</tbody>
+</table>
+<h4 id="B7-文档解析与入库-public_kb-ingestion" class="be-h">B7 · 文档解析与入库（<code>public_kb/ingestion/</code>）</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">PyMuPDF（pymupdf）</td>
+<td style="text-align: left;">≥1.24, &lt;2.0</td>
+<td style="text-align: left;">PDF 主链路：Tier A 本地并行解析（页面画像后判定）</td>
+</tr>
+<tr>
+<td style="text-align: left;">MinerU 服务</td>
+<td style="text-align: left;">自托管 <code>deploy/mineru/</code></td>
+<td style="text-align: left;">Tier C 复杂版式解析；入库期调用，timeout 1800 s（API）/ 3600 s（本地）</td>
+</tr>
+<tr>
+<td style="text-align: left;">lxml</td>
+<td style="text-align: left;">≥5.0, &lt;7.0</td>
+<td style="text-align: left;">业务网页表格解析（<code>table_extract.py</code> html_engine 依赖 <code>pandas.read_html</code>）</td>
+</tr>
+<tr>
+<td style="text-align: left;">markdown</td>
+<td style="text-align: left;">≥3.6, &lt;4.0</td>
+<td style="text-align: left;">Markdown → HTML / 文本转换</td>
+</tr>
+<tr>
+<td style="text-align: left;">分档路由 pipeline（自研）</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">页面画像 → Tier A / Tier C 分流 → T4 装配；含双栏重排、表格原子块、前置区跳过</td>
+</tr>
+</tbody>
+</table>
+<h4 id="B8-缓存与限流" class="be-h">B8 · 缓存与限流</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Redis</td>
+<td style="text-align: left;">8.1（可选后端）</td>
+<td style="text-align: left;"><code>CACHE_BACKEND=redis</code> 时作检索缓存与限流后端；不可用时进程内直通，不影响主流程</td>
+</tr>
+<tr>
+<td style="text-align: left;">cachetools</td>
+<td style="text-align: left;">7.1.7</td>
+<td style="text-align: left;">进程内版本化 TTL 缓存，作为 Redis 缺省降级</td>
+</tr>
+</tbody>
+</table>
+<h4 id="B9-可观测性" class="be-h">B9 · 可观测性</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">OpenTelemetry</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">Trace / Span 埋点（trace_id、span 树、耗时、token 消耗、召回阶段）</td>
+</tr>
+<tr>
+<td style="text-align: left;">Prometheus</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">系统层指标采集与 <code>/metrics</code> 暴露</td>
+</tr>
+<tr>
+<td style="text-align: left;">Langfuse</td>
+<td style="text-align: left;">4.x 自托管</td>
+<td style="text-align: left;">Trace 持久化与 score 仓库；6 服务编排：langfuse-web、langfuse-worker、ClickHouse、MinIO、Redis、Postgres</td>
+</tr>
+<tr>
+<td style="text-align: left;">结构化日志</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">统一日志格式，串联 trace_id 便于问题定位</td>
+</tr>
+</tbody>
+</table>
+<h4 id="B10-评测体系" class="be-h">B10 · 评测体系</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">版本</th>
+<th style="text-align: left;">在项目中的作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">RAGAS</td>
+<td style="text-align: left;">0.3.x（dev 依赖，生产不装）</td>
+<td style="text-align: left;">RAG 链路评估：faithfulness / answer_relevancy / context_precision / context_recall</td>
+</tr>
+<tr>
+<td style="text-align: left;">自研 <code>evals/</code> runners</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">评测编排与分层结果产出</td>
+</tr>
+<tr>
+<td style="text-align: left;">pytest</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">回归测试（含 P0 缺陷回归、引用溯源 R1~R7、召回优化等）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-前后端协同技术">4. 前后端协同技术</h2>
+<figure><div class="fig"><svg viewBox="0 0 980 454" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="100%" height="100%" fill="#ffffff"/><defs><marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#475569"/></marker></defs><rect x="58" y="16" width="144" height="38" rx="8" fill="#f8fafc" stroke="#cbd5e1"/><text x="130" y="40" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#1e293b">前端 · 浏览器</text><line x1="130" y1="54" x2="130" y2="438" stroke="#cbd5e1" stroke-width="1.2" stroke-dasharray="4 4"/><rect x="278" y="16" width="144" height="38" rx="8" fill="#f8fafc" stroke="#cbd5e1"/><text x="350" y="40" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#1e293b">接入层 api/</text><line x1="350" y1="54" x2="350" y2="438" stroke="#cbd5e1" stroke-width="1.2" stroke-dasharray="4 4"/><rect x="498" y="16" width="144" height="38" rx="8" fill="#f8fafc" stroke="#cbd5e1"/><text x="570" y="40" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#1e293b">编排层 agent/</text><line x1="570" y1="54" x2="570" y2="438" stroke="#cbd5e1" stroke-width="1.2" stroke-dasharray="4 4"/><rect x="718" y="16" width="144" height="38" rx="8" fill="#f8fafc" stroke="#cbd5e1"/><text x="790" y="40" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#1e293b">引擎层 RAG · MySQL</text><line x1="790" y1="54" x2="790" y2="438" stroke="#cbd5e1" stroke-width="1.2" stroke-dasharray="4 4"/><line x1="136" y1="94" x2="340" y2="94" stroke="#475569" stroke-width="1.6" marker-end="url(#ar)"/><text x="240.0" y="87" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="600" fill="#0f766e">①  POST /chat/stream（SSE）</text><path d="M344 138 h26 a6 6 0 0 1 0 12 h-26" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#ar)"/><text x="394" y="131" text-anchor="start" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="600" fill="#0f766e">②  鉴权 · 限流 · InflightGate</text><line x1="356" y1="182" x2="560" y2="182" stroke="#475569" stroke-width="1.6" marker-end="url(#ar)"/><text x="460.0" y="175" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="600" fill="#2563eb">③  rewrite 改写 + 三级路由</text><line x1="576" y1="226" x2="780" y2="226" stroke="#475569" stroke-width="1.6" marker-end="url(#ar)"/><text x="680.0" y="219" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="600" fill="#2563eb">④  子图执行：检索 / 查询</text><path d="M784 270 h26 a6 6 0 0 1 0 12 h-26" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#ar)"/><text x="834" y="263" text-anchor="start" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="600" fill="#2563eb">⑤  混合检索 · RRF · Rerank · 引用护栏</text><line x1="784" y1="314" x2="580" y2="314" stroke="#475569" stroke-width="1.6" marker-end="url(#ar)"/><text x="680.0" y="307" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="600" fill="#2563eb">⑥  结果与 citations 回传</text><line x1="564" y1="358" x2="360" y2="358" stroke="#475569" stroke-width="1.6" marker-end="url(#ar)"/><text x="460.0" y="351" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="600" fill="#0f766e">⑦  SSE delta 逐 token 下发</text><line x1="344" y1="402" x2="140" y2="402" stroke="#475569" stroke-width="1.6" marker-end="url(#ar)"/><text x="240.0" y="395" text-anchor="middle" font-family="Inter,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="600" fill="#0f766e">⑧  终态 result + 适配层归一渲染</text></svg></div><figcaption>图 4 · 前后端数据流：一次 SSE 对话请求的完整链路</figcaption></figure>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">协同环节</th>
+<th style="text-align: left;">前端技术</th>
+<th style="text-align: left;">后端技术</th>
+<th style="text-align: left;">契约</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">开发期联调</td>
+<td style="text-align: left;">Vite 代理 <code>/api</code> → <code>127.0.0.1:8000</code>（rewrite 去前缀）</td>
+<td style="text-align: left;">uvicorn + CORSMiddleware</td>
+<td style="text-align: left;">同域，前端无需感知端口</td>
+</tr>
+<tr>
+<td style="text-align: left;">生产部署</td>
+<td style="text-align: left;">静态资源由反向代理托管</td>
+<td style="text-align: left;">同域反代</td>
+<td style="text-align: left;">无跨域</td>
+</tr>
+<tr>
+<td style="text-align: left;">流式对话</td>
+<td style="text-align: left;"><code>@microsoft/fetch-event-source</code></td>
+<td style="text-align: left;">FastAPI <code>StreamingResponse</code>（SSE）</td>
+<td style="text-align: left;"><code>POST /chat/stream</code>，逐 token delta + 终态 result</td>
+</tr>
+<tr>
+<td style="text-align: left;">一次性问答</td>
+<td style="text-align: left;"><code>fetch</code>（backend.ts）</td>
+<td style="text-align: left;">FastAPI REST</td>
+<td style="text-align: left;"><code>POST /chat</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">文件上传</td>
+<td style="text-align: left;"><code>FormData</code> + 1.5 s 轮询</td>
+<td style="text-align: left;"><code>UploadFile</code> + 异步解析 + 状态查询</td>
+<td style="text-align: left;">上传回带 <code>session_id</code>，保证"先传文件后提问"的会话归属</td>
+</tr>
+<tr>
+<td style="text-align: left;">数据契约</td>
+<td style="text-align: left;"><code>types/*</code> + <code>adapters/*</code>（唯一接缝）</td>
+<td style="text-align: left;">pydantic 模型</td>
+<td style="text-align: left;">后端字段变更只改适配器，页面零改动</td>
+</tr>
+<tr>
+<td style="text-align: left;">演示降级</td>
+<td style="text-align: left;"><code>dataConfig</code> Mock 开关，mock 与真实返回同形状</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">无后端也可完整演示</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5-基础设施与部署技术栈">5. 基础设施与部署技术栈</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">技术</th>
+<th style="text-align: left;">用途</th>
+<th style="text-align: left;">落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Docker + Docker Compose</td>
+<td style="text-align: left;">全部服务容器化编排</td>
+<td style="text-align: left;"><code>deploy/api/</code>、<code>deploy/models/</code>、<code>deploy/mineru/</code>、<code>deploy/langfuse/</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Milvus + etcd + MinIO + Attu</td>
+<td style="text-align: left;">向量库及其依赖与可视化管理</td>
+<td style="text-align: left;"><code>milvus/docker-compose.yml</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">MySQL（本地可选容器）</td>
+<td style="text-align: left;">结构化业务库</td>
+<td style="text-align: left;"><code>docker/mysql/docker-compose.yml</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">NVIDIA GPU 透传</td>
+<td style="text-align: left;">模型服务推理</td>
+<td style="text-align: left;"><code>deploy/models/docker-compose.yml</code>（<code>capabilities: [gpu]</code>）</td>
+</tr>
+<tr>
+<td style="text-align: left;">HF 镜像 <code>hf-mirror.com</code></td>
+<td style="text-align: left;">服务器侧 huggingface.co 不可达的替代下载源</td>
+<td style="text-align: left;"><code>deploy/models/docker-compose.yml</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">阿里云 PyPI 镜像</td>
+<td style="text-align: left;">跨境 pypi.org 仅 36~60 KB/s 的替代源</td>
+<td style="text-align: left;"><code>deploy/api/Dockerfile</code>（<code>PIP_INDEX_URL</code>）</td>
+</tr>
+<tr>
+<td style="text-align: left;">镜像边界治理</td>
+<td style="text-align: left;">主程序镜像只装业务代码（约 1~1.5 GB），模型 / torch 全部外置为独立服务（约 4 GB+）</td>
+<td style="text-align: left;"><code>deploy/api/Dockerfile</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="6-依赖治理与版本约束">6. 依赖治理与版本约束</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">约束</th>
+<th style="text-align: left;">原因</th>
+<th style="text-align: left;">影响面</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>setuptools&gt;=65,&lt;70</code></td>
+<td style="text-align: left;">pymilvus 2.4.x 依赖已被移除的 <code>pkg_resources</code></td>
+<td style="text-align: left;">硬约束，升级即导入失败</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>openai&gt;=2.45,&lt;4</code></td>
+<td style="text-align: left;">langchain-openai 1.5.x 要求 openai ≥2.45</td>
+<td style="text-align: left;">与运行环境 openai 3.0.0 对齐</td>
+</tr>
+<tr>
+<td style="text-align: left;">移除 <code>sentence-transformers</code></td>
+<td style="text-align: left;">连带 torch（~491 MB）+ transformers（~53 MB）；reranker 改为远端 HTTP，全库零 import</td>
+<td style="text-align: left;">镜像体积 -915 MB</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>pymupdf&gt;=1.24</code></td>
+<td style="text-align: left;">1.24 起模块名由 <code>fitz</code> 改为 <code>pymupdf</code></td>
+<td style="text-align: left;">23 个文件引用</td>
+</tr>
+<tr>
+<td style="text-align: left;">生产 <code>--no-dev</code></td>
+<td style="text-align: left;">ragas 等评测依赖不进生产镜像</td>
+<td style="text-align: left;">镜像瘦身</td>
+</tr>
+<tr>
+<td style="text-align: left;">前端 <code>chunkSizeWarningLimit: 600</code></td>
+<td style="text-align: left;">交由 Rollup 自动分包，避免 manualChunks 反向拖累入口</td>
+<td style="text-align: left;">首屏体积</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7-选型决策摘要">7. 选型决策摘要</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">编号</th>
+<th style="text-align: left;">决策</th>
+<th style="text-align: left;">理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">AD-F1</td>
+<td style="text-align: left;">Vite + React 19 + TS</td>
+<td style="text-align: left;">冷启动与 HMR 快；TS 全量约束降低适配层出错概率</td>
+</tr>
+<tr>
+<td style="text-align: left;">AD-F2</td>
+<td style="text-align: left;">Tailwind v4（CSS-first <code>@theme</code>）</td>
+<td style="text-align: left;">设计 token 直接写在 CSS，去掉 JS 配置层；与 Shadcn 生态契合</td>
+</tr>
+<tr>
+<td style="text-align: left;">AD-F3</td>
+<td style="text-align: left;">Shadcn + Radix（源码入仓）</td>
+<td style="text-align: left;">组件可任意改，无第三方 UI 库版本锁定风险；Radix 保证无障碍</td>
+</tr>
+<tr>
+<td style="text-align: left;">AD-F4</td>
+<td style="text-align: left;">自研适配层 + Mock 同形</td>
+<td style="text-align: left;">后端字段变更只改适配器；mock 与真实同形状，使演示期测试仍有意义</td>
+</tr>
+<tr>
+<td style="text-align: left;">AD-F5</td>
+<td style="text-align: left;"><code>fetch-event-source</code> 而非原生 SSE</td>
+<td style="text-align: left;">原生 <code>EventSource</code> 不支持 POST 与自定义请求头</td>
+</tr>
+<tr>
+<td style="text-align: left;">AD-F6</td>
+<td style="text-align: left;">路由级懒加载隔离 Recharts</td>
+<td style="text-align: left;">图表库约 438 KB，与对话/落地页首屏解耦</td>
+</tr>
+<tr>
+<td style="text-align: left;">AD-B1</td>
+<td style="text-align: left;">LangGraph 状态机</td>
+<td style="text-align: left;">子图 / 条件边 / Checkpointer 原生支持多分支 Agent</td>
+</tr>
+<tr>
+<td style="text-align: left;">AD-B2</td>
+<td style="text-align: left;">langchain-openai 统一接入</td>
+<td style="text-align: left;">所有模型走 OpenAI 协议，换供应商只改 <code>.env</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">AD-B3</td>
+<td style="text-align: left;">能力注册表数据驱动</td>
+<td style="text-align: left;">新增分支不改 router / graph，符合开闭原则</td>
+</tr>
+<tr>
+<td style="text-align: left;">AD-B4</td>
+<td style="text-align: left;">模型服务外置 + GPU 透传</td>
+<td style="text-align: left;">主镜像去 torch，体积与构建时间大幅下降</td>
+</tr>
+<tr>
+<td style="text-align: left;">AD-B5</td>
+<td style="text-align: left;">评测判定模型与生成模型不同源</td>
+<td style="text-align: left;">规避自评偏差</td>
+</tr>
+<tr>
+<td style="text-align: left;">AD-B6</td>
+<td style="text-align: left;">Milvus 服务端 BM25</td>
+<td style="text-align: left;">稀疏计算下沉，应用侧零开销</td>
+</tr>
+</tbody>
+</table>
+</main></div></body></html>

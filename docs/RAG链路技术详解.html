@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>招投标智能助手 · RAG 链路技术详解</title>
+<style>
+:root{--on:#2563eb;--off:#0f766e;--ink:#1e293b;--mut:#64748b;--line:#e2e8f0;--bg:#f6f8fb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+ font-family:Inter,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;line-height:1.78;font-size:14.5px}
+.wrap{display:flex;max-width:1520px;margin:0 auto;gap:28px;padding:0 24px}
+nav.toc{position:sticky;top:0;align-self:flex-start;width:250px;flex:0 0 250px;
+ max-height:100vh;overflow:auto;padding:26px 0 40px}
+nav.toc .t{font-size:11px;letter-spacing:.14em;color:var(--mut);font-weight:700;margin-bottom:10px}
+nav.toc a{display:block;text-decoration:none;color:var(--mut);font-size:13px;padding:5px 10px;
+ border-left:2px solid var(--line)}
+nav.toc a.l2{font-weight:600;color:var(--ink);margin-top:8px}
+nav.toc a.l3{font-size:12.5px;padding-left:20px}
+nav.toc a:hover{color:var(--on);border-left-color:var(--on);background:#fff}
+main{flex:1;min-width:0;background:#fff;padding:0 48px 80px;box-shadow:0 1px 3px rgba(15,23,42,.07)}
+header.hd{padding:44px 0 26px;border-bottom:3px solid var(--ink);margin-bottom:30px}
+h1{font-size:28px;margin:0 0 12px;letter-spacing:-.4px}
+.sub{color:var(--mut);font-size:14px;margin:0}
+.badges{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+.b{font-size:11.5px;padding:3px 11px;border-radius:20px;font-weight:600}
+.b.a{background:#f0fdfa;color:var(--off)} .b.b{background:#eff6ff;color:var(--on)}
+.b.c{background:#fef2f2;color:#dc2626} .b.n{background:#f1f5f9;color:var(--mut)}
+h2{font-size:20px;margin:46px 0 14px;padding-bottom:9px;border-bottom:1px solid var(--line)}
+h3{font-size:16px;margin:30px 0 10px;color:#0f172a}
+p{margin:10px 0}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:13px}
+th{background:#f1f5f9;text-align:left;padding:9px 11px;font-weight:700;border:1px solid var(--line);font-size:12.5px}
+td{padding:8px 11px;border:1px solid var(--line);vertical-align:top}
+tr:nth-child(even) td{background:#fcfdfe}
+code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:12.5px;
+ font-family:"JetBrains Mono",Consolas,monospace}
+pre{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;
+ font-family:"JetBrains Mono",Consolas,monospace;font-size:12.5px;line-height:1.7}
+blockquote{margin:16px 0;padding:12px 16px;background:#fffbeb;border-left:3px solid #f59e0b;
+ color:#78350f;font-size:13px;border-radius:0 6px 6px 0}
+blockquote p{margin:0}
+figure{margin:26px 0}
+.fig{border:1px solid var(--line);border-radius:10px;padding:14px;background:#fff;overflow-x:auto}
+.fig svg{width:100%;height:auto;display:block}
+figcaption{text-align:center;font-size:12.5px;color:var(--mut);margin-top:9px;font-weight:600}
+@media print{nav.toc{display:none}body{background:#fff}main{box-shadow:none;padding:0}
+ figure,table{page-break-inside:avoid}h2{page-break-after:avoid}}
+@media (max-width:1080px){nav.toc{display:none}main{padding:0 20px 60px}}
+</style></head><body>
+<div class="wrap">
+<nav class="toc"><div class="t">目 录</div><a class="l2" href="#目录">目录</a><a class="l2" href="#1-链路总览">1. 链路总览</a><a class="l3" href="#1-1-代码落点">1.1 代码落点</a><a class="l2" href="#2-离线入库链路">2. 离线入库链路</a><a class="l3" href="#2-1-格式路由-Source-Router">2.1 格式路由（Source Router）</a><a class="l3" href="#2-2-PDF-三档路由-核心">2.2 PDF 三档路由（核心）</a><a class="l3" href="#2-3-清洗与类型化分块">2.3 清洗与类型化分块</a><a class="l3" href="#2-4-向量化与写入">2.4 向量化与写入</a><a class="l2" href="#3-在线检索链路">3. 在线检索链路</a><a class="l3" href="#3-1-候选漏斗与算法参数">3.1 候选漏斗与算法参数</a><a class="l3" href="#3-2-稠密检索-Dense">3.2 稠密检索（Dense）</a><a class="l3" href="#3-3-稀疏检索-Sparse">3.3 稀疏检索（Sparse）</a><a class="l3" href="#3-4-RRF-融合">3.4 RRF 融合</a><a class="l3" href="#3-5-自适应阈值">3.5 自适应阈值</a><a class="l3" href="#3-6-Rerank-精排">3.6 Rerank 精排</a><a class="l3" href="#3-7-父块装配">3.7 父块装配</a><a class="l3" href="#3-8-八级降级与容错">3.8 八级降级与容错</a><a class="l2" href="#4-多跳召回-L0-L1-L2">4. 多跳召回 L0 / L1 / L2</a><a class="l2" href="#5-生成链路">5. 生成链路</a><a class="l3" href="#5-1-上下文组织">5.1 上下文组织</a><a class="l3" href="#5-2-Prompt-约束">5.2 Prompt 约束</a><a class="l3" href="#5-3-子图编排与流式">5.3 子图编排与流式</a><a class="l2" href="#6-引用溯源护栏-R1-R7">6. 引用溯源护栏 R1~R7</a><a class="l2" href="#7-算法总表">7. 算法总表</a><a class="l2" href="#8-实测数据与指标走势">8. 实测数据与指标走势</a><a class="l3" href="#8-1-检索层-holdout-200-条-top_k-11">8.1 检索层（holdout 200 条，top_k=11）</a><a class="l3" href="#8-2-RAGAS-dev_100-judge-qwen3-8-flash">8.2 RAGAS（dev_100，judge = qwen3.8-flash）</a><a class="l3" href="#8-3-策略-A-B-对比-同一批-35-条多跳">8.3 策略 A/B 对比（同一批 35 条多跳）</a><a class="l3" href="#8-4-引用率与性能">8.4 引用率与性能</a><a class="l3" href="#8-5-评测数据集">8.5 评测数据集</a><a class="l2" href="#9-已知缺口与优化方向">9. 已知缺口与优化方向</a></nav>
+<main>
+<header class="hd">
+<h1>招投标智能助手 · RAG 链路技术详解</h1>
+<p class="sub">整体架构 · 逐模块实现 · 算法与参数 · 实测指标走势</p>
+<div class="badges">
+<span class="b a">离线入库 · 三档解析 + 类型化分块</span>
+<span class="b b">在线检索 · Dense + BM25 + RRF + Rerank</span>
+<span class="b c">护栏 · R1~R7 引用溯源</span>
+<span class="b n">2026-09-16 · v1.0</span></div>
+</header>
+<h1>招投标智能助手 — RAG 链路技术详解</h1>
+<blockquote>
+<p>文档版本：v1.0　|　编制日期：2026-09-16　|　适用范围：技术汇报 / 架构评审</p>
+<p>本文聚焦项目中的 <strong>RAG（检索增强生成）链路</strong>：给出整体架构图与指标走势图，逐模块拆解实现，并说明每一段采用的算法与其参数。文中所有配置数值取自 <code>core/config/settings.py</code>，所有评测数值取自 <code>test_report/</code> 下的真实产物（已标注文件名）。</p>
+</blockquote>
+<hr />
+<h2 id="目录">目录</h2>
+<ul>
+<li><a href="#1-链路总览">1. 链路总览</a></li>
+<li><a href="#2-离线入库链路">2. 离线入库链路</a></li>
+<li><a href="#3-在线检索链路">3. 在线检索链路</a></li>
+<li><a href="#4-多跳召回-l0--l1--l2">4. 多跳召回 L0 / L1 / L2</a></li>
+<li><a href="#5-生成链路">5. 生成链路</a></li>
+<li><a href="#6-引用溯源护栏-r1r7">6. 引用溯源护栏 R1~R7</a></li>
+<li><a href="#7-算法总表">7. 算法总表</a></li>
+<li><a href="#8-实测数据与指标走势">8. 实测数据与指标走势</a></li>
+<li><a href="#9-已知缺口与优化方向">9. 已知缺口与优化方向</a></li>
+</ul>
+<hr />
+<h2 id="1-链路总览">1. 链路总览</h2>
+<p>RAG 链路分为<strong>离线入库</strong>与<strong>在线问答</strong>两条通道，二者通过 Milvus 集合 <code>public_kb</code> 衔接。</p>
+<figure><div class="fig"><svg viewBox="0 0 1120 400" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="1120" height="400" fill="#ffffff"/><defs><marker id="a1" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#64748b"/></marker></defs><rect x="20" y="14" width="242" height="22" rx="5" fill="#f0fdfa" stroke="#99f6e4"/><text x="33.0" y="30.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#0f766e">① 离线入库链路（Offline Ingestion）</text><rect x="20.0" y="40" width="170.0" height="64" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><text x="105.0" y="62.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">源文档</text><text x="105.0" y="76.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">PDF · CSV · TXT · 图片</text><line x1="192.0" y1="72.0" x2="198.0" y2="72.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="202.0" y="40" width="170.0" height="64" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><text x="287.0" y="62.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">格式路由</text><text x="287.0" y="76.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">FormatRouter + 嗅探</text><line x1="374.0" y1="72.0" x2="380.0" y2="72.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="384.0" y="40" width="170.0" height="64" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><text x="469.0" y="62.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">PDF 三档路由</text><text x="469.0" y="76.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">Tier A PyMuPDF / C MinerU</text><line x1="556.0" y1="72.0" x2="562.0" y2="72.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="566.0" y="40" width="170.0" height="64" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><text x="651.0" y="62.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">文本清洗</text><text x="651.0" y="76.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">TextCleaner</text><line x1="738.0" y1="72.0" x2="744.0" y2="72.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="748.0" y="40" width="170.0" height="64" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><text x="833.0" y="62.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">类型化分块</text><text x="833.0" y="76.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">TypedChunker 700~1000</text><line x1="920.0" y1="72.0" x2="926.0" y2="72.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="930.0" y="40" width="170.0" height="64" rx="7" fill="#f0fdfa" stroke="#99f6e4"/><text x="1015.0" y="62.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">BGE-M3</text><text x="1015.0" y="76.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">1024 维 · batch 100</text><rect x="20" y="126" width="1080" height="46" rx="8" fill="#fff7ed" stroke="#fed7aa"/><text x="560.0" y="146.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#9a3412">Milvus 集合 public_kb　|　text · vector(FLOAT_VECTOR 1024, HNSW/COSINE) · sparse_vector(BM25 Function 自动生成) · chunk_uid · doc_name · chapter · parent_chunk_id</text><text x="560.0" y="164.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#9a3412">稠密 HNSW(M=16, efConstruction=128, ef=64)　|　稀疏 SPARSE_INVERTED_INDEX(DAAT_MAXSCORE, k1=1.2, b=0.75)</text><line x1="560.0" y1="172" x2="560.0" y2="194" stroke="#64748b" stroke-width="1.6" marker-end="url(#a1)"/><rect x="20" y="186" width="234" height="22" rx="5" fill="#eff6ff" stroke="#bfdbfe"/><text x="33.0" y="202.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#2563eb">② 在线检索链路（Online Retrieval）</text><rect x="20.0" y="212" width="144.0" height="64" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><text x="92.0" y="234.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">用户提问</text><text x="92.0" y="248.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">rewrite 指代消解</text><line x1="166.0" y1="244.0" x2="172.0" y2="244.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="176.0" y="212" width="144.0" height="64" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><text x="248.0" y="234.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">Dense 检索</text><text x="248.0" y="248.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">HNSW · COSINE · 30</text><line x1="322.0" y1="244.0" x2="328.0" y2="244.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="332.0" y="212" width="144.0" height="64" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><text x="404.0" y="234.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">Sparse 检索</text><text x="404.0" y="248.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">服务端 BM25 · 30</text><line x1="478.0" y1="244.0" x2="484.0" y2="244.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="488.0" y="212" width="144.0" height="64" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><text x="560.0" y="234.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">RRF 融合</text><text x="560.0" y="248.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">k=60 · 30</text><line x1="634.0" y1="244.0" x2="640.0" y2="244.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="644.0" y="212" width="144.0" height="64" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><text x="716.0" y="234.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">自适应阈值</text><text x="716.0" y="248.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">0.40 / 0.45 / 0.50</text><line x1="790.0" y1="244.0" x2="796.0" y2="244.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="800.0" y="212" width="144.0" height="64" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><text x="872.0" y="234.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">Rerank</text><text x="872.0" y="248.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">bge-reranker-v2-m3 · 11</text><line x1="946.0" y1="244.0" x2="952.0" y2="244.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="956.0" y="212" width="144.0" height="64" rx="7" fill="#eff6ff" stroke="#bfdbfe"/><text x="1028.0" y="234.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">父块装配</text><text x="1028.0" y="248.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">parent_max_chars 6000</text><line x1="560.0" y1="280" x2="560.0" y2="298" stroke="#64748b" stroke-width="1.6" marker-end="url(#a1)"/><rect x="20" y="272" width="274" height="22" rx="5" fill="#fef2f2" stroke="#fecaca"/><text x="33.0" y="288.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#dc2626">③ 生成与护栏（Generation &amp; Guardrail）</text><rect x="20.0" y="298" width="261.0" height="64" rx="7" fill="#fef2f2" stroke="#fecaca"/><text x="150.5" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">上下文组织</text><text x="150.5" y="334.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">【来源N】+ 章节 + 相关度</text><line x1="283.0" y1="330.0" x2="289.0" y2="330.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="293.0" y="298" width="261.0" height="64" rx="7" fill="#fef2f2" stroke="#fecaca"/><text x="423.5" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">LLM 生成</text><text x="423.5" y="334.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">kb_generation · 流式</text><line x1="556.0" y1="330.0" x2="562.0" y2="330.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="566.0" y="298" width="261.0" height="64" rx="7" fill="#fef2f2" stroke="#fecaca"/><text x="696.5" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">引用护栏</text><text x="696.5" y="334.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">R1~R7 校验 · fail-soft</text><line x1="829.0" y1="330.0" x2="835.0" y2="330.0" stroke="#64748b" stroke-width="1.4" marker-end="url(#a1)"/><rect x="839.0" y="298" width="261.0" height="64" rx="7" fill="#fef2f2" stroke="#fecaca"/><text x="969.5" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">输出契约</text><text x="969.5" y="334.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#1e293b">answer/sources/citations</text></svg></div><figcaption>图 1 · RAG 链路整体架构：离线入库 + 在线检索 + 生成护栏</figcaption></figure>
+<p><strong>链路关键指标（生产口径）</strong></p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">指标</th>
+<th style="text-align: left;">数值</th>
+<th style="text-align: left;">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">检索层 hit_rate（全量）</td>
+<td style="text-align: left;">0.955</td>
+<td style="text-align: left;"><code>retrieval_layer_gate_20260910_224225.json</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">检索层 recall（全量）</td>
+<td style="text-align: left;">0.863</td>
+<td style="text-align: left;">同上</td>
+</tr>
+<tr>
+<td style="text-align: left;">多跳双段全中率</td>
+<td style="text-align: left;">0.4429 → <strong>0.6000</strong></td>
+<td style="text-align: left;">同上（L0 → L1）</td>
+</tr>
+<tr>
+<td style="text-align: left;">RAGAS faithfulness</td>
+<td style="text-align: left;">0.8073 → <strong>0.8860</strong></td>
+<td style="text-align: left;"><code>ragas_s1_20260910_144219/summary.json</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">knowledge_qa 端到端 P95</td>
+<td style="text-align: left;">10.0 s</td>
+<td style="text-align: left;"><code>system_metrics_20260911_065232/summary.json</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">引用率 citation.rate</td>
+<td style="text-align: left;">0.0 → <strong>0.9688</strong></td>
+<td style="text-align: left;"><code>agent_trace_20260916_*</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="1-1-代码落点">1.1 代码落点</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">链路段</th>
+<th style="text-align: left;">主要目录</th>
+<th style="text-align: left;">关键入口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">离线入库</td>
+<td style="text-align: left;"><code>public_kb/ingestion/</code></td>
+<td style="text-align: left;"><code>pipeline.py::FileIngestionPipeline</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">检索</td>
+<td style="text-align: left;"><code>public_kb/retrieval/</code></td>
+<td style="text-align: left;"><code>retriever.py::HybridRetriever</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">生成</td>
+<td style="text-align: left;"><code>public_kb/generation/</code> + <code>rendering/</code></td>
+<td style="text-align: left;"><code>rendering/prompts.py::build_prompt</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">引用护栏</td>
+<td style="text-align: left;"><code>public_kb/guardrails/</code></td>
+<td style="text-align: left;"><code>citations_validate.py::CitationValidator</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Agent 封装</td>
+<td style="text-align: left;"><code>agent/nodes/knowledge_qa/</code></td>
+<td style="text-align: left;"><code>subgraph.py::build_knowledge_qa_subgraph</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-离线入库链路">2. 离线入库链路</h2>
+<h3 id="2-1-格式路由-Source-Router">2.1 格式路由（Source Router）</h3>
+<p><code>ingestion/router.py::FormatRouter</code> 先按扩展名判定，扩展名缺失或不可信时用 <code>_sniff_format</code> 做<strong>内容嗅探</strong>（magic bytes），产出 <code>SourceFormat</code>：<code>pdf</code> / <code>csv</code> / <code>text</code> / <code>image</code>。图像类走 RapidOCR 转文本后并入文本通道。</p>
+<h3 id="2-2-PDF-三档路由-核心">2.2 PDF 三档路由（核心）</h3>
+<p>PDF 是本项目最主要的知识源（法规、汇编、实务书）。不同版式的成本差异巨大，因此先做<strong>页面画像</strong>再分档，避免"简单页也送重解析"。</p>
+<p><strong>页面画像</strong>：<code>normalizers/pdf/pdf_page_profile.py::build_page_profile</code> → <code>PageProfile</code>，采集指标包括：<code>text_chars</code>、<code>n_blocks</code>、<code>x_starts</code>、<code>two_col_gap</code> / <code>split_x</code> / <code>has_two_col</code>、<code>table_hlines</code> / <code>table_vlines</code> / <code>table_candidate</code>、<code>img_ratio</code>、<code>article_count</code>、<code>formula_hint</code>、<code>fonts</code>。</p>
+<p><strong>判定规则</strong>：<code>pdf_legal_page_classifier.py::LegalPageClassifier.classify</code> → <code>PageRouteDecision</code></p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">优先级</th>
+<th style="text-align: left;">条件</th>
+<th style="text-align: left;">路由</th>
+<th style="text-align: left;">解析器</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">1</td>
+<td style="text-align: left;"><code>text_chars &lt; 80</code></td>
+<td style="text-align: left;">Tier C</td>
+<td style="text-align: left;">MinerU（远程 HTTP）</td>
+</tr>
+<tr>
+<td style="text-align: left;">2</td>
+<td style="text-align: left;"><code>img_ratio &gt; 0.35</code> <strong>且</strong> <code>text_chars &lt; 200</code></td>
+<td style="text-align: left;">Tier C</td>
+<td style="text-align: left;">MinerU</td>
+</tr>
+<tr>
+<td style="text-align: left;">3</td>
+<td style="text-align: left;"><code>formula_hint</code> 命中</td>
+<td style="text-align: left;">Tier C</td>
+<td style="text-align: left;">MinerU</td>
+</tr>
+<tr>
+<td style="text-align: left;">4</td>
+<td style="text-align: left;">表格候选且 <code>hlines ≥ 2</code> 且 <code>vlines ≥ 2</code></td>
+<td style="text-align: left;">Tier B → <strong>降级 C</strong></td>
+<td style="text-align: left;">Tier B 未实现</td>
+</tr>
+<tr>
+<td style="text-align: left;">5</td>
+<td style="text-align: left;">双栏且置信度 ≥ 0.80</td>
+<td style="text-align: left;">Tier A</td>
+<td style="text-align: left;">本地 PyMuPDF</td>
+</tr>
+<tr>
+<td style="text-align: left;">6</td>
+<td style="text-align: left;">其余（单栏）</td>
+<td style="text-align: left;">Tier A</td>
+<td style="text-align: left;">本地 PyMuPDF</td>
+</tr>
+</tbody>
+</table>
+<p><strong>双栏置信度公式</strong>（<code>balance</code> 为左右栏块数均衡度，<code>side_min</code> 为较少一侧的块数）：</p>
+<pre><code>confidence = max(0.55 + 0.4 × balance, 0.55 + 0.4 × min(1, side_min / 5))
+balance    = 1 − |left − right| / n_blocks
+</code></pre>
+<p>MinerU 结果按 <code>md5(源 PDF 字节 | 页码 | parser_version | range_id)</code> 缓存，避免重复计费。</p>
+<blockquote>
+<p>编排入口 <code>pdf_router.py</code>，总开关 <code>pdf_tiered_routing_enabled</code> <strong>代码默认 false</strong>，但 <code>.env</code> 置 true（生产实际开启）。</p>
+</blockquote>
+<h3 id="2-3-清洗与类型化分块">2.3 清洗与类型化分块</h3>
+<p><strong>清洗</strong>：<code>transforms/cleaner.py::TextCleaner</code> 负责页眉页脚、噪声字符、连续空行等规整。</p>
+<p><strong>分块</strong>：主力是 <code>transforms/typed_chunker.py::TypedChunker</code>，采用<strong>两层切分</strong>：</p>
+<ol>
+<li><strong>第一层 <code>HeadingSplitter</code></strong>——按 Markdown 标题切分到语义层级，内部用 <code>_content_level</code> 维护标题栈，切分时剥离 <code>#</code> 号，保留 <code>chapter</code> / <code>hierarchy_path</code> 元信息（<strong>标题感知</strong>）。</li>
+<li><strong>第二层 <code>OversizeSplitter</code></strong>——对仍超阈值的块，依次尝试：次级标题 → 段落 → 句子，逐级降级切分。</li>
+</ol>
+<p><strong>各文档类型阈值</strong>（字符数）：</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">文档类型</th>
+<th style="text-align: left;">阈值</th>
+<th style="text-align: left;">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>law</code>（法规）</td>
+<td style="text-align: left;">700</td>
+<td style="text-align: left;">条款粒度，一条一款</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>law_compilation</code>（法规汇编）</td>
+<td style="text-align: left;">700</td>
+<td style="text-align: left;">同上</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>qa</code>（问答）</td>
+<td style="text-align: left;">900</td>
+<td style="text-align: left;">一问一答成对保留</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>book_practical</code>（实务书）</td>
+<td style="text-align: left;">1000</td>
+<td style="text-align: left;">论述段落较长</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>注意</strong>：<code>TypedChunker</code> <strong>无 overlap</strong>（overlap=100 属于旧版 <code>SemanticChunker</code>，仅在未识别出 <code>doc_type</code> 时回落使用）。生产主路径是 TypedChunker。</p>
+</blockquote>
+<p><strong>表格原子块</strong>：<code>pdf_structure.py::split_table_blocks</code> 将连续 ≥ <code>pdf_min_table_rows</code>（2）行以 <code>|</code> 开头的行聚为<strong>表格原子段</strong>；<code>TypedChunker.chunk</code> 中识别为 <code>is_table</code> 后直接 <code>_make_atom(content_type="table")</code>，<strong>不参与标题切分、不再细分</strong>——表格被整体保留，避免结构被打散。</p>
+<h3 id="2-4-向量化与写入">2.4 向量化与写入</h3>
+<ul>
+<li><strong>Embedding</strong>：<code>core/embeddings/bge_m3.py::create_embeddings</code> → <code>_SafeEmbeddings(OpenAIEmbeddings)</code>，模型 <code>BAAI/bge-m3</code>，1024 维，按 <code>chunk_max_chars</code> 截断。</li>
+<li><strong>批量写入</strong>：<code>milvus_client.py::_batch_insert</code> 按 <code>embedding_batch_size=100</code> 分批，线程池 <code>embedding_max_workers=4</code> 并发。</li>
+</ul>
+<p><strong>Milvus 集合 Schema</strong>（集合名默认 <code>public_kb</code>）</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">字段</th>
+<th style="text-align: left;">类型</th>
+<th style="text-align: left;">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>id</code></td>
+<td style="text-align: left;">INT64（auto）</td>
+<td style="text-align: left;">主键</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>text</code></td>
+<td style="text-align: left;">VARCHAR(65535)</td>
+<td style="text-align: left;">正文，chinese analyzer</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>vector</code></td>
+<td style="text-align: left;">FLOAT_VECTOR(1024)</td>
+<td style="text-align: left;">稠密向量，HNSW / COSINE</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>sparse_vector</code></td>
+<td style="text-align: left;">SPARSE_FLOAT_VECTOR</td>
+<td style="text-align: left;">由 BM25 Function <code>text_bm25_emb</code> <strong>服务端自动生成</strong></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>chunk_uid</code></td>
+<td style="text-align: left;">VARCHAR</td>
+<td style="text-align: left;"><code>ck-</code> + md5，引用溯源主键</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>doc_id</code> / <code>doc_name</code> / <code>doc_type</code></td>
+<td style="text-align: left;">VARCHAR</td>
+<td style="text-align: left;">来源标识</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>chapter</code> / <code>hierarchy_path</code></td>
+<td style="text-align: left;">VARCHAR</td>
+<td style="text-align: left;">章节与层级路径</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>chunk_index</code> / <code>parent_chunk_id</code></td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">序号与父块关联</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>chunk_type</code> / <code>sequence_in_parent</code></td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;">块类型与父块内序号</td>
+</tr>
+</tbody>
+</table>
+<p><strong>索引</strong>：稠密 HNSW（<code>M=16</code>、<code>efConstruction=128</code>、查询 <code>ef=64</code>）；稀疏 <code>SPARSE_INVERTED_INDEX</code>（DAAT_MAXSCORE，<code>k1=1.2</code>、<code>b=0.75</code>，中文）；另在 <code>chunk_uid</code> / <code>doc_type</code> / <code>parent_chunk_id</code> / <code>chunk_type</code> 建 INVERTED 索引。</p>
+<hr />
+<h2 id="3-在线检索链路">3. 在线检索链路</h2>
+<h3 id="3-1-候选漏斗与算法参数">3.1 候选漏斗与算法参数</h3>
+<figure><div class="fig"><svg viewBox="0 0 980 452" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="980" height="452" fill="#ffffff"/><text x="20.0" y="24.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#64748b">条形宽度 ∝ 候选条数　|　右侧为该阶段算法与参数</text><text x="20.0" y="76.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">Dense 检索</text><rect x="160.0" y="46" width="460.0" height="52" rx="6" fill="#2563eb" opacity="0.16"/><rect x="160.0" y="46" width="460.0" height="52" rx="6" fill="none" stroke="#2563eb" stroke-width="1.4"/><text x="390.0" y="77.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#2563eb">30 条</text><text x="650.0" y="76.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">HNSW · COSINE · ef=64 · limit=30</text><text x="20.0" y="142.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">Sparse 检索</text><rect x="160.0" y="112" width="460.0" height="52" rx="6" fill="#0f766e" opacity="0.16"/><rect x="160.0" y="112" width="460.0" height="52" rx="6" fill="none" stroke="#0f766e" stroke-width="1.4"/><text x="390.0" y="143.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#0f766e">30 条</text><text x="650.0" y="142.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">服务端 BM25 · k1=1.2, b=0.75 · limit=30</text><text x="20.0" y="208.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">RRF 融合</text><rect x="160.0" y="178" width="460.0" height="52" rx="6" fill="#7c3aed" opacity="0.16"/><rect x="160.0" y="178" width="460.0" height="52" rx="6" fill="none" stroke="#7c3aed" stroke-width="1.4"/><text x="390.0" y="209.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#7c3aed">30 条</text><text x="650.0" y="208.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">k=60 · group_by parent_chunk_id · group_size=2</text><text x="20.0" y="274.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">自适应阈值</text><rect x="183.0" y="244" width="414.0" height="52" rx="6" fill="#0891b2" opacity="0.16"/><rect x="183.0" y="244" width="414.0" height="52" rx="6" fill="none" stroke="#0891b2" stroke-width="1.4"/><text x="390.0" y="275.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#0891b2">27 条</text><text x="650.0" y="274.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">top1≥0.75→0.40；≥0.50→0.45；否则 0.50</text><text x="20.0" y="340.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">Rerank 精排</text><rect x="305.7" y="310" width="168.7" height="52" rx="6" fill="#ea580c" opacity="0.16"/><rect x="305.7" y="310" width="168.7" height="52" rx="6" fill="none" stroke="#ea580c" stroke-width="1.4"/><text x="390.0" y="341.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#ea580c">11 条</text><text x="650.0" y="340.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">bge-reranker-v2-m3 · top_n=11 · 30s / 重试 2</text><text x="20.0" y="406.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">父块装配去重</text><rect x="305.7" y="376" width="168.7" height="52" rx="6" fill="#16a34a" opacity="0.16"/><rect x="305.7" y="376" width="168.7" height="52" rx="6" fill="none" stroke="#16a34a" stroke-width="1.4"/><text x="390.0" y="407.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#16a34a">11 条</text><text x="650.0" y="406.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">context_text 回填 · parent_max_chars=6000</text><path d="M160 100 L390 109" stroke="#64748b" stroke-width="1.2" stroke-dasharray="3 3" fill="none"/><path d="M620 100 L390 109" stroke="#64748b" stroke-width="1.2" stroke-dasharray="3 3" fill="none"/><text x="390.0" y="111.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#64748b">两路并行 → 融合</text></svg></div><figcaption>图 2 · 检索候选漏斗：各阶段候选收敛与对应算法参数</figcaption></figure>
+<p>一次检索中候选规模的收敛过程与每段算法：</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">阶段</th>
+<th style="text-align: left;">候选数</th>
+<th style="text-align: left;">算法</th>
+<th style="text-align: left;">关键参数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Dense 检索</td>
+<td style="text-align: left;">30</td>
+<td style="text-align: left;">HNSW 近似最近邻（COSINE）</td>
+<td style="text-align: left;"><code>ef=64</code>；IVF_FLAT 时用 <code>nprobe=32</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Sparse 检索</td>
+<td style="text-align: left;">30</td>
+<td style="text-align: left;"><strong>Milvus 服务端 BM25</strong></td>
+<td style="text-align: left;"><code>k1=1.2</code>、<code>b=0.75</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">RRF 融合</td>
+<td style="text-align: left;">30</td>
+<td style="text-align: left;">倒数排序融合</td>
+<td style="text-align: left;"><code>k=60</code>，<code>group_by_field=parent_chunk_id</code>、<code>group_size=2</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">自适应阈值</td>
+<td style="text-align: left;">≤30</td>
+<td style="text-align: left;">分段常量阈值</td>
+<td style="text-align: left;">0.40 / 0.45 / 0.50</td>
+</tr>
+<tr>
+<td style="text-align: left;">Rerank 精排</td>
+<td style="text-align: left;">11</td>
+<td style="text-align: left;">Cross-Encoder</td>
+<td style="text-align: left;"><code>BAAI/bge-reranker-v2-m3</code>，timeout 30 s，重试 2 次</td>
+</tr>
+<tr>
+<td style="text-align: left;">父块装配</td>
+<td style="text-align: left;">≤11</td>
+<td style="text-align: left;">父块拼接</td>
+<td style="text-align: left;"><code>parent_max_chars=6000</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="3-2-稠密检索-Dense">3.2 稠密检索（Dense）</h3>
+<p>通过 pymilvus <code>AnnSearchRequest</code> 发起：<code>anns_field="vector"</code>，<code>metric_type=COSINE</code>，<code>params={"ef": 64}</code>，<code>limit=hybrid_dense_limit=30</code>。索引为 HNSW——在 1024 维、百万级以下规模下，HNSW 的召回率与延迟优于 IVF_FLAT，且无需训练。</p>
+<h3 id="3-3-稀疏检索-Sparse">3.3 稀疏检索（Sparse）</h3>
+<p><strong>关键设计</strong>：稀疏向量<strong>不在客户端计算</strong>，而是由 Milvus 服务端通过 <code>Function</code>（<code>text_bm25_emb</code>）<strong>自动生成</strong>。应用侧只需传原始问题文本：</p>
+<pre><code>AnnSearchRequest(data=[question 原文], anns_field=&quot;sparse_vector&quot;,
+                 param={&quot;metric_type&quot;: &quot;BM25&quot;, &quot;params&quot;: {}})
+</code></pre>
+<p><strong>BM25 算法</strong>：对查询 <code>q</code> 与文档 <code>d</code>，</p>
+<pre><code>score(q, d) = Σ IDF(ti) × [ f(ti, d) × (k1 + 1) ] / [ f(ti, d) + k1 × (1 − b + b × |d| / avgdl) ]
+IDF(ti)     = ln( 1 + (N − df(ti) + 0.5) / (df(ti) + 0.5) )
+</code></pre>
+<p>其中 <code>k1=1.2</code>（词频饱和度）、<code>b=0.75</code>（长度归一化强度）。中文场景依赖 analyzer 分词（chinese analyzer），擅长法规条号、专有名词、金额等<strong>字面精确匹配</strong>——这正是纯语义检索的短板。</p>
+<p><strong>收益</strong>：客户端零稀疏计算、无额外模型、无 IDF 词典维护成本。</p>
+<h3 id="3-4-RRF-融合">3.4 RRF 融合</h3>
+<p>稠密与稀疏两路结果用 <strong>Reciprocal Rank Fusion</strong> 融合，规避两路得分不可比的问题（COSINE 相似度与 BM25 分值量纲不同，直接加权需归一化标定）：</p>
+<pre><code>RRF_score(d) = Σ  1 / (k + rank_i(d))
+               i
+</code></pre>
+<p><code>k = rrf_k = 60</code>。融合在 Milvus 服务端完成（<code>RRFRanker(k=60)</code>），并支持 <code>group_by_field="parent_chunk_id"</code> + <code>group_size=2</code> 做同源聚合，避免同一父块的多个子块霸占前排。</p>
+<h3 id="3-5-自适应阈值">3.5 自适应阈值</h3>
+<p><code>retrieval/strategies.py::adaptive_threshold(top_score)</code> 采用<strong>分段常量</strong>策略（非均值/分位数，避免分布假设）：</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Top-1 得分</th>
+<th style="text-align: left;">阈值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">≥ 0.75</td>
+<td style="text-align: left;">0.40</td>
+</tr>
+<tr>
+<td style="text-align: left;">≥ 0.50</td>
+<td style="text-align: left;">0.45</td>
+</tr>
+<tr>
+<td style="text-align: left;">其他</td>
+<td style="text-align: left;">0.50</td>
+</tr>
+</tbody>
+</table>
+<p><strong>设计意图</strong>：当检索整体置信度高（top-1 很相关）时放宽阈值以纳入更多补充证据；当 top-1 本身就很弱时收紧阈值，宁可少给也不给噪声。降级路径统一使用 <code>similarity_threshold=0.45</code>。</p>
+<h3 id="3-6-Rerank-精排">3.6 Rerank 精排</h3>
+<p><code>retrieval/reranker.py::SiliconFlowReranker.rerank</code> → <code>POST {base_url}/rerank</code>：</p>
+<ul>
+<li>模型 <code>BAAI/bge-reranker-v2-m3</code>（Cross-Encoder，query 与 doc 拼接后整体编码，精度显著高于双塔向量）</li>
+<li><code>top_n = min(top_k, len(documents))</code>，<strong>一次请求送全部候选，无分批</strong></li>
+<li>timeout 30 s，<code>max_retries=2</code>，退避 <code>0.25 × 2^attempt</code></li>
+<li>可重试错误：ConnectionError / TimeoutError / 429 / 5xx</li>
+<li>取回条数 <code>_rerank_candidate_k()</code>：未分组 11；启用父块分组时 11 × 2 = 22</li>
+</ul>
+<p><strong>实测耗时</strong>（<code>docs/plan1/RAG 检索链路优化方案（修订版·可执行）.md</code>）：5 条 394 ms、10 条 394 ms、30 条 710 ms、60 条 1029 ms——固定开销约 390 ms，边际约 11 ms/条。这条曲线是"候选数不宜无限放大"的直接依据。</p>
+<h3 id="3-7-父块装配">3.7 父块装配</h3>
+<p><code>retrieval/parent_assembly.py</code>：子块命中后回填父块上下文，避免答案只看到被切断的片段。<code>parent_assembly=True</code>、<code>parent_max_chars=6000</code>。生成侧优先取 <code>metadata["context_text"]</code>（父块拼接结果）。</p>
+<h3 id="3-8-八级降级与容错">3.8 八级降级与容错</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">#</th>
+<th style="text-align: left;">触发条件</th>
+<th style="text-align: left;">行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">1</td>
+<td style="text-align: left;">无 collection / embeddings</td>
+<td style="text-align: left;">纯稠密检索</td>
+</tr>
+<tr>
+<td style="text-align: left;">2</td>
+<td style="text-align: left;">集合无 <code>sparse_vector</code> 字段</td>
+<td style="text-align: left;">纯稠密（<code>strict_hybrid_validation</code> 默认 false，不抛错）</td>
+</tr>
+<tr>
+<td style="text-align: left;">3</td>
+<td style="text-align: left;">hybrid_search 异常</td>
+<td style="text-align: left;">纯稠密，标记 <code>hybrid_error:*</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">4</td>
+<td style="text-align: left;">rerank 调用失败</td>
+<td style="text-align: left;">保留 RRF 序，标记 <code>reranker_failed</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">5</td>
+<td style="text-align: left;">rerank 成功但返回空</td>
+<td style="text-align: left;">标记 <code>reranker_empty</code>，回落 RRF 序</td>
+</tr>
+<tr>
+<td style="text-align: left;">6</td>
+<td style="text-align: left;">pymilvus 检索失败</td>
+<td style="text-align: left;">改用 <code>langchain_milvus</code> 实现</td>
+</tr>
+<tr>
+<td style="text-align: left;">7</td>
+<td style="text-align: left;">候选为空</td>
+<td style="text-align: left;"><code>RetrievalMode.REFUSAL</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">8</td>
+<td style="text-align: left;">生成侧 docs 为空</td>
+<td style="text-align: left;">拒答（不臆造）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>原则</strong>：任何单点故障都退化为"能力减弱"而非"服务不可用"；且<strong>只有健康结果才写入缓存</strong>，避免污染。</p>
+<hr />
+<h2 id="4-多跳召回-L0-L1-L2">4. 多跳召回 L0 / L1 / L2</h2>
+<p>同一问题涉及多个条款/多个来源时，单查询向量检索会漏召回。项目采用三层递进策略：</p>
+<figure><div class="fig"><svg viewBox="0 0 980 330" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="980" height="330" fill="#ffffff"/><rect x="20" y="44" width="940" height="78" rx="8" fill="#f8fafc" stroke="#cbd5e1"/><rect x="20" y="44" width="5" height="78" rx="2.5" fill="#0f766e"/><circle cx="62" cy="83.0" r="19" fill="#0f766e" opacity="0.14"/><text x="62.0" y="88.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700" fill="#0f766e">L0</text><text x="96.0" y="70.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700" fill="#1e293b">检索窗口放宽</text><text x="96.0" y="89.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">top_k 5 → 11</text><text x="96.0" y="108.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">配置变更，已落地，无独立开关</text><text x="940.0" y="74.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">0 次额外 LLM</text><text x="940.0" y="96.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#16a34a">双段全中 0.3714 → 0.4286</text><rect x="20" y="136" width="940" height="78" rx="8" fill="#f8fafc" stroke="#cbd5e1"/><rect x="20" y="136" width="5" height="78" rx="2.5" fill="#2563eb"/><circle cx="62" cy="175.0" r="19" fill="#2563eb" opacity="0.14"/><text x="62.0" y="180.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700" fill="#2563eb">L1</text><text x="96.0" y="162.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700" fill="#1e293b">统一轻量补检</text><text x="96.0" y="181.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">子句拆分并行检索取并集</text><text x="96.0" y="200.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">kb_search_expanded · kb_light_decompose 默认 True</text><text x="940.0" y="166.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#2563eb">0 次额外 LLM</text><text x="940.0" y="188.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#16a34a">双段全中 0.4429 → 0.6000</text><rect x="20" y="228" width="940" height="78" rx="8" fill="#f8fafc" stroke="#cbd5e1"/><rect x="20" y="228" width="5" height="78" rx="2.5" fill="#dc2626"/><circle cx="62" cy="267.0" r="19" fill="#dc2626" opacity="0.14"/><text x="62.0" y="272.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700" fill="#dc2626">L2</text><text x="96.0" y="254.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700" fill="#1e293b">Plan-and-Execute</text><text x="96.0" y="273.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">PLAN → EXECUTE → REPLAN</text><text x="96.0" y="292.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">deep_agent · 默认关闭，需显式开启</text><text x="940.0" y="258.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#dc2626">3 次 LLM / 题 · 15.8 s</text><text x="940.0" y="280.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#16a34a">双段全中 0.5143（35 条多跳）</text><text x="20.0" y="26.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#64748b">同一问题涉及多个条款 / 多个来源时的三层递进策略</text></svg></div><figcaption>图 3 · 多跳召回三层策略 L0 / L1 / L2</figcaption></figure>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">层</th>
+<th style="text-align: left;">策略</th>
+<th style="text-align: left;">实现</th>
+<th style="text-align: left;">开关</th>
+<th style="text-align: left;">成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>L0</strong></td>
+<td style="text-align: left;">检索窗口放宽（top_k 5 → 11）</td>
+<td style="text-align: left;">配置变更，已落地</td>
+<td style="text-align: left;">无（默认生效）</td>
+<td style="text-align: left;">0 额外 LLM</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>L1</strong></td>
+<td style="text-align: left;">统一轻量补检（子句拆分并行检索）</td>
+<td style="text-align: left;"><code>public_kb/tools.py::kb_search_expanded</code></td>
+<td style="text-align: left;"><code>kb_light_decompose</code>（默认 <strong>True</strong>）</td>
+<td style="text-align: left;">0 额外 LLM</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>L2</strong></td>
+<td style="text-align: left;">Plan-and-Execute 深度推理</td>
+<td style="text-align: left;"><code>agent/nodes/deep_agent.py</code></td>
+<td style="text-align: left;"><code>CAPABILITY_ENABLED=deep_agent</code>（默认关）</td>
+<td style="text-align: left;">3 次 LLM / 题</td>
+</tr>
+</tbody>
+</table>
+<p><strong>L1 算法</strong>：基线检索取 top-11 → <code>_split_clauses</code> 按标点切子句（<code>min_len=8</code>）→ 每个子句再检索取 <code>sub_top_k=5</code> → 与基线取并集 → 去空白重 → 按 score 降序追加 → 封顶 <code>max_chunks=20</code>。</p>
+<p><strong>L2 流程</strong>：PLAN（拆解子问题）→ EXECUTE（并行执行）→ REPLAN（判断是否需要补检索）。<code>deep_agent_max_exec_rounds=2</code>、<code>deep_agent_replan_enabled=True</code>。</p>
+<blockquote>
+<p><strong>边界澄清</strong>：本项目检索链路<strong>没有 HyDE，也没有 LLM 查询改写</strong>。<code>agent/nodes/rewrite.py</code> 是<strong>多轮追问的指代消解</strong>，发生在检索之前、用于理解用户意图，不属于检索内改写。</p>
+</blockquote>
+<hr />
+<h2 id="5-生成链路">5. 生成链路</h2>
+<h3 id="5-1-上下文组织">5.1 上下文组织</h3>
+<p><code>rendering/context.py::format_docs</code>：</p>
+<ul>
+<li>块编号格式为 <strong><code>【来源{i}】</code></strong>（i 从 1 起），与引用标记一一对应</li>
+<li>每块附带<strong>文档名 + 章节路径 + 相关度百分比</strong>，便于模型判断可信度</li>
+<li>优先取 <code>metadata["context_text"]</code>（父块拼接），否则退回 <code>page_content</code></li>
+<li><strong>不做截断</strong>，仅在超过 <code>context_warn_chars=20000</code> 时告警</li>
+<li><code>build_sources</code> 中的 snippet 截断 200 字符</li>
+</ul>
+<h3 id="5-2-Prompt-约束">5.2 Prompt 约束</h3>
+<p>模板唯一来源 <code>rendering/prompts.py::build_prompt</code>：</p>
+<ul>
+<li><strong>System</strong>：<code>Settings.system_prompt</code>——"招投标领域专业顾问……严格依据参考资料，不添加资料外信息；资料不足请明确告知无法回答"</li>
+<li><strong>内联引用指令</strong>：<code>INLINE_CITATION_INSTRUCTION</code>——结论句末标注 <code>【来源N】</code>，未使用的来源不标</li>
+<li><strong>重试模板</strong>：<code>agent/nodes/knowledge_qa/prompts.py::RETRY_USER_TEMPLATE</code>，在护栏不通过时追加 <code>{feedback}</code> 重生成</li>
+</ul>
+<h3 id="5-3-子图编排与流式">5.3 子图编排与流式</h3>
+<p><code>agent/nodes/knowledge_qa/subgraph.py::build_knowledge_qa_subgraph</code>：</p>
+<pre><code>retrieve → _route_after_retrieve → generate → guardrail → _route_after_guardrail
+</code></pre>
+<ul>
+<li><code>_route_after_retrieve</code>：aborted → END；error → <code>refuse_error</code>；chunks 空 → <code>refuse</code>；否则 → <code>generate</code></li>
+<li><code>_route_after_guardrail</code>：终态已写 → END；否则回 <code>generate</code>，<strong>总生成次数 ≤ 2</strong>（<code>kb_guardrail_retry=True</code>，<code>KB_MAX_ATTEMPTS=2</code>）</li>
+<li>与引擎的衔接：<code>_retrieve_node</code> 直接调 <code>public_kb.tools.kb_search_expanded</code> / <code>kb_search</code>，<strong>不经</strong> <code>PublicKnowledgeRAG.query</code></li>
+<li>LLM 槽位 <code>kb_generation</code>，使用 <code>.stream</code> + <code>emit_token</code> 实现打字机效果</li>
+</ul>
+<p><strong>输出契约</strong>（<code>contracts.validate_qa_result</code> 校验前四项必填）：<code>answer</code> / <code>sources</code> / <code>citations</code> / <code>citation_validation</code> / <code>retrieval_diagnostics</code></p>
+<hr />
+<h2 id="6-引用溯源护栏-R1-R7">6. 引用溯源护栏 R1~R7</h2>
+<p>护栏位于 <code>public_kb/guardrails/</code>（<code>citations_models.py</code> / <code>citations_build.py</code> / <code>citations_validate.py</code>），采用 <strong>fail-soft</strong>（不通过不抛异常，记录规则后交由上层决定是否重生成）。</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">规则</th>
+<th style="text-align: left;">内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">R1</td>
+<td style="text-align: left;"><code>chunk_id</code> 非空</td>
+</tr>
+<tr>
+<td style="text-align: left;">R2</td>
+<td style="text-align: left;"><code>chunk_uid</code> 非空</td>
+</tr>
+<tr>
+<td style="text-align: left;">R3</td>
+<td style="text-align: left;"><code>doc_name</code> / <code>chapter</code> 非空且非占位符</td>
+</tr>
+<tr>
+<td style="text-align: left;">R4</td>
+<td style="text-align: left;"><code>text</code> 非空</td>
+</tr>
+<tr>
+<td style="text-align: left;">R5</td>
+<td style="text-align: left;">上下文 chunk 与 citations <strong>双向一致</strong>（无遗漏、无凭空引用）</td>
+</tr>
+<tr>
+<td style="text-align: left;">R6</td>
+<td style="text-align: left;">回答中的 <code>【来源N】</code> 标记全部可解析</td>
+</tr>
+<tr>
+<td style="text-align: left;">R7</td>
+<td style="text-align: left;">严格模式：上下文全部被引用（开关 <code>enforce_all_context_cited</code>，<strong>默认 False</strong>）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>chunk_uid 生成</strong>（<code>core/contracts/chunk_ids.py::compute_chunk_uid</code>）：</p>
+<pre><code>chunk_uid = &quot;ck-&quot; + md5( doc_name | chapter | chunk_index | md5(normalize(text))[:16] )
+</code></pre>
+<p><code>normalize</code> 统一换行并 strip——保证同一内容重复入库时 uid 稳定，是可追溯的前提。</p>
+<p><strong>Citation 字段</strong>：<code>context_index</code>（从 1 起）、<code>chunk_id</code>、<code>chunk_uid</code>、<code>doc_name</code>、<code>chapter</code>、<code>chunk_index</code>、<code>text</code>、<code>score</code>、<code>metadata</code>。</p>
+<hr />
+<h2 id="7-算法总表">7. 算法总表</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">算法</th>
+<th style="text-align: left;">类别</th>
+<th style="text-align: left;">在链路中的作用</th>
+<th style="text-align: left;">关键参数</th>
+<th style="text-align: left;">位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">页面画像 + 规则分类</td>
+<td style="text-align: left;">规则 / 启发式</td>
+<td style="text-align: left;">PDF 解析分档，控制成本</td>
+<td style="text-align: left;"><code>text_chars&lt;80</code>、<code>img_ratio&gt;0.35</code>、置信度≥0.80</td>
+<td style="text-align: left;"><code>pdf_page_profile.py</code> / <code>pdf_legal_page_classifier.py</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">双栏切分置信度</td>
+<td style="text-align: left;">启发式评分</td>
+<td style="text-align: left;">判定是否双栏及可信度</td>
+<td style="text-align: left;"><code>0.55+0.4×balance</code></td>
+<td style="text-align: left;">同上</td>
+</tr>
+<tr>
+<td style="text-align: left;">标题栈切分</td>
+<td style="text-align: left;">结构感知分块</td>
+<td style="text-align: left;">保持法规条款完整性</td>
+<td style="text-align: left;">law 700 / compilation 700 / qa 900 / book 1000</td>
+<td style="text-align: left;"><code>typed_chunker.py::HeadingSplitter</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">超限时降级切分</td>
+<td style="text-align: left;">分块</td>
+<td style="text-align: left;">处理超长段落</td>
+<td style="text-align: left;">次级标题 → 段落 → 句子</td>
+<td style="text-align: left;"><code>OversizeSplitter</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">表格原子块</td>
+<td style="text-align: left;">结构保护</td>
+<td style="text-align: left;">表格不被打散</td>
+<td style="text-align: left;"><code>pdf_min_table_rows=2</code></td>
+<td style="text-align: left;"><code>pdf_structure.py</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">BGE-M3 Embedding</td>
+<td style="text-align: left;">稠密向量</td>
+<td style="text-align: left;">语义表示</td>
+<td style="text-align: left;">1024 维，batch 100，workers 4</td>
+<td style="text-align: left;"><code>core/embeddings/bge_m3.py</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">HNSW</td>
+<td style="text-align: left;">ANN 索引</td>
+<td style="text-align: left;">稠密检索</td>
+<td style="text-align: left;"><code>M=16</code>、<code>efConstruction=128</code>、<code>ef=64</code></td>
+<td style="text-align: left;">Milvus</td>
+</tr>
+<tr>
+<td style="text-align: left;">BM25（服务端）</td>
+<td style="text-align: left;">稀疏检索</td>
+<td style="text-align: left;">关键词精确匹配</td>
+<td style="text-align: left;"><code>k1=1.2</code>、<code>b=0.75</code></td>
+<td style="text-align: left;">Milvus Function <code>text_bm25_emb</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">RRF</td>
+<td style="text-align: left;">结果融合</td>
+<td style="text-align: left;">稠密 + 稀疏融合</td>
+<td style="text-align: left;"><code>k=60</code></td>
+<td style="text-align: left;"><code>RRFRanker</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">自适应阈值</td>
+<td style="text-align: left;">过滤</td>
+<td style="text-align: left;">控制噪声</td>
+<td style="text-align: left;">0.40 / 0.45 / 0.50</td>
+<td style="text-align: left;"><code>strategies.py::adaptive_threshold</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Cross-Encoder Rerank</td>
+<td style="text-align: left;">精排</td>
+<td style="text-align: left;">提升 top-k 精度</td>
+<td style="text-align: left;"><code>bge-reranker-v2-m3</code>，top_n=11</td>
+<td style="text-align: left;"><code>reranker.py</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">父块装配</td>
+<td style="text-align: left;">上下文补全</td>
+<td style="text-align: left;">避免片段断裂</td>
+<td style="text-align: left;"><code>parent_max_chars=6000</code></td>
+<td style="text-align: left;"><code>parent_assembly.py</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">子句拆分补检（L1）</td>
+<td style="text-align: left;">查询扩展</td>
+<td style="text-align: left;">多跳召回</td>
+<td style="text-align: left;"><code>min_len=8</code>、<code>sub_top_k=5</code>、<code>max_chunks=20</code></td>
+<td style="text-align: left;"><code>tools.py::kb_search_expanded</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Plan-and-Execute（L2）</td>
+<td style="text-align: left;">Agent 推理</td>
+<td style="text-align: left;">复杂多跳</td>
+<td style="text-align: left;"><code>max_exec_rounds=2</code></td>
+<td style="text-align: left;"><code>deep_agent.py</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">chunk_uid 摘要</td>
+<td style="text-align: left;">溯源</td>
+<td style="text-align: left;">引用唯一标识</td>
+<td style="text-align: left;">md5 复合摘要</td>
+<td style="text-align: left;"><code>core/contracts/chunk_ids.py</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">R1~R7 校验</td>
+<td style="text-align: left;">护栏</td>
+<td style="text-align: left;">引用真实性</td>
+<td style="text-align: left;">fail-soft</td>
+<td style="text-align: left;"><code>guardrails/citations_validate.py</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="8-实测数据与指标走势">8. 实测数据与指标走势</h2>
+<h3 id="8-1-检索层-holdout-200-条-top_k-11">8.1 检索层（holdout 200 条，top_k=11）</h3>
+<p>来源：<code>test_report/retrieval_layer_gate_20260910_224225.json</code></p>
+<figure><div class="fig"><svg viewBox="0 0 980 330" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="980" height="330" fill="#ffffff"/><g transform="translate(30,44)"><text x="460.0" y="-8.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">检索层指标走势（multi_hop 子集；前两点为 35 条多跳子集，后两点为 200 条 holdout 的 multi 子集）</text><line x1="58" y1="212.0" x2="906" y2="212.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="215.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.3</text><line x1="58" y1="170.0" x2="906" y2="170.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="173.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.45</text><line x1="58" y1="128.0" x2="906" y2="128.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="131.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.6</text><line x1="58" y1="86.0" x2="906" y2="86.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="89.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.75</text><line x1="58" y1="44.0" x2="906" y2="44.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="47.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.9</text><line x1="58" y1="16.0" x2="906" y2="16.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="19.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">1</text><text x="58.0" y="230.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">基线 top-5</text><text x="340.7" y="230.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">L0 · top-11</text><text x="623.3" y="230.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">L1 前（holdout）</text><text x="906.0" y="230.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">L1 后（holdout）</text><polyline points="58.0,192.0 340.7,176.0 623.3,172.0 906.0,128.0" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-linejoin="round"/><circle cx="58.0" cy="192.0" r="3.6" fill="#fff" stroke="#dc2626" stroke-width="2"/><text x="58.0" y="183.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">0.3714</text><circle cx="340.7" cy="176.0" r="3.6" fill="#fff" stroke="#dc2626" stroke-width="2"/><text x="340.7" y="167.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">0.4286</text><circle cx="623.3" cy="172.0" r="3.6" fill="#fff" stroke="#dc2626" stroke-width="2"/><text x="623.3" y="163.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">0.4429</text><circle cx="906.0" cy="128.0" r="3.6" fill="#fff" stroke="#dc2626" stroke-width="2"/><text x="906.0" y="119.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">0.6</text><polyline points="58.0,108.0 340.7,100.0 623.3,102.0 906.0,76.0" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linejoin="round"/><circle cx="58.0" cy="108.0" r="3.6" fill="#fff" stroke="#2563eb" stroke-width="2"/><text x="58.0" y="99.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.6714</text><circle cx="340.7" cy="100.0" r="3.6" fill="#fff" stroke="#2563eb" stroke-width="2"/><text x="340.7" y="91.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.7</text><circle cx="623.3" cy="102.0" r="3.6" fill="#fff" stroke="#2563eb" stroke-width="2"/><text x="623.3" y="93.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.6929</text><circle cx="906.0" cy="76.0" r="3.6" fill="#fff" stroke="#2563eb" stroke-width="2"/><text x="906.0" y="67.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.7857</text><polyline points="58.0,27.2 340.7,27.2 623.3,34.2 906.0,28.6" fill="none" stroke="#0f766e" stroke-width="2.2" stroke-linejoin="round"/><circle cx="58.0" cy="27.2" r="3.6" fill="#fff" stroke="#0f766e" stroke-width="2"/><text x="58.0" y="18.2" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#0f766e">0.96</text><circle cx="340.7" cy="27.2" r="3.6" fill="#fff" stroke="#0f766e" stroke-width="2"/><text x="340.7" y="18.2" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#0f766e">0.96</text><circle cx="623.3" cy="34.2" r="3.6" fill="#fff" stroke="#0f766e" stroke-width="2"/><text x="623.3" y="25.2" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#0f766e">0.935</text><circle cx="906.0" cy="28.6" r="3.6" fill="#fff" stroke="#0f766e" stroke-width="2"/><text x="906.0" y="19.6" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#0f766e">0.955</text><rect x="58" y="230" width="11" height="4" rx="2" fill="#dc2626"/><text x="74.0" y="235.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">multi_hop 双段全中率</text><rect x="184.7375" y="230" width="11" height="4" rx="2" fill="#2563eb"/><text x="200.7" y="235.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">multi_hop recall</text><rect x="294.51750000000004" y="230" width="11" height="4" rx="2" fill="#0f766e"/><text x="310.5" y="235.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">hit_rate（全量）</text></g></svg></div><figcaption>图 4 · 检索层指标走势（multi_hop 子集）</figcaption></figure>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">口径</th>
+<th style="text-align: left;">指标</th>
+<th style="text-align: left;">L0</th>
+<th style="text-align: left;">L1</th>
+<th style="text-align: left;">Δ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">multi</td>
+<td style="text-align: left;">双段全中率</td>
+<td style="text-align: left;">0.4429</td>
+<td style="text-align: left;"><strong>0.6000</strong></td>
+<td style="text-align: left;">+0.1571</td>
+</tr>
+<tr>
+<td style="text-align: left;">multi</td>
+<td style="text-align: left;">recall</td>
+<td style="text-align: left;">0.6929</td>
+<td style="text-align: left;"><strong>0.7857</strong></td>
+<td style="text-align: left;">+0.0928</td>
+</tr>
+<tr>
+<td style="text-align: left;">multi</td>
+<td style="text-align: left;">hit_rate</td>
+<td style="text-align: left;">0.9429</td>
+<td style="text-align: left;"><strong>0.9714</strong></td>
+<td style="text-align: left;">+0.0285</td>
+</tr>
+<tr>
+<td style="text-align: left;">multi</td>
+<td style="text-align: left;">mrr</td>
+<td style="text-align: left;">0.8390</td>
+<td style="text-align: left;">0.8413</td>
+<td style="text-align: left;">+0.0023</td>
+</tr>
+<tr>
+<td style="text-align: left;">single</td>
+<td style="text-align: left;">recall / hit_rate</td>
+<td style="text-align: left;">0.9308</td>
+<td style="text-align: left;"><strong>0.9462</strong></td>
+<td style="text-align: left;">+0.0154</td>
+</tr>
+<tr>
+<td style="text-align: left;">single</td>
+<td style="text-align: left;">mrr</td>
+<td style="text-align: left;">0.8442</td>
+<td style="text-align: left;">0.8417</td>
+<td style="text-align: left;">−0.0025</td>
+</tr>
+<tr>
+<td style="text-align: left;">all</td>
+<td style="text-align: left;">hit_rate / recall</td>
+<td style="text-align: left;">0.935 / 0.8074</td>
+<td style="text-align: left;"><strong>0.955 / 0.863</strong></td>
+<td style="text-align: left;">—</td>
+</tr>
+</tbody>
+</table>
+<h3 id="8-2-RAGAS-dev_100-judge-qwen3-8-flash">8.2 RAGAS（dev_100，judge = qwen3.8-flash）</h3>
+<p>来源：<code>test_report/ragas_s1_20260910_144219/summary.json</code></p>
+<figure><div class="fig"><svg viewBox="0 0 980 330" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="980" height="330" fill="#ffffff"/><text x="490.0" y="22.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#1e293b">RAGAS 指标：L0 基线 vs L1 补检（dev_100，judge = qwen3.8-flash）</text><text x="490.0" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#94a3b8">注：y 轴起点 0.60（非 0），用于放大差异；context_precision 仅有 n=2 试跑，未纳入</text><line x1="62" y1="274.0" x2="960" y2="274.0" stroke="#eef2f7" stroke-width="1"/><text x="54.0" y="277.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.6</text><line x1="62" y1="208.3" x2="960" y2="208.3" stroke="#eef2f7" stroke-width="1"/><text x="54.0" y="211.8" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.7</text><line x1="62" y1="142.6" x2="960" y2="142.6" stroke="#eef2f7" stroke-width="1"/><text x="54.0" y="146.1" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.8</text><line x1="62" y1="76.9" x2="960" y2="76.9" stroke="#eef2f7" stroke-width="1"/><text x="54.0" y="80.4" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.9</text><line x1="62" y1="44.0" x2="960" y2="44.0" stroke="#eef2f7" stroke-width="1"/><text x="54.0" y="47.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.95</text><rect x="165.7" y="137.8" width="40.0" height="136.2" rx="4" fill="#94a3b8" opacity="0.85"/><text x="185.7" y="131.8" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#94a3b8">0.8073</text><rect x="211.7" y="86.1" width="40.0" height="187.9" rx="4" fill="#2563eb" opacity="0.85"/><text x="231.7" y="80.1" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.8860</text><text x="211.7" y="294.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">faithfulness</text><rect x="465.0" y="184.5" width="40.0" height="89.5" rx="4" fill="#94a3b8" opacity="0.85"/><text x="485.0" y="178.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#94a3b8">0.7362</text><rect x="511.0" y="163.7" width="40.0" height="110.3" rx="4" fill="#2563eb" opacity="0.85"/><text x="531.0" y="157.7" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.7679</text><text x="511.0" y="294.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">answer_relevancy</text><rect x="764.3" y="102.9" width="40.0" height="171.1" rx="4" fill="#94a3b8" opacity="0.85"/><text x="784.3" y="96.9" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#94a3b8">0.8603</text><rect x="810.3" y="85.9" width="40.0" height="188.1" rx="4" fill="#2563eb" opacity="0.85"/><text x="830.3" y="79.9" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.8862</text><text x="810.3" y="294.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">context_recall</text><rect x="62" y="294" width="12" height="4" rx="2" fill="#94a3b8"/><text x="79.0" y="299.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">L0</text><rect x="103.0" y="294" width="12" height="4" rx="2" fill="#2563eb"/><text x="120.0" y="299.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">L1</text></svg></div><figcaption>图 5 · RAGAS 指标 L0 vs L1</figcaption></figure>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">指标</th>
+<th style="text-align: left;">L0</th>
+<th style="text-align: left;">L1</th>
+<th style="text-align: left;">Δ</th>
+<th style="text-align: left;">变差 / 不变 / 变好</th>
+<th style="text-align: left;">配对 n</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">faithfulness</td>
+<td style="text-align: left;">0.8073</td>
+<td style="text-align: left;"><strong>0.8860</strong></td>
+<td style="text-align: left;">+0.0550</td>
+<td style="text-align: left;">6 / 17 / 11</td>
+<td style="text-align: left;">34</td>
+</tr>
+<tr>
+<td style="text-align: left;">answer_relevancy</td>
+<td style="text-align: left;">0.7362</td>
+<td style="text-align: left;"><strong>0.7679</strong></td>
+<td style="text-align: left;">+0.0317</td>
+<td style="text-align: left;">44 / 12 / 44</td>
+<td style="text-align: left;">100</td>
+</tr>
+<tr>
+<td style="text-align: left;">context_recall</td>
+<td style="text-align: left;">0.8603</td>
+<td style="text-align: left;"><strong>0.8862</strong></td>
+<td style="text-align: left;">+0.0258</td>
+<td style="text-align: left;">3 / 86 / 11</td>
+<td style="text-align: left;">100</td>
+</tr>
+</tbody>
+</table>
+<p>按 <code>query_type</code> 分桶：</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">类型</th>
+<th style="text-align: left;">n</th>
+<th style="text-align: left;">faithfulness</th>
+<th style="text-align: left;">answer_relevancy</th>
+<th style="text-align: left;">context_recall</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">multi_hop</td>
+<td style="text-align: left;">35</td>
+<td style="text-align: left;">0.8462 → <strong>0.9544</strong></td>
+<td style="text-align: left;">0.6206 → 0.6215</td>
+<td style="text-align: left;">0.7452 → 0.7814</td>
+</tr>
+<tr>
+<td style="text-align: left;">single_hop</td>
+<td style="text-align: left;">65</td>
+<td style="text-align: left;">0.7958 → <strong>0.8599</strong></td>
+<td style="text-align: left;">0.7985 → 0.8468</td>
+<td style="text-align: left;">0.9223 → 0.9426</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>multi_hop 的 faithfulness 提升最显著（+0.108），说明 L1 补检确实把"漏掉的第二段证据"找回来了；而 answer_relevancy 几乎不动——召回变全了，但答案的表述相关性仍受生成侧约束。</p>
+</blockquote>
+<h3 id="8-3-策略-A-B-对比-同一批-35-条多跳">8.3 策略 A/B 对比（同一批 35 条多跳）</h3>
+<p>来源：<code>docs/plan1/评测与可观测性/评测与可观测性执行计划.md</code></p>
+<figure><div class="fig"><svg viewBox="0 0 980 340" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="980" height="340" fill="#ffffff"/><text x="490.0" y="22.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#1e293b">多跳策略 A/B 对比（同一批 35 条多跳题）</text><text x="490.0" y="330.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#94a3b8">耗时：基线 ~2s / L0 ~2s / L1 ~3s / L2 15.8s　·　L2 需 3 次 LLM（默认关闭）</text><line x1="62" y1="284.0" x2="960" y2="284.0" stroke="#eef2f7" stroke-width="1"/><text x="54.0" y="287.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.3</text><line x1="62" y1="224.0" x2="960" y2="224.0" stroke="#eef2f7" stroke-width="1"/><text x="54.0" y="227.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.45</text><line x1="62" y1="164.0" x2="960" y2="164.0" stroke="#eef2f7" stroke-width="1"/><text x="54.0" y="167.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.6</text><line x1="62" y1="104.0" x2="960" y2="104.0" stroke="#eef2f7" stroke-width="1"/><text x="54.0" y="107.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.75</text><line x1="62" y1="44.0" x2="960" y2="44.0" stroke="#eef2f7" stroke-width="1"/><text x="54.0" y="47.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.9</text><rect x="105.2" y="135.4" width="40.0" height="148.6" rx="4" fill="#2563eb" opacity="0.85"/><text x="125.2" y="129.4" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.6714</text><rect x="151.2" y="255.4" width="40.0" height="28.6" rx="4" fill="#dc2626" opacity="0.85"/><text x="171.2" y="249.4" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">0.3714</text><rect x="197.2" y="63.0" width="40.0" height="221.0" rx="4" fill="#0f766e" opacity="0.85"/><text x="217.2" y="57.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#0f766e">0.8524</text><text x="174.2" y="304.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">基线 top-5</text><rect x="329.8" y="124.0" width="40.0" height="160.0" rx="4" fill="#2563eb" opacity="0.85"/><text x="349.8" y="118.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.7000</text><rect x="375.8" y="232.6" width="40.0" height="51.4" rx="4" fill="#dc2626" opacity="0.85"/><text x="395.8" y="226.6" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">0.4286</text><rect x="421.8" y="63.0" width="40.0" height="221.0" rx="4" fill="#0f766e" opacity="0.85"/><text x="441.8" y="57.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#0f766e">0.8524</text><text x="398.8" y="304.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">L0 top-11</text><rect x="554.2" y="141.2" width="40.0" height="142.8" rx="4" fill="#2563eb" opacity="0.85"/><text x="574.2" y="135.2" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.6571</text><rect x="600.2" y="232.6" width="40.0" height="51.4" rx="4" fill="#dc2626" opacity="0.85"/><text x="620.2" y="226.6" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">0.4286</text><rect x="646.2" y="147.8" width="40.0" height="136.2" rx="4" fill="#0f766e" opacity="0.85"/><text x="666.2" y="141.8" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#0f766e">0.6406</text><text x="623.2" y="304.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">L1 子句拆分</text><rect x="778.8" y="106.8" width="40.0" height="177.2" rx="4" fill="#2563eb" opacity="0.85"/><text x="798.8" y="100.8" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.7429</text><rect x="824.8" y="198.3" width="40.0" height="85.7" rx="4" fill="#dc2626" opacity="0.85"/><text x="844.8" y="192.3" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">0.5143</text><rect x="870.8" y="97.6" width="40.0" height="186.4" rx="4" fill="#0f766e" opacity="0.85"/><text x="890.8" y="91.6" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#0f766e">0.7660</text><text x="847.8" y="304.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#1e293b">L2 deep_agent</text><rect x="62" y="304" width="12" height="4" rx="2" fill="#2563eb"/><text x="79.0" y="309.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">recall</text><rect x="125.0" y="304" width="12" height="4" rx="2" fill="#dc2626"/><text x="142.0" y="309.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">双段全中</text><rect x="195.0" y="304" width="12" height="4" rx="2" fill="#0f766e"/><text x="212.0" y="309.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">MRR</text></svg></div><figcaption>图 6 · 多跳策略 A/B 对比</figcaption></figure>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">方案</th>
+<th style="text-align: left;">recall</th>
+<th style="text-align: left;">双段全中</th>
+<th style="text-align: left;">MRR</th>
+<th style="text-align: left;">LLM/题</th>
+<th style="text-align: left;">耗时/题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">单查询 top-5（基线）</td>
+<td style="text-align: left;">0.6714</td>
+<td style="text-align: left;">0.3714</td>
+<td style="text-align: left;">0.8524</td>
+<td style="text-align: left;">~1</td>
+<td style="text-align: left;">~2 s</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>retrieval_top_k</code> 5 → 11（L0）</td>
+<td style="text-align: left;">0.7000</td>
+<td style="text-align: left;">0.4286</td>
+<td style="text-align: left;">0.8524</td>
+<td style="text-align: left;">~1</td>
+<td style="text-align: left;">~2 s</td>
+</tr>
+<tr>
+<td style="text-align: left;">确定性子句拆分（L1）</td>
+<td style="text-align: left;">0.6571</td>
+<td style="text-align: left;">0.4286</td>
+<td style="text-align: left;">0.6406</td>
+<td style="text-align: left;">~1</td>
+<td style="text-align: left;">~3 s</td>
+</tr>
+<tr>
+<td style="text-align: left;">deep_agent 全链路（L2）</td>
+<td style="text-align: left;"><strong>0.7429</strong></td>
+<td style="text-align: left;"><strong>0.5143</strong></td>
+<td style="text-align: left;">0.7660</td>
+<td style="text-align: left;">3</td>
+<td style="text-align: left;">15.8 s</td>
+</tr>
+</tbody>
+</table>
+<p><strong>结论</strong>：L0 是性价比最优解（0 成本换 +0.057 双段全中）；L2 效果最好但成本是 L0 的 8 倍——这解释了为什么 L2 默认关闭。</p>
+<h3 id="8-4-引用率与性能">8.4 引用率与性能</h3>
+<figure><div class="fig"><svg viewBox="0 0 980 340" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="980" height="340" fill="#ffffff"/><line x1="490.0" y1="20" x2="490.0" y2="320" stroke="#cbd5e1" stroke-width="1"/><g transform="translate(16,44)"><text x="229.0" y="-8.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">引用率走势（agent_trace 实测）</text><line x1="58" y1="222.0" x2="444.0" y2="222.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="225.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0</text><line x1="58" y1="170.5" x2="444.0" y2="170.5" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="174.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.25</text><line x1="58" y1="119.0" x2="444.0" y2="119.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="122.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.5</text><line x1="58" y1="67.5" x2="444.0" y2="67.5" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="71.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0.75</text><line x1="58" y1="16.0" x2="444.0" y2="16.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="19.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">1</text><text x="58.0" y="240.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">09-13 22:32</text><text x="154.5" y="240.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">09-13 22:33</text><text x="251.0" y="240.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">09-16 20:26</text><text x="347.5" y="240.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">09-16 20:30</text><text x="444.0" y="240.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">09-16 21:09</text><polyline points="58.0,222.0 154.5,141.1 251.0,22.4 347.5,35.3 444.0,28.9" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linejoin="round"/><circle cx="58.0" cy="222.0" r="3.6" fill="#fff" stroke="#2563eb" stroke-width="2"/><text x="58.0" y="213.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0</text><circle cx="154.5" cy="141.1" r="3.6" fill="#fff" stroke="#2563eb" stroke-width="2"/><text x="154.5" y="132.1" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.3929</text><circle cx="251.0" cy="22.4" r="3.6" fill="#fff" stroke="#2563eb" stroke-width="2"/><text x="251.0" y="13.4" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.9688</text><circle cx="347.5" cy="35.3" r="3.6" fill="#fff" stroke="#2563eb" stroke-width="2"/><text x="347.5" y="26.3" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.9062</text><circle cx="444.0" cy="28.9" r="3.6" fill="#fff" stroke="#2563eb" stroke-width="2"/><text x="444.0" y="19.9" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">0.9375</text><rect x="58" y="240" width="11" height="4" rx="2" fill="#2563eb"/><text x="74.0" y="245.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">citation.rate</text></g><g transform="translate(506.0,44)"><text x="229.0" y="-8.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#1e293b">Rerank 耗时 vs 候选数（固定开销 ≈390 ms）</text><line x1="58" y1="222.0" x2="444.0" y2="222.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="225.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">0</text><line x1="58" y1="170.5" x2="444.0" y2="170.5" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="174.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">300</text><line x1="58" y1="119.0" x2="444.0" y2="119.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="122.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">600</text><line x1="58" y1="67.5" x2="444.0" y2="67.5" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="71.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">900</text><line x1="58" y1="16.0" x2="444.0" y2="16.0" stroke="#eef2f7" stroke-width="1"/><text x="50.0" y="19.5" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#94a3b8">1200</text><text x="58.0" y="240.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">5 条</text><text x="186.7" y="240.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">10 条</text><text x="315.3" y="240.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">30 条</text><text x="444.0" y="240.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">60 条</text><polyline points="58.0,154.4 186.7,154.4 315.3,100.1 444.0,45.4" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linejoin="round"/><circle cx="58.0" cy="154.4" r="3.6" fill="#fff" stroke="#ea580c" stroke-width="2"/><text x="58.0" y="145.4" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#ea580c">394</text><circle cx="186.7" cy="154.4" r="3.6" fill="#fff" stroke="#ea580c" stroke-width="2"/><text x="186.7" y="145.4" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#ea580c">394</text><circle cx="315.3" cy="100.1" r="3.6" fill="#fff" stroke="#ea580c" stroke-width="2"/><text x="315.3" y="91.1" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#ea580c">710</text><circle cx="444.0" cy="45.4" r="3.6" fill="#fff" stroke="#ea580c" stroke-width="2"/><text x="444.0" y="36.4" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#ea580c">1029</text><rect x="58" y="240" width="11" height="4" rx="2" fill="#ea580c"/><text x="74.0" y="245.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">Rerank 耗时 (ms)</text></g></svg></div><figcaption>图 7 · 引用率走势与 Rerank 耗时曲线</figcaption></figure>
+<ul>
+<li><strong>引用率走势</strong>（<code>agent_trace_*</code>）：0.0（2026-09-13 22:32）→ 0.3929（09-13 22:33）→ 0.9688（09-16 20:26）→ 0.9062（09-16 20:30）→ 0.9375（09-16 21:09）</li>
+<li><strong>Rerank 耗时</strong>：5 条 394 ms、10 条 394 ms、30 条 710 ms、60 条 1029 ms</li>
+<li><strong>系统层</strong>（<code>system_metrics_20260911_065232</code>）：knowledge_qa 均值 7602 ms / P50 7375 ms / P95 10000 ms；LLM router 1121/1500/2400 ms；LLM kb_generation 1939.5/1838.2/3812.5 ms</li>
+<li><strong>Langfuse span 样例</strong>：<code>POST /chat</code> 5351 ms、supervisor 1297 ms、<code>retrieval.kb_search</code> 2319 ms、llm.call 1674 ms</li>
+</ul>
+<h3 id="8-5-评测数据集">8.5 评测数据集</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">数据集</th>
+<th style="text-align: left;">规模</th>
+<th style="text-align: left;">用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>DATA/eval_rag/testset_1000_local.jsonl</code></td>
+<td style="text-align: left;">1000 条（650 single / 350 multi）</td>
+<td style="text-align: left;">路由层与全量评估</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>dev_100.jsonl</code></td>
+<td style="text-align: left;">100 条（65 single / 35 multi）</td>
+<td style="text-align: left;">RAGAS 与检索调参</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>complex_20.jsonl</code></td>
+<td style="text-align: left;">20 条（≥300 字复合题）</td>
+<td style="text-align: left;">复杂场景</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>holdout</code></td>
+<td style="text-align: left;">200 条（130 single / 70 multi）</td>
+<td style="text-align: left;">门禁专用，调参不可见</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9-已知缺口与优化方向">9. 已知缺口与优化方向</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">缺口</th>
+<th style="text-align: left;">现状</th>
+<th style="text-align: left;">建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">NDCG、answer_correctness</td>
+<td style="text-align: left;">未跑测</td>
+<td style="text-align: left;">补充，可更全面评估排序质量</td>
+</tr>
+<tr>
+<td style="text-align: left;">context_precision</td>
+<td style="text-align: left;">仅 n=2 试跑（L0 0.4583 / L1 0.4062）</td>
+<td style="text-align: left;">大样本复测，判断 L1 是否引入噪声</td>
+</tr>
+<tr>
+<td style="text-align: left;">R1~R7 逐规则通过率</td>
+<td style="text-align: left;">无聚合产物，仅单样本 <code>all_passed</code></td>
+<td style="text-align: left;">增加规则级埋点，定位引用缺陷来源</td>
+</tr>
+<tr>
+<td style="text-align: left;">分阶段耗时（embedding / dense / sparse / rrf）</td>
+<td style="text-align: left;">缺失，仅 rerank 有实测</td>
+<td style="text-align: left;">补全 span 埋点，定位延迟瓶颈</td>
+</tr>
+<tr>
+<td style="text-align: left;">Tier B 表格抽取器</td>
+<td style="text-align: left;">代码标注"未实现"，降级 Tier C</td>
+<td style="text-align: left;">实现后可降低复杂表格页的解析成本</td>
+</tr>
+<tr>
+<td style="text-align: left;">multi_hop 路由命中</td>
+<td style="text-align: left;">0.6543（路由层，1020 样本）</td>
+<td style="text-align: left;">文本判据天花板约 73%，需引入结构信号</td>
+</tr>
+<tr>
+<td style="text-align: left;">single_hop 的 MRR 微降（−0.0025）</td>
+<td style="text-align: left;">L1 对单跳无增益</td>
+<td style="text-align: left;">按 query_type 分流：单跳走 L0，多跳走 L1</td>
+</tr>
+</tbody>
+</table>
+</main></div></body></html>

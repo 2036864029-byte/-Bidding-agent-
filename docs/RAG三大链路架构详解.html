@@ -1,0 +1,903 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RAG 三大链路架构详解</title><style>
+:root{--ink:#1e293b;--mut:#64748b;--line:#e2e8f0;--bg:#f8fafc;--acc:#2563eb}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,'Segoe UI','Microsoft YaHei',sans-serif;color:var(--ink);
+ background:var(--bg);line-height:1.75;font-size:14.5px}
+.wrap{display:flex;max-width:1500px;margin:0 auto}
+nav.toc{position:sticky;top:0;align-self:flex-start;width:250px;flex:0 0 250px;height:100vh;
+ overflow-y:auto;padding:22px 14px 40px;border-right:1px solid var(--line);background:#fff}
+nav.toc .t{font-size:12px;font-weight:700;color:var(--mut);letter-spacing:.08em;
+ text-transform:uppercase;margin:0 0 10px 6px}
+nav.toc a{display:block;padding:5px 8px;margin:1px 0;color:#475569;text-decoration:none;
+ font-size:13px;border-radius:5px}
+nav.toc a:hover{background:#eff6ff;color:var(--acc)}
+nav.toc a.l2{font-weight:600;color:var(--ink);margin-top:9px}
+nav.toc a.l3{font-size:12.5px;padding-left:20px;color:#64748b}
+main{flex:1;min-width:0;padding:34px 46px 90px;background:#fff}
+h1{font-size:29px;margin:0 0 8px;letter-spacing:-.3px}
+h2{font-size:21px;margin:44px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--acc);color:#0f172a}
+h3{font-size:16.5px;margin:30px 0 10px;color:#1e293b}
+h3[id^="1"],h3[id^="2"],h3[id^="3"]{background:#f8fafc;padding:8px 12px;border-left:3px solid var(--acc)}
+h4{font-size:14.5px;margin:20px 0 8px;color:#334155}
+p{margin:10px 0}
+ul,ol{padding-left:22px}
+li{margin:5px 0}
+code{background:#f1f5f9;padding:1.5px 5px;border-radius:4px;font-size:12.5px;
+ font-family:'JetBrains Mono',Consolas,monospace;color:#be123c}
+pre{background:#0f172a;color:#e2e8f0;padding:15px 18px;border-radius:8px;overflow-x:auto;font-size:12.5px;line-height:1.6}
+pre code{background:none;color:inherit;padding:0}
+blockquote{margin:14px 0;padding:10px 16px;border-left:4px solid #fbbf24;background:#fffbeb;
+ color:#78350f;border-radius:0 6px 6px 0}
+blockquote p{margin:4px 0}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px}
+th{background:#f1f5f9;text-align:left;padding:8px 10px;border:1px solid var(--line);font-weight:600}
+td{padding:7px 10px;border:1px solid var(--line);vertical-align:top}
+tr:nth-child(even) td{background:#fcfdfe}
+figure{margin:24px 0 30px}
+.figwrap{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto}
+.figwrap svg{display:block;width:100%;height:auto}
+figcaption{font-size:12.5px;color:var(--mut);text-align:center;margin-top:9px;font-style:italic}
+hr{border:none;border-top:1px solid var(--line);margin:34px 0}
+@media print{nav.toc{display:none}main{padding:0}body{background:#fff}
+ h2{page-break-after:avoid}figure{page-break-inside:avoid}}
+</style></head><body><div class="wrap"><nav class="toc"><div class="t">目录</div><a class="l2" href="#0-三段链路总览">0. 三段链路总览</a><a class="l3" href="#三处与旧文档不一致-汇报请以本文为准">三处与旧文档不一致，汇报请以本文为准</a><a class="l2" href="#1-链路一-文本清洗与处理-PDF-为重点">1. 链路一：文本清洗与处理（PDF 为重点）</a><a class="l3" href="#1-1-入口-格式路由">1.1 入口：格式路由</a><a class="l3" href="#1-2-页面画像-Tier-判定的输入">1.2 页面画像（Tier 判定的输入）</a><a class="l3" href="#1-3-前置区跳过-Tier-S">1.3 前置区跳过（Tier S）</a><a class="l3" href="#1-4-分档分类-判定树">1.4 分档分类：判定树</a><a class="l3" href="#1-5-Tier-A-本地快路径">1.5 Tier A：本地快路径</a><a class="l3" href="#1-6-Tier-C-MinerU-远程解析">1.6 Tier C：MinerU 远程解析</a><a class="l3" href="#1-7-装配与清洗">1.7 装配与清洗</a><a class="l3" href="#1-8-产物-旁路与控制">1.8 产物、旁路与控制</a><a class="l2" href="#2-链路二-文本分块">2. 链路二：文本分块</a><a class="l3" href="#2-1-入口">2.1 入口</a><a class="l3" href="#2-2-doc_type-识别">2.2 doc_type 识别</a><a class="l3" href="#2-3-两层切分">2.3 两层切分</a><a class="l3" href="#2-4-元数据与-chunk_uid">2.4 元数据与 chunk_uid</a><a class="l3" href="#2-5-CSV-路径的差异">2.5 CSV 路径的差异</a><a class="l2" href="#3-链路三-检索与重排序">3. 链路三：检索与重排序</a><a class="l3" href="#3-1-调用链">3.1 调用链</a><a class="l3" href="#3-2-各阶段">3.2 各阶段</a><a class="l3" href="#3-3-自适应阈值">3.3 自适应阈值</a><a class="l3" href="#3-4-父块装配">3.4 父块装配</a><a class="l3" href="#3-5-降级矩阵">3.5 降级矩阵</a><a class="l3" href="#3-6-多跳召回-L0-L1-L2">3.6 多跳召回 L0 / L1 / L2</a><a class="l2" href="#4-参数速查">4. 参数速查</a><a class="l2" href="#5-现状与风险提示">5. 现状与风险提示</a></nav><main><div class="sec"><h1>RAG 三大链路架构详解</h1>
+<blockquote>
+<p>范围：<code>public_kb/</code> 入库与检索全链路。本文只讲三条链——<strong>① 文本清洗与处理（PDF 为重点）</strong>、<strong>② 文本分块</strong>、<strong>③ 检索与重排序</strong>。
+事实基准：以当前代码为准（配置已上提至 <code>core/config/settings.py</code>，<code>public_kb/config.py</code> 已不存在）。
+生成侧（提示词 / 引用护栏 R1~R7）见《RAG链路技术详解.md》，本文不重复。</p>
+</blockquote>
+<hr />
+<h2 id="0-三段链路总览">0. 三段链路总览</h2>
+<p></div><figure><div class="figwrap"><svg viewBox="0 0 1120 372" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="1120" height="372" fill="#ffffff"/><defs><marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#64748b"/></marker></defs><rect x="22" y="19" width="167" height="23" rx="5" fill="#f0fdfa" stroke="#99f6e4"/><text x="35.0" y="36.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#0f766e">① 离线 · 文本清洗与处理</text><rect x="22.0" y="46.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="107.1" y="72.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">源文档</text><text x="107.1" y="86.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">PDF / CSV / TXT</text><path d="M194.2 75.0 L199.2 75.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="203.2" y="46.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="288.2" y="72.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">格式路由</text><text x="288.2" y="86.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">扩展名 + 2048B 嗅探</text><path d="M375.3 75.0 L380.3 75.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="384.3" y="46.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="469.4" y="72.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">页面画像</text><text x="469.4" y="86.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">双栏 / 表格 / 扫描</text><path d="M556.5 75.0 L561.5 75.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="565.5" y="46.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="650.6" y="72.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">分档解析</text><text x="650.6" y="86.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">Tier A 本地 · C MinerU</text><path d="M737.7 75.0 L742.7 75.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="746.7" y="46.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="831.8" y="72.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">清洗</text><text x="831.8" y="86.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">TextCleaner 6 步</text><path d="M918.8 75.0 L923.8 75.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="927.8" y="46.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="1012.9" y="72.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">结构治理</text><text x="1012.9" y="86.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">relayout + structure</text><rect x="22" y="117" width="131" height="23" rx="5" fill="#f0fdfa" stroke="#99f6e4"/><text x="35.0" y="134.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#0f766e">② 离线 · 文本分块</text><rect x="22.0" y="144.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="107.1" y="170.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">doc_type 识别</text><text x="107.1" y="184.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">law / qa / book / comp</text><path d="M194.2 173.0 L199.2 173.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="203.2" y="144.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="288.2" y="170.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">表格原子块</text><text x="288.2" y="184.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">≥2 行 | 不切分</text><path d="M375.3 173.0 L380.3 173.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="384.3" y="144.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="469.4" y="170.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">第一层</text><text x="469.4" y="184.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">标题切点 + 标题栈</text><path d="M556.5 173.0 L561.5 173.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="565.5" y="144.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="650.6" y="170.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">第二层</text><text x="650.6" y="184.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">超长块按类型细切</text><path d="M737.7 173.0 L742.7 173.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="746.7" y="144.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="831.8" y="170.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">chunk_uid</text><text x="831.8" y="184.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">md5 指纹</text><path d="M918.8 173.0 L923.8 173.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="927.8" y="144.0" width="170.2" height="58.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="1012.9" y="170.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">BGE-M3</text><text x="1012.9" y="184.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">1024 维 · batch 100</text><path d="M560.0 116.0 L560.0 140.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="22" y="224" width="1076" height="42" rx="8" fill="#fff7ed" stroke="#fed7aa"/><text x="560.0" y="242.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#9a3412">Milvus 集合 public_kb　|　text · vector(HNSW/COSINE, 1024) · sparse_vector(BM25 Function) · chunk_uid · parent_chunk_id · hierarchy_path</text><path d="M560.0 266.0 L560.0 290.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="22" y="267" width="155" height="23" rx="5" fill="#eff6ff" stroke="#bfdbfe"/><text x="35.0" y="284.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700" fill="#2563eb">③ 在线 · 检索与重排序</text><rect x="22.0" y="294.0" width="144.3" height="58.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="94.1" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#2563eb">用户提问</text><text x="94.1" y="334.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">validate_question</text><path d="M168.3 323.0 L173.3 323.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="177.3" y="294.0" width="144.3" height="58.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="249.4" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#2563eb">Dense</text><text x="249.4" y="334.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">HNSW · ef=64 · 30</text><path d="M323.6 323.0 L328.6 323.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="332.6" y="294.0" width="144.3" height="58.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="404.7" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#2563eb">Sparse</text><text x="404.7" y="334.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">服务端 BM25 · 30</text><path d="M478.9 323.0 L483.9 323.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="487.9" y="294.0" width="144.3" height="58.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="560.0" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#2563eb">RRF 融合</text><text x="560.0" y="334.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">k=60 · 分组 ×2</text><path d="M634.1 323.0 L639.1 323.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="643.1" y="294.0" width="144.3" height="58.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="715.3" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#2563eb">自适应阈值</text><text x="715.3" y="334.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">0.40 / 0.45 / 0.50</text><path d="M789.4 323.0 L794.4 323.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="798.4" y="294.0" width="144.3" height="58.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="870.6" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#2563eb">Rerank</text><text x="870.6" y="334.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">reranker-v2-m3 · 22</text><path d="M944.7 323.0 L949.7 323.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="953.7" y="294.0" width="144.3" height="58.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="1025.9" y="320.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#2563eb">父块装配</text><text x="1025.9" y="334.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">≤6000 字 · 输出 11</text></svg></div><figcaption>图 0　三段链路总览：①② 离线入库、③ 在线检索，通过 Milvus 集合 public_kb 解耦</figcaption></figure><div class="sec"></p>
+<p>三段链路是<strong>两离一线</strong>结构：①② 属于离线入库，只在知识库初始化 / 增量导入时跑；③ 属于在线检索，每次提问都跑。①② 的输出（chunk 与向量）是 ③ 的唯一输入，三者通过 <strong>Milvus 集合 <code>public_kb</code></strong> 解耦。</p>
+<table>
+<thead>
+<tr>
+<th>段</th>
+<th>输入</th>
+<th>输出</th>
+<th>触发时机</th>
+<th>主要代码位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 清洗与处理</td>
+<td>原始 PDF / CSV / TXT</td>
+<td><code>out_dir/clean/*.assembled.md</code></td>
+<td>入库时一次</td>
+<td><code>public_kb/ingestion/normalizers/</code></td>
+</tr>
+<tr>
+<td>② 文本分块</td>
+<td>清洗后 markdown</td>
+<td><code>List[Document]</code>（含 chunk_uid）</td>
+<td>入库时一次</td>
+<td><code>public_kb/ingestion/transforms/</code></td>
+</tr>
+<tr>
+<td>③ 检索与重排</td>
+<td>用户 query</td>
+<td><code>≤11</code> 个带分文档</td>
+<td>每次提问</td>
+<td><code>public_kb/retrieval/</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="三处与旧文档不一致-汇报请以本文为准">三处与旧文档不一致，汇报请以本文为准</h3>
+<table>
+<thead>
+<tr>
+<th>项</th>
+<th>旧文档表述</th>
+<th>代码实际</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PDF 分档</td>
+<td>"Tier A / B / C 三档"</td>
+<td><strong>Tier B 未实现</strong>，判定为 B 的页统一 <code>replace(tier="C")</code>，源码注释 <code>tier_b_unimplemented_fallback_to_c</code></td>
+</tr>
+<tr>
+<td>分档总开关</td>
+<td>未提</td>
+<td><code>pdf_tiered_routing_enabled</code> 默认 <strong>false</strong>，即默认走旧的全量 <code>MinerUParser</code> 链路；分档是<strong>显式开启</strong>的能力</td>
+</tr>
+<tr>
+<td>分块阈值</td>
+<td>"700 / 700 / 900 / 1000（含 target 与 min）"</td>
+<td>配置里<strong>只有 <code>max</code></strong>，无 target、无 min；且 TypedChunker <strong>不使用 overlap</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-链路一-文本清洗与处理-PDF-为重点">1. 链路一：文本清洗与处理（PDF 为重点）</h2>
+<p></div><figure><div class="figwrap"><svg viewBox="0 0 1180 900" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="1180" height="900" fill="#ffffff"/><defs><marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#64748b"/></marker></defs><rect x="50.0" y="26.0" width="780.0" height="50.0" rx="7" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1.3"/><text x="440.0" y="48.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#4338ca">入口 · FormatRouter</text><text x="440.0" y="62.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">先按扩展名（.pdf/.csv/.txt/.md/png…）→ 未命中则读前 2048 字节嗅探</text><path d="M440.0 76.0 L440.0 92.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="50.0" y="94.0" width="186.0" height="40.0" rx="7" fill="#fef2f2" stroke="#fecaca" stroke-width="1.3"/><text x="143.0" y="118.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#dc2626">PDF（主链路）</text><rect x="248.0" y="94.0" width="186.0" height="40.0" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.3"/><text x="341.0" y="118.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#64748b">TXT / MD</text><rect x="446.0" y="94.0" width="186.0" height="40.0" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.3"/><text x="539.0" y="118.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#64748b">CSV</text><rect x="644.0" y="94.0" width="186.0" height="40.0" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.3"/><text x="737.0" y="118.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700" fill="#64748b">图片 OCR</text><path d="M143.0 136.0 L143.0 150.0" stroke="#dc2626" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="50.0" y="152.0" width="780.0" height="56.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="440.0" y="177.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">页面画像 build_page_profile（线程池 16）</text><text x="440.0" y="191.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">text_chars · n_blocks · x_starts · two_col_gap · table_hlines/vlines · img_ratio · formula_hint · fonts</text><text x="818.0" y="148.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#64748b">剔除覆盖 ≥0.70 的背景图后再算 img_ratio</text><path d="M440.0 210.0 L440.0 224.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="50.0" y="226.0" width="630.0" height="48.0" rx="7" fill="#fffbeb" stroke="#fde68a" stroke-width="1.3"/><text x="365.0" y="247.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#a16207">前置区跳过 _mark_front_matter_skip（pdf_skip_front_matter=true）</text><text x="365.0" y="261.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">命中「第X编/章/条」+ 行长≤40 + 句末标点≥3 + 页尾页码&lt;8 → 之前的页标 tier=S</text><rect x="692.0" y="232.0" width="138.0" height="36.0" rx="7" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.3"/><text x="761.0" y="254.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#64748b">封面 / CIP / 目录 → 丢弃</text><path d="M690.0 250.0 L682.0 250.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><path d="M440.0 276.0 L440.0 290.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="50.0" y="292.0" width="780.0" height="62.0" rx="7" fill="#ecfeff" stroke="#a5f3fc" stroke-width="1.3"/><text x="440.0" y="313.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="700" fill="#0e7490">分档分类 LegalPageClassifier.classify（按优先级短路）</text><text x="440.0" y="327.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">① text_chars&lt;80 → C(0.95)　② img_ratio&gt;0.35 且 text&lt;200 → C(0.90)　③ 公式 → C(0.80)</text><text x="440.0" y="341.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">④ 规整有框表 → B　⑤ 非规整表 → C(0.85)　⑥ 双栏且列序置信≥0.80 → A　⑦ 双栏置信不足 → C　⑧ 其余 → A(0.90)</text><path d="M221.0 356.0 L221.0 374.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><path d="M621.0 356.0 L621.0 374.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="50.0" y="378.0" width="380.0" height="196.0" rx="7" fill="#f0fdfa" stroke="#5eead4" stroke-width="1.3"/><text x="240.0" y="412.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#0f766e">Tier A · 本地快路径 PyMuPDF（线程池 4）</text><text x="240.0" y="429.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">① iter_lines 抽取文本行</text><text x="240.0" y="446.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">② remove_page_numbers 删页码</text><text x="240.0" y="463.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">③ remove_header_lines 删页眉（双信号）</text><text x="240.0" y="480.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">④ 双栏防御：行宽中位数&lt;0.55×页宽 且 x0&gt;0.4 占比 0.2~0.8 且 ≥6 行</text><text x="240.0" y="497.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">　 → reflow_two_columns_v2(split_x, full_width_ratio=0.7)</text><text x="240.0" y="514.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">　 否则 sort_single_column</text><text x="240.0" y="531.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">⑤ paragraph_markdown：缩进 / 未写满 / 行距&gt;1.5×line_gap 三判据</text><text x="240.0" y="548.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">⑥ heading_level_layout：&gt;60字不判标题；字号证需 spread≤6%</text><rect x="450.0" y="378.0" width="380.0" height="196.0" rx="7" fill="#fdf4ff" stroke="#f0abfc" stroke-width="1.3"/><text x="640.0" y="412.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#a21caf">Tier C · MinerU 远程解析</text><text x="640.0" y="429.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">① aggregate_complex_ranges：连续 C 页聚合，前后各扩 1 页</text><text x="640.0" y="446.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">② write_subpdf：doc.select() + save(garbage=4)</text><text x="640.0" y="463.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">③ cache_key = md5(md5(源PDF)|pages|version|range_id)</text><text x="640.0" y="480.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">④ POST {base}/parse multipart + Bearer</text><text x="640.0" y="497.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">　 timeout 1800s · health 探针 5s · 版本 memo TTL 300s</text><text x="640.0" y="514.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">⑤ 返回纯 markdown（无 layout json）；空则 RuntimeError</text><text x="640.0" y="531.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">⑥ normalize_mineru_md_heading_levels 归一标题层级</text><text x="640.0" y="548.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">※ 失败即 fail-fast；allow_partial=true 才跳过</text><rect x="712.0" y="358.0" width="118.0" height="18.0" rx="7" fill="#fef2f2" stroke="#fecaca" stroke-width="1.3"/><text x="771.0" y="371.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="700" fill="#dc2626">Tier B 未实现 → 并入 C</text><path d="M240.0 576.0 L240.0 588.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><path d="M640.0 576.0 L640.0 588.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="50.0" y="590.0" width="780.0" height="50.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="440.0" y="612.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="700" fill="#0f766e">装配 assemble_pages</text><text x="440.0" y="626.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">按 page_idx 升序 + &lt;!-- page: N --&gt; 　→　 _join_page_boundary 跨页续段　→　dedup_repeated_lines(≥5, ≤80)　→　clean_assembled_document</text><path d="M440.0 642.0 L440.0 656.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="50.0" y="658.0" width="780.0" height="74.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="440.0" y="699.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#2563eb">清洗 TextCleaner.clean（6 步，顺序执行）</text><rect x="64.0" y="688.0" width="139.0" height="20" rx="10" fill="#ffffff" stroke="#bfdbfe" stroke-width="1"/><text x="133.5" y="701.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#2563eb">① 重复页眉页脚 ≥5次/≤40字</text><rect x="213.0" y="688.0" width="108.6" height="20" rx="10" fill="#ffffff" stroke="#bfdbfe" stroke-width="1"/><text x="267.3" y="701.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#2563eb">② 页标记 + 图片链接</text><rect x="331.6" y="688.0" width="116.7" height="20" rx="10" fill="#ffffff" stroke="#bfdbfe" stroke-width="1"/><text x="390.0" y="701.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#2563eb">③ 独立页码 ^\d{1,4}$</text><rect x="64.0" y="714.0" width="108.6" height="20" rx="10" fill="#ffffff" stroke="#bfdbfe" stroke-width="1"/><text x="118.3" y="727.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#2563eb">④ &lt;10字且无汉字短行</text><rect x="182.6" y="714.0" width="138.6" height="20" rx="10" fill="#ffffff" stroke="#bfdbfe" stroke-width="1"/><text x="251.9" y="727.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#2563eb">⑤ LaTeX 归一 \times→× 等</text><rect x="331.2" y="714.0" width="99.1" height="20" rx="10" fill="#ffffff" stroke="#bfdbfe" stroke-width="1"/><text x="380.7" y="727.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#2563eb">⑥ 空行压缩至 2 行</text><path d="M440.0 734.0 L440.0 748.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="50.0" y="750.0" width="780.0" height="62.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="440.0" y="771.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="700" fill="#2563eb">结构治理</text><text x="440.0" y="785.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">relayout：R1 目录残标题剔除（点线+页码正则）· R2 引用误标题降级</text><text x="440.0" y="799.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">structure：normalize_heading_levels_full（编1/章2/节3/条4/款5/项6）· split_inline_articles · normalize_external_md · repair_structure</text><path d="M440.0 814.0 L440.0 828.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="50.0" y="830.0" width="780.0" height="44.0" rx="7" fill="#dcfce7" stroke="#86efac" stroke-width="1.3"/><text x="440.0" y="856.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#15803d">输出 out_dir/clean/{stem}.assembled.md（兼文件级缓存）　→　进入链路二：文本分块</text><text x="880.0" y="26.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#64748b">旁路 · 产物 · 控制</text><rect x="880.0" y="48.0" width="260.0" height="58.0" rx="7" fill="#fef2f2" stroke="#fecaca" stroke-width="1.3"/><text x="1010.0" y="73.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">QualityGate 质量门禁</text><text x="1010.0" y="88.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">阈值 0.8；低于阈值旁路到 review/</text><rect x="880.0" y="130.0" width="260.0" height="58.0" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.3"/><text x="1010.0" y="155.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#1e293b">IngestLedger 去重</text><text x="1010.0" y="170.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">ingest_ledger.jsonl · source_hash 字节 MD5 判重</text><rect x="880.0" y="212.0" width="260.0" height="58.0" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.3"/><text x="1010.0" y="237.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#1e293b">StageCheckpoint 断点</text><text x="1010.0" y="252.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">run_manifest.json；--resume / --rerun-from=B</text><rect x="880.0" y="294.0" width="260.0" height="58.0" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.3"/><text x="1010.0" y="319.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#1e293b">路由 manifest</text><text x="1010.0" y="334.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">DATA/raw_data/_pdf_tiered_manifest/{stem}.json</text><rect x="880.0" y="376.0" width="260.0" height="58.0" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.3"/><text x="1010.0" y="401.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#1e293b">MinerU 缓存</text><text x="1010.0" y="416.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">_mineru_api_cache/{md5}.md + .json sidecar</text><path d="M830.0 852.0 L880.0 410.0" stroke="#64748b" stroke-width="1.2" fill="none" stroke-dasharray="4 4"/><text x="1010.0" y="462.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#dc2626">两处 PdfNormalizer 硬写 quality_score=1.0，门禁实际不触发</text></svg></div><figcaption>图 1　链路一：文本清洗与处理（PDF 为重点）架构图</figcaption></figure><div class="sec"></p>
+<h3 id="1-1-入口-格式路由">1.1 入口：格式路由</h3>
+<p><code>public_kb/ingestion/router.py::FormatRouter</code></p>
+<ol>
+<li><strong>先按扩展名</strong>：<code>_EXT_TO_FORMAT</code> 覆盖 pdf / csv / txt / md / markdown / png / jpg / jpeg / bmp / tif / tiff / webp。</li>
+<li><strong>未命中才嗅探</strong>：<code>_sniff_format()</code> 读前 <strong>2048</strong> 字节——<code>%PDF</code> → pdf；图片 magic → image；首行含逗号且无 <code>\x00</code> → csv；否则 text。<strong>不使用 MIME。</strong></li>
+<li><code>normalizers/__init__.py::build_normalizer(fmt)</code> 分派到 Text / Csv / Pdf / ImageOcr 四个归一化器。</li>
+</ol>
+<blockquote>
+<p>注意：<code>public_kb/schema_registry.py</code> <strong>不是</strong> doc_type 注册表，它是 <strong>Milvus 集合 / embedding 版本注册表</strong>（<code>EXPECTED_EMBEDDING_DIM=1024</code>、<code>schema_version="public_kb_v2"</code>、HNSW <code>M=16 / efConstruction=128</code>）。doc_type 识别在分块链（见 §2.2）。</p>
+</blockquote>
+<h3 id="1-2-页面画像-Tier-判定的输入">1.2 页面画像（Tier 判定的输入）</h3>
+<p><code>normalizers/pdf/pdf_page_profile.py::build_page_profile()</code>，线程池 <code>pdf_tiered_profile_max_workers=16</code>（与 CPU 核数取小）。</p>
+<table>
+<thead>
+<tr>
+<th>画像指标</th>
+<th>含义</th>
+<th>下游用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text_chars</code> / <code>n_blocks</code></td>
+<td>文本层字符数 / 块数</td>
+<td>扫描件判定</td>
+</tr>
+<tr>
+<td><code>x_starts</code> / <code>two_col_gap</code> / <code>two_col_split_x</code> / <code>has_two_col</code></td>
+<td>版心 x 分布</td>
+<td>双栏检测</td>
+</tr>
+<tr>
+<td><code>table_hlines</code> / <code>table_vlines</code> / <code>table_candidate</code></td>
+<td>表格线线索（阈值 <code>table_min_lines=5</code>）</td>
+<td>表格页判定</td>
+</tr>
+<tr>
+<td><code>img_ratio</code></td>
+<td>图片面积占比（先剔除覆盖 ≥<code>0.70</code> 的背景图）</td>
+<td>扫描件判定</td>
+</tr>
+<tr>
+<td><code>article_count</code> / <code>formula_hint</code> / <code>fonts</code></td>
+<td>法条计数 / 公式字体特征 / 字号分布</td>
+<td>公式页判定、标题层级</td>
+</tr>
+</tbody>
+</table>
+<p><strong>双栏检测算法</strong>（非投影法）：取 <code>x0</code> 方向的<strong>最大间隙</strong>，要求间隙 &gt; <code>gap_ratio=0.15 × 页宽</code>，且间隙两侧各有 <strong>≥3</strong> 个文本块（<code>two_col_min_side_blocks=3</code>）。</p>
+<h3 id="1-3-前置区跳过-Tier-S">1.3 前置区跳过（Tier S）</h3>
+<p><code>pdf_router._mark_front_matter_skip()</code>，开关 <code>pdf_skip_front_matter=true</code>。</p>
+<p>命中"正文起点"的页之后全部保留，<strong>起点之前的页（封面 / CIP / 序言 / 目录）标 <code>tier="S"</code>、<code>parser="skip"</code></strong>，不进入任何解析。正文起点判据（四条同时满足）：</p>
+<ul>
+<li>命中 <code>_FRONT_HEADING_RE</code>（<code>^第[…]+[编部分章节]</code> 或 <code>^第[…]+[条款项]</code>）；</li>
+<li>行长 ≤ 40 字；</li>
+<li>句末标点计数 ≥ 3（短标题，非正文）；</li>
+<li>页尾裸页码行 &lt; 8 字。</li>
+</ul>
+<p>识别失败（boundary 为 None 或 0）则原样返回，由清洗层 <code>structure.mark_front_matter()</code> 兜底。</p>
+<h3 id="1-4-分档分类-判定树">1.4 分档分类：判定树</h3>
+<p><code>normalizers/pdf/pdf_legal_page_classifier.py::LegalPageClassifier.classify()</code>，按<strong>优先级短路</strong>判定：</p>
+<table>
+<thead>
+<tr>
+<th>序</th>
+<th>判据</th>
+<th>档位</th>
+<th>parser</th>
+<th>置信度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>text_chars &lt; 80</code>（<code>pdf_tiered_min_text_chars</code>）</td>
+<td><strong>C</strong></td>
+<td>mineru</td>
+<td>0.95</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>img_ratio &gt; 0.35</code> <strong>且</strong> <code>text_chars &lt; 200</code></td>
+<td><strong>C</strong></td>
+<td>mineru</td>
+<td>0.90</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>formula_hint</code></td>
+<td><strong>C</strong></td>
+<td>mineru</td>
+<td>0.80</td>
+</tr>
+<tr>
+<td>4</td>
+<td>表格候选 <strong>且</strong> <code>hlines≥2 且 vlines≥2</code></td>
+<td><strong>B</strong>（→ 实际降级 C）</td>
+<td>table</td>
+<td>0.85</td>
+</tr>
+<tr>
+<td>5</td>
+<td>表格候选但非规整</td>
+<td><strong>C</strong></td>
+<td>mineru</td>
+<td>0.85</td>
+</tr>
+<tr>
+<td>6</td>
+<td>双栏 <strong>且</strong> 列序置信度 ≥ 0.80</td>
+<td><strong>A</strong></td>
+<td>fast_text</td>
+<td>计算值</td>
+</tr>
+<tr>
+<td>7</td>
+<td>双栏但置信度不足</td>
+<td><strong>C</strong></td>
+<td>mineru</td>
+<td>计算值</td>
+</tr>
+<tr>
+<td>8</td>
+<td>其余</td>
+<td><strong>A</strong></td>
+<td>fast_text</td>
+<td>0.90</td>
+</tr>
+</tbody>
+</table>
+<p><strong>双栏列序置信度公式</strong>（<code>_two_col_confidence_score</code>）：</p>
+<pre><code>confidence = max(0.55 + 0.4 × balance, 0.55 + 0.4 × min(1, side_min / 5))
+</code></pre>
+<p><code>balance</code> = 两侧文本块数的平衡度，<code>side_min</code> = 弱侧文本块数。取两者较大值：块平衡照顾干净的 2+2 双栏，<code>side_min</code> 照顾 OCR 双栏页"一侧被合并成少而大的块"的情形。</p>
+<blockquote>
+<p><strong>Tier B 是空转的</strong>：<code>pdf_router</code> 在分类后统一执行 <code>replace(tier="C", parser="mineru", reason="tier_b_unimplemented_fallback_to_c: …")</code>。即当前<strong>没有本地表格提取路径</strong>，<code>table_extract.py</code> 的 <code>ENGINES</code> 未接入管线，有框表格一律由 MinerU 处理。</p>
+</blockquote>
+<h3 id="1-5-Tier-A-本地快路径">1.5 Tier A：本地快路径</h3>
+<p><code>_dispatch_tier_a()</code>，<code>ThreadPoolExecutor(max_workers=4)</code>，每个 worker 独立 <code>pymupdf.open</code>（线程间不共享 Document）。</p>
+<p>单页处理顺序：</p>
+<ol>
+<li><code>iter_lines</code> 抽取文本行；</li>
+<li><code>remove_page_numbers</code> 删页码；</li>
+<li><code>remove_header_lines</code> 删页眉（候选来自预扫 <code>detect_header_candidates</code>）；</li>
+<li><strong>双栏防御</strong>：若 <code>page_label=="two_col_text"</code> 或满足"行宽中位数 &lt; 0.55×页宽、<code>x0&gt;0.4×页宽</code> 行占比 0.2~0.8、且 ≥6 行"，走 <code>reflow_two_columns_v2(split_x, full_width_ratio=0.7)</code>；否则 <code>sort_single_column</code>；</li>
+<li><code>paragraph_markdown</code> 段落化 + 标题化。</li>
+</ol>
+<p><strong>段落合并三判据</strong>（<code>pdf_paragraph.assemble_paragraphs</code>，行距/版面 metrics 法，非投影法）：</p>
+<ul>
+<li>缩进：<code>x0 &gt; left_edge + 1.5 × body_size</code>；</li>
+<li>上行未写满：上一行以句末收尾且 <code>x1 &lt; right - 2 × body_size</code>；</li>
+<li>行距：<code>Δy &gt; 1.5 × line_gap</code>。</li>
+</ul>
+<p>合并后 <code>_join_cjk</code> 去除 CJK 字符间多余空格。</p>
+<p><strong>标题层级判定</strong>（<code>heading_level_layout</code>）：</p>
+<table>
+<thead>
+<tr>
+<th>判据</th>
+<th>阈值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>长度</td>
+<td>&gt; 60 字不判标题</td>
+</tr>
+<tr>
+<td>字号证</td>
+<td>仅当 <code>size_spread ≤ 6% × body</code> 时启用，<code>big = size ≥ 1.10 × body</code></td>
+</tr>
+<tr>
+<td>粗体短行</td>
+<td>≤ 40 字</td>
+</tr>
+<tr>
+<td>编号粗体</td>
+<td>≤ 60 字</td>
+</tr>
+<tr>
+<td>居中</td>
+<td>居中且 ≥ 1.2× → H1 / H2</td>
+</tr>
+<tr>
+<td>兜底</td>
+<td><code>_pattern_level</code> + <code>_regulation_name_level</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="1-6-Tier-C-MinerU-远程解析">1.6 Tier C：MinerU 远程解析</h3>
+<p><code>pdf_mineru_router.MinerURouter.parse_ranges()</code>：</p>
+<ol>
+<li><code>aggregate_complex_ranges</code>：连续 Tier C 页聚合为区间，<strong>前后各扩 1 页</strong>（<code>pdf_tiered_expand_boundary_pages=1</code>）并合并重叠；</li>
+<li><code>write_subpdf</code>：<code>doc.select()</code> 抽取子 PDF，<code>save(garbage=4, deflate=True, clean=True)</code>；</li>
+<li><code>compute_cache_key = md5(md5(源PDF字节) | pages | parser_version | range_id)</code> → 命中缓存直接复用；</li>
+<li><code>MinerUApiParser.parse()</code>：<code>POST {base}/parse</code> multipart（<code>file</code> + <code>page_range</code>），<code>Authorization: Bearer</code>，<strong><code>mineru_api_timeout=1800s</code></strong>，health 探针 5s，版本 memo TTL 300s。</li>
+</ol>
+<p>返回<strong>纯 markdown，无 layout json</strong>；空 markdown 抛 <code>RuntimeError</code>。<strong>未见轮询与重试循环</strong>——失败即 fail-fast，仅当 <code>pdf_tiered_allow_partial=true</code> 才跳过该区间并写 warning。</p>
+<blockquote>
+<p>本地 <code>MinerUParser</code>（<code>services/mineru_parser.py</code>）走 <code>subprocess.run(["magic-pdf", …])</code>，<code>timeout=3600s</code>，是<strong>关闭分档时的默认路径</strong>（<code>pdf_tiered_routing_enabled=false</code>）。</p>
+</blockquote>
+<h3 id="1-7-装配与清洗">1.7 装配与清洗</h3>
+<p><strong>装配</strong>（<code>pdf_markdown_assembler.assemble_pages</code>）：按 <code>page_idx</code> 升序拼接，插入 <code>&lt;!-- page: N --&gt;</code> 标记；<code>_join_page_boundary</code> 做跨页续段（末行 &lt;8 字或非句末时不合并，跳过页标记与 <code>①</code> 脚注行）；再 <code>dedup_repeated_lines(min_count=5, max_len=80)</code>；最后 <code>clean_assembled_document</code>。</p>
+<p><strong>清洗</strong>（<code>transforms/cleaner.py::TextCleaner.clean</code>）：</p>
+<table>
+<thead>
+<tr>
+<th>序</th>
+<th>规则</th>
+<th>判据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>删重复页眉页脚</td>
+<td>频次 ≥5、长度 &lt;80 且 ≤40、不含 <code>。！？…；</code>、不匹配法条正则</td>
+</tr>
+<tr>
+<td>2</td>
+<td>删页标记与图片链接</td>
+<td><code>^&lt;!-- page: N --&gt;$</code>、<code>^!\[…\]\(…\)$</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>删独立页码</td>
+<td><code>^\d{1,4}$</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>删无效短行</td>
+<td><code>&lt;10</code> 字<strong>且无汉字</strong>（<code>#</code>/<code>---</code>/<code>|</code>/法条豁免）</td>
+</tr>
+<tr>
+<td>5</td>
+<td>LaTeX 归一</td>
+<td><code>\times→×</code>、<code>\textcircled{X}→(X)</code>、NBSP→空格、剥 <code>boldsymbol/mathrm/textbf…{}</code>、<code>$…$</code> 剥壳、<code>(\d)\?\?→\1%</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>空行压缩</td>
+<td>最多连续 2 行</td>
+</tr>
+</tbody>
+</table>
+<p><strong>结构治理</strong>：</p>
+<ul>
+<li><code>relayout.py::relayout_pipeline</code> = R1 目录残标题剔除（正则 <code>^\d{1,4}\s*[.、．]\s*\S.{0,28}?\s+\d{1,4}$</code>，≤40 字、无句读）+ R2 引用误标题降级（&gt;20 字、无【】、<code>^第…条</code> 开头、命中引用提示词 → 去掉 <code>#</code>）。</li>
+<li><code>structure.py</code> 行级重写：<code>normalize_heading_levels_full</code>（编1/部分1/章2/节3/条4/款5/项6、<code>一、</code>4、<code>（一）5</code>）、<code>split_inline_articles</code>、<code>normalize_external_md</code>、<code>repair_structure(max_rounds=3)</code>。</li>
+</ul>
+<h3 id="1-8-产物-旁路与控制">1.8 产物、旁路与控制</h3>
+<table>
+<thead>
+<tr>
+<th>机制</th>
+<th>实现</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中间产物</td>
+<td><code>out_dir/raw/*.raw.md</code>、<code>out_dir/clean/*.assembled.md</code>（兼文件级缓存）、<code>out_dir/chunks/*.documents.jsonl</code></td>
+<td>handoff 落盘</td>
+</tr>
+<tr>
+<td>路由 manifest</td>
+<td><code>DATA/raw_data/_pdf_tiered_manifest/{stem}.manifest.json</code>（先写 <code>.tmp</code> 再 <code>os.replace</code> 原子替换）</td>
+<td>含 elapsed_sec / ranges / skipped pages</td>
+</tr>
+<tr>
+<td>MinerU 缓存</td>
+<td><code>DATA/raw_data/_mineru_api_cache/{md5}.md</code> + <code>.json</code> sidecar</td>
+<td>子 PDF 在 <code>_mineru_subs/</code></td>
+</tr>
+<tr>
+<td>去重</td>
+<td><code>ledger.py::IngestLedger</code> → <code>ingest_ledger.jsonl</code>，<strong>主判据是 source_hash（字节 MD5，跨文件名）</strong></td>
+<td>simhash 仅登记不参与判定</td>
+</tr>
+<tr>
+<td>断点续跑</td>
+<td><code>checkpoint.py::StageCheckpoint</code> → <code>run_manifest.json</code>，<code>--resume</code> / <code>--rerun-from=B</code></td>
+<td>Stage A markdown 落 <code>artifacts/{md5(绝对路径)}.md</code></td>
+</tr>
+<tr>
+<td>质量门禁</td>
+<td><code>quality.py::QualityGate</code>，阈值 0.8</td>
+<td><strong>注意</strong>：<code>PdfNormalizer</code> 硬写 <code>quality_score=1.0</code>，PDF 主链路上实际不触发旁路</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-链路二-文本分块">2. 链路二：文本分块</h2>
+<p></div><figure><div class="figwrap"><svg viewBox="0 0 1120 790" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="1120" height="790" fill="#ffffff"/><defs><marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#64748b"/></marker></defs><rect x="40.0" y="26.0" width="1040.0" height="46.0" rx="7" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.3"/><text x="560.0" y="46.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">输入：清洗后 markdown 字符串　|　入口 chunk_sources.chunk_directory → TypedChunker(settings).chunk()</text><text x="560.0" y="60.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="400" fill="#64748b">doc_type is None 时回落旧 SemanticChunker(2000, 100)</text><path d="M560.0 74.0 L560.0 88.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="90.0" width="1040.0" height="84.0" rx="7" fill="#ecfeff" stroke="#a5f3fc" stroke-width="1.3"/><text x="560.0" y="136.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0e7490">doc_type 识别 detect_doc_type（路径 / 文件名关键词，顺序匹配）</text><rect x="56.0" y="122.0" width="219.4" height="20" rx="10" fill="#ffffff" stroke="#a5f3fc" stroke-width="1"/><text x="165.7" y="135.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#0e7490">路径含 cleaned_v1/markdown → law   【700】</text><rect x="285.4" y="122.0" width="204.1" height="20" rx="10" fill="#ffffff" stroke="#a5f3fc" stroke-width="1"/><text x="387.4" y="135.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#0e7490">文件名含 1200问/问答/答疑 → qa   【900】</text><rect x="499.5" y="122.0" width="208.2" height="20" rx="10" fill="#ffffff" stroke="#a5f3fc" stroke-width="1"/><text x="603.6" y="135.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#0e7490">文件名含 实务/手册/指南 → book   【1000】</text><rect x="56.0" y="146.0" width="198.2" height="20" rx="10" fill="#ffffff" stroke="#a5f3fc" stroke-width="1"/><text x="155.1" y="159.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#0e7490">文件名含 法规全书/汇编 → comp   【700】</text><rect x="264.2" y="146.0" width="169.9" height="20" rx="10" fill="#ffffff" stroke="#a5f3fc" stroke-width="1"/><text x="349.2" y="159.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#0e7490">路径含 handoff → book   【1000】</text><rect x="444.1" y="146.0" width="166.3" height="20" rx="10" fill="#ffffff" stroke="#a5f3fc" stroke-width="1"/><text x="527.3" y="159.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#0e7490">未命中 → book（兜底）   【1000】</text><path d="M560.0 176.0 L560.0 190.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="192.0" width="830.0" height="50.0" rx="7" fill="#fef2f2" stroke="#fecaca" stroke-width="1.3"/><text x="455.0" y="214.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="700" fill="#dc2626">第 0 层 · split_table_blocks</text><text x="455.0" y="228.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">行正则 ^\s*\|.*\|\s*$，连续 ≥2 行（pdf_min_table_rows）→ _make_atom(content_type="table")</text><rect x="882.0" y="197.0" width="198.0" height="40.0" rx="7" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.3"/><text x="981.0" y="214.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#9a3412">表格原子块</text><text x="981.0" y="228.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">不进一/二层 · 不切分</text><path d="M880.0 217.0 L872.0 217.0" stroke="#dc2626" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><path d="M455.0 244.0 L455.0 258.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="260.0" width="1040.0" height="66.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="560.0" y="283.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="700" fill="#2563eb">第一层 · HeadingSplitter.split</text><text x="560.0" y="297.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">正则 ^(#{1,6})\s+(.+)$ —— 每个标题都是切点；层级取 _content_level（编/部分=1 章=2 节=3 条=4 款=5 项=6、一、=4、（一）=5）</text><text x="560.0" y="311.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">标题栈感知：_update_heading_stack 维护栈 → _hierarchy_path 以 " / " 拼接写入 chapter / hierarchy_path；_has_body 空块丢弃</text><path d="M560.0 328.0 L560.0 344.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><path d="M560.0 344.0 L710.0 372.0 L560.0 400.0 L410.0 372.0 Z" fill="#fffbeb" stroke="#fde68a" stroke-width="1.3"/><text x="560.0" y="375.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="600" fill="#1e293b">len(block) &gt; max_chars ?</text><path d="M560.0 400.0 L560.0 414.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><text x="728.0" y="372.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">否 → 直接成块</text><path d="M710.0 372.0 L1220.0 372.0" stroke="#64748b" stroke-width="1.1" fill="none" stroke-dasharray="4 4" marker-end="url(#ar)"/><rect x="40.0" y="418.0" width="1040.0" height="108.0" rx="7" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="1.3"/><text x="560.0" y="476.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#7c3aed">第二层 · OversizeSplitter.split（按 doc_type 分支）</text><rect x="54.0" y="446.0" width="328.0" height="68.0" rx="7" fill="#ffffff" stroke="#ddd6fe" stroke-width="1.3"/><text x="218.0" y="469.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#7c3aed">law / law_compilation</text><text x="218.0" y="484.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">_split_by_subheadings(_ITEM_RE)</text><text x="218.0" y="499.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">段数&gt;1 返回；否则 _split_by_sentence</text><rect x="396.0" y="446.0" width="328.0" height="68.0" rx="7" fill="#ffffff" stroke="#ddd6fe" stroke-width="1.3"/><text x="560.0" y="469.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#7c3aed">qa</text><text x="560.0" y="484.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">只切答案正文</text><text x="560.0" y="499.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">前缀 问：{question}；budget = max(1, max − len(prefix))
+→ _paragraph_then_sentence</text><rect x="738.0" y="446.0" width="328.0" height="68.0" rx="7" fill="#ffffff" stroke="#ddd6fe" stroke-width="1.3"/><text x="902.0" y="469.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#7c3aed">book_practical</text><text x="902.0" y="484.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">_split_by_subheadings(_BOOK_SUB_RE)</text><text x="902.0" y="499.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">否则 _paragraph_then_sentence</text><text x="1068.0" y="438.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#64748b">句子边界 (?&lt;=[。！？；])；超长句 sentence[i:i+max] 滑窗硬切</text><text x="1068.0" y="524.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#dc2626">※ TypedChunker 无 overlap —— 用父子块 parent_chunk_id 补偿</text><path d="M560.0 528.0 L560.0 542.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="544.0" width="1040.0" height="78.0" rx="7" fill="#dcfce7" stroke="#86efac" stroke-width="1.3"/><text x="560.0" y="587.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#15803d">输出 List[Document] · metadata 18 字段</text><rect x="56.0" y="574.0" width="45.7" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="78.8" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">doc_id</text><rect x="109.7" y="574.0" width="55.6" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="137.5" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">doc_name</text><rect x="173.3" y="574.0" width="55.6" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="201.1" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">doc_type</text><rect x="236.9" y="574.0" width="80.4" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="277.1" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">source_format</text><rect x="325.2" y="574.0" width="85.3" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="367.9" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">effective_date</text><rect x="418.6" y="574.0" width="45.7" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="441.4" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">status</text><rect x="472.2" y="574.0" width="90.2" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="517.4" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">embedding_model</text><rect x="570.5" y="574.0" width="85.3" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="613.1" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">schema_version</text><rect x="663.8" y="574.0" width="70.5" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="699.0" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">chunk_index</text><rect x="742.2" y="574.0" width="50.6" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="767.6" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">chapter</text><rect x="800.9" y="574.0" width="85.3" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="843.5" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">hierarchy_path</text><rect x="894.2" y="574.0" width="65.5" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="926.9" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">chunk_type</text><rect x="967.7" y="574.0" width="90.2" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="1012.8" y="587.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">parent_chunk_id</text><rect x="56.0" y="598.0" width="105.1" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="108.6" y="611.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">sequence_in_parent</text><rect x="169.1" y="598.0" width="85.3" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="211.8" y="611.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">article_number</text><rect x="262.4" y="598.0" width="55.6" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="290.2" y="611.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">question</text><rect x="326.0" y="598.0" width="75.4" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="363.7" y="611.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">content_type</text><rect x="409.4" y="598.0" width="60.6" height="20" rx="10" fill="#ffffff" stroke="#86efac" stroke-width="1"/><text x="439.7" y="611.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#15803d">chunk_uid</text><text x="1068.0" y="616.0" text-anchor="end" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#b45309">无页码 · 无长度字段；parent_chunk_id 为空时回填 chunk_uid</text><path d="M560.0 624.0 L560.0 638.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="640.0" width="740.0" height="62.0" rx="7" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.3"/><text x="410.0" y="668.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="700" fill="#9a3412">chunk_uid = "ck-" + md5(doc_name | chapter | chunk_index | md5(text)[:16])</text><text x="410.0" y="682.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">text 先 normalize_chunk_text（strip + 换行归一）；不含 doc_id、不含页码</text><rect x="792.0" y="640.0" width="288.0" height="62.0" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.3"/><text x="936.0" y="660.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#1e293b">写入前校验 validate_ingestion_documents</text><text x="936.0" y="675.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">page_content 非空 · 必含 doc_name/chapter/chunk_index</text><text x="936.0" y="690.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">chunk_index 为非负 int；违规抛 IngestionContractError</text><path d="M790.0 671.0 L780.0 671.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><path d="M410.0 704.0 L410.0 718.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="720.0" width="1040.0" height="44.0" rx="7" fill="#f0fdfa" stroke="#5eead4" stroke-width="1.3"/><text x="560.0" y="746.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#0f766e">MilvusSink 写入：chunk_uid 幂等判重（批内去重 + _query_existing_uids 跳过已存在 uid）　|　enable_dedup=true</text></svg></div><figcaption>图 2　链路二：文本分块架构图</figcaption></figure><div class="sec"></p>
+<h3 id="2-1-入口">2.1 入口</h3>
+<ul>
+<li>主入口 <code>chunk_sources.py::chunk_directory</code>（L86 建 <code>TypedChunker(settings)</code>）；</li>
+<li>兼容入口 <code>handoff.py::chunk_cleaned_markdown</code>（L213）：<code>doc_type is not None</code> → <code>TypedChunker</code>，否则回落旧 <code>SemanticChunker</code>；</li>
+<li>管线入口 <code>pipeline.py::_chunk_ir</code>（L210）：<code>.md</code> 才 <code>detect_doc_type_or_none(path)</code>。</li>
+</ul>
+<p><strong>输入是清洗后的 markdown 字符串</strong>（不是 IR 对象），<strong>输出是 <code>List[Document]</code></strong>。</p>
+<h3 id="2-2-doc_type-识别">2.2 doc_type 识别</h3>
+<p><code>transforms/typed_chunker.py::DocType</code> 共 <strong>4 类</strong>，识别走 <code>TYPE_ROUTING</code> <strong>路径 / 文件名关键词</strong>顺序匹配（无内容规则，<code>force_doc_type</code> 可手工指定）：</p>
+<table>
+<thead>
+<tr>
+<th>序</th>
+<th>匹配规则</th>
+<th>doc_type</th>
+<th><code>chunk_max_chars</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>路径含 <code>cleaned_v1/markdown</code></td>
+<td><code>law</code></td>
+<td><strong>700</strong></td>
+</tr>
+<tr>
+<td>2</td>
+<td>文件名含 <code>1200问</code> / <code>问答</code> / <code>答疑</code> / <code>问题</code></td>
+<td><code>qa</code></td>
+<td><strong>900</strong></td>
+</tr>
+<tr>
+<td>3</td>
+<td>文件名含 <code>实务</code> / <code>手册</code> / <code>指南</code> / <code>教程</code> / <code>解读</code></td>
+<td><code>book_practical</code></td>
+<td><strong>1000</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td>文件名含 <code>法规全书</code> / <code>汇编</code></td>
+<td><code>law_compilation</code></td>
+<td><strong>700</strong></td>
+</tr>
+<tr>
+<td>5</td>
+<td>路径含 <code>handoff</code></td>
+<td><code>book_practical</code></td>
+<td><strong>1000</strong></td>
+</tr>
+<tr>
+<td>—</td>
+<td>未命中</td>
+<td><code>book_practical</code>（兜底）</td>
+<td><strong>1000</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>配置里<strong>只有 <code>max_chars</code>，没有 target、没有 min</strong>。全仓也没有 chunk 级最小长度参数——唯一的过滤是 <code>_has_body()</code>（纯标题无正文不成块）。</p>
+</blockquote>
+<h3 id="2-3-两层切分">2.3 两层切分</h3>
+<p><strong>前置</strong>：<code>split_inline_articles</code>（拆行内多条款）→ <code>strip_toc_noise</code>（<code>enable_toc_filter</code>）→ <code>split_table_blocks</code> 分流。</p>
+<p><strong>第 0 层：表格原子块。</strong> <code>pdf_structure.py::split_table_blocks</code>，行正则 <code>^\s*\|.*\|\s*$</code>，<strong>连续 ≥2 行</strong>（<code>pdf_min_table_rows=2</code>）才成表格段 → 直接 <code>_make_atom(content_type="table")</code>，<strong>不进第一层、不进第二层</strong>。不足 2 行按普通文本处理。</p>
+<p><strong>第一层：<code>HeadingSplitter.split</code>。</strong> 正则 <code>^(#{1,6})\s+(.+)$</code>，<strong>每个标题都是切点</strong>。层级取 <code>structure.py::_content_level</code>（编/部分=1、章=2、节=3、条=4、款=5、项=6、<code>一、</code>=4、<code>（一）</code>=5、数字编号=4；非模式标题取 <code>min(最近锚级+1, 6)</code>）。<strong>标题栈感知</strong>：<code>_update_heading_stack</code> 维护栈，<code>_hierarchy_path</code> 以 <code>" / "</code> 拼接写入 <code>chapter</code> / <code>hierarchy_path</code>。</p>
+<p><strong>第二层：<code>OversizeSplitter.split</code>。</strong> 仅当 <code>len(block_text) &gt; max_chars</code> 触发，按 doc_type 分支：</p>
+<table>
+<thead>
+<tr>
+<th>doc_type</th>
+<th>策略</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>law</code> / <code>law_compilation</code></td>
+<td><code>_split_by_subheadings(_ITEM_RE)</code> → 段数&gt;1 则返回，否则 <code>_split_by_sentence</code></td>
+</tr>
+<tr>
+<td><code>qa</code></td>
+<td>只切答案正文：前缀 <code>问：{question}\n\n</code>，<code>budget = max(1, max_chars - len(prefix))</code>，再 <code>_paragraph_then_sentence</code></td>
+</tr>
+<tr>
+<td><code>book_practical</code></td>
+<td><code>_split_by_subheadings(_BOOK_SUB_RE)</code> → 否则 <code>_paragraph_then_sentence</code></td>
+</tr>
+</tbody>
+</table>
+<p>句子边界 <code>_SENTENCE_SPLIT_RE = (?&lt;=[。！？；])</code>（零宽后顾，保留标点）。<strong>超长句硬切</strong>：<code>sentence[i:i+max_chars]</code> 滑窗。</p>
+<p><strong>关于 overlap</strong>：<code>TypedChunker</code> <strong>不使用 overlap</strong>，代码中无 overlap 字样。替代机制是<strong>父子块</strong>（<code>parent_chunk_id</code> + 检索期 <code>retrieval_parent_assembly</code>，见 §3.4）。旧 <code>SemanticChunker</code> 的 2000/100 只是<strong>未识别 doc_type 时的回落路径</strong>（<code>handoff.py</code> L229-231 显式传入）。</p>
+<h3 id="2-4-元数据与-chunk_uid">2.4 元数据与 chunk_uid</h3>
+<p>每个 chunk 的 metadata 字段：</p>
+<p><code>doc_id, doc_name, doc_type, source_format, effective_date, status, embedding_model, schema_version, chunk_index, chapter, hierarchy_path, chunk_type, parent_chunk_id, sequence_in_parent, article_number, question, content_type, chunk_uid</code></p>
+<ul>
+<li><strong><code>chunk_uid</code></strong>（<code>core/contracts/chunk_ids.py::compute_chunk_uid</code>）：
+  <code>ck-</code> + <code>md5(f"{doc_name}|{chapter}|{chunk_index}|{md5(text)[:16]}")</code>，其中 text 先 <code>normalize_chunk_text</code>（strip + 换行归一）。<strong>不含 doc_id、不含页码。</strong></li>
+<li><code>parent_chunk_id</code> 为空时回填 <code>chunk_uid</code>（L488-490，避免 Milvus 分组检索把独立块塌缩成一组）；父标识为合成值 <code>f"{doc_id}|sec_{start_index}"</code>。</li>
+<li><code>doc_id</code> = <code>{law|lawcomp|qa|book}_{seq:03d}</code>。</li>
+<li><strong>无页码、无 token/char 长度字段。</strong></li>
+</ul>
+<p><strong>写入前校验</strong>：<code>core/contracts/contracts.py::validate_ingestion_documents</code>——<code>page_content</code> 非空、必含 <code>doc_name/chapter/chunk_index</code>、<code>chunk_index</code> 为非负 int，<strong>违规抛 <code>IngestionContractError</code>（非静默丢弃）</strong>。写入去重靠 <code>MilvusSink</code> 的 <strong>chunk_uid 幂等判重</strong>（批内去重 + <code>_query_existing_uids</code> 跳过已存在 uid），开关 <code>enable_dedup</code>（默认 true）。</p>
+<h3 id="2-5-CSV-路径的差异">2.5 CSV 路径的差异</h3>
+<p><code>csv_loader.py::CsvLoader</code> <strong>不识别 doc_type、不走 TypedChunker</strong>：逐行 content → 列名归一（<code>_COLUMN_ALIAS_MAP</code>）→ 结构增强（<code>structure_plain_text</code>：章/节/条/款/项前插换行并转 markdown 标题，含否定后顾防空引用误切）→ <code>TextCleaner.clean</code> → <strong><code>SemanticChunker(2000, 100)</code></strong>。额外字段 <code>title/source_file/source_url/publish_date/imple_time/effective_date/_line_num/content_type</code>，且<strong>只有 CSV 路径有 <code>page_number</code></strong>。</p>
+<hr />
+<h2 id="3-链路三-检索与重排序">3. 链路三：检索与重排序</h2>
+<p></div><figure><div class="figwrap"><svg viewBox="0 0 1120 760" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="1120" height="760" fill="#ffffff"/><defs><marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#64748b"/></marker></defs><rect x="40.0" y="26.0" width="700.0" height="46.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="390.0" y="46.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="700" fill="#2563eb">用户 query → validate_question（类型校验 + strip，无改写/扩展/去噪）</text><text x="390.0" y="60.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">时效过滤 _effective_expr：effective_date is null or &lt;= today　（enable_effective_filter=false，默认关）</text><path d="M390.0 74.0 L390.0 88.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="90.0" width="700.0" height="46.0" rx="7" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="1.3"/><text x="390.0" y="110.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="700" fill="#7c3aed">Embedding · BAAI/bge-m3 · 1024 维 · timeout 30s · retries 1 · 入库 batch 100</text><text x="390.0" y="124.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">core/embeddings/bge_m3.py::create_embeddings（超长截断到 chunk_max_chars=2000）</text><path d="M390.0 138.0 L390.0 150.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><path d="M390.0 152.0 L210.0 166.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><path d="M390.0 152.0 L570.0 166.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="168.0" width="320.0" height="92.0" rx="7" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.3"/><text x="200.0" y="188.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#2563eb">Dense 检索（向量语义）</text><text x="200.0" y="203.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">AnnSearchRequest(data=[dense_vec])</text><text x="200.0" y="218.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">metric COSINE · 索引 HNSW</text><text x="200.0" y="233.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">M=16 · efConstruction=128 · ef=64</text><text x="200.0" y="248.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">limit = hybrid_dense_limit = 30</text><rect x="420.0" y="168.0" width="320.0" height="92.0" rx="7" fill="#f0fdfa" stroke="#5eead4" stroke-width="1.3"/><text x="580.0" y="188.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#0f766e">Sparse 检索（服务端 BM25）</text><text x="580.0" y="203.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">AnnSearchRequest(data=[question 原文])</text><text x="580.0" y="218.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">Function text_bm25_emb 服务端生成</text><text x="580.0" y="233.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">analyzer chinese · k1=1.2 · b=0.75</text><text x="580.0" y="248.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">limit = 30 · 客户端零稀疏计算</text><path d="M200.0 262.0 L370.0 282.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><path d="M580.0 262.0 L410.0 282.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="284.0" width="700.0" height="56.0" rx="7" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="1.3"/><text x="390.0" y="309.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="700" fill="#7c3aed">RRF 融合 · pymilvus RRFRanker(k=60) · limit = hybrid_fusion_limit = 30</text><text x="390.0" y="323.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">group_by_field = parent_chunk_id · group_size = 2　→　候选最多 60 条</text><path d="M390.0 342.0 L390.0 356.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="358.0" width="700.0" height="66.0" rx="7" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.3"/><text x="390.0" y="381.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="700" fill="#9a3412">Rerank · POST {base_url}/rerank · BAAI/bge-reranker-v2-m3</text><text x="390.0" y="395.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">top_n = min(top_k, len(docs)) = 11 × 2 = 22　·　timeout 30s　·　max_retries 2　·　退避 0.25 × 2^n</text><text x="390.0" y="409.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">单次请求全量发送（无批处理分片）；可重试：ConnectionError/Timeout、无状态码、429、5xx</text><path d="M390.0 426.0 L390.0 440.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><path d="M390.0 441.0 L520.0 470.0 L390.0 499.0 L260.0 470.0 Z" fill="#ecfeff" stroke="#a5f3fc" stroke-width="1.3"/><text x="390.0" y="473.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="600" fill="#1e293b">rerank 成功且非空 ?</text><path d="M260.0 528.0 L190.0 528.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="502.0" width="320.0" height="92.0" rx="7" fill="#dcfce7" stroke="#86efac" stroke-width="1.3"/><text x="200.0" y="522.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#15803d">成功 · adaptive_threshold</text><text x="200.0" y="537.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">top1 ≥ 0.75 → 阈值 0.40</text><text x="200.0" y="552.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">top1 ≥ 0.50 → 阈值 0.45</text><text x="200.0" y="567.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">top1 &lt; 0.50 → 阈值 0.50</text><text x="200.0" y="582.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">过滤 score &lt; threshold → 取前 11</text><text x="200.0" y="496.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#64748b">阈值是分段常量，非统计值</text><path d="M520.0 528.0 L590.0 528.0" stroke="#dc2626" stroke-width="1.5" fill="none" stroke-dasharray="4 4" marker-end="url(#ar)"/><rect x="420.0" y="502.0" width="320.0" height="92.0" rx="7" fill="#fef2f2" stroke="#fecaca" stroke-width="1.3"/><text x="580.0" y="522.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">失败 / 空 · 保留 RRF 原序</text><text x="580.0" y="537.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">不构造虚假相关度分数</text><text x="580.0" y="552.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">按 parent_chunk_id 去重</text><text x="580.0" y="567.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">score_type = "rrf"</text><text x="580.0" y="582.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">取前 11</text><text x="580.0" y="496.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#dc2626">reranker_failed / reranker_empty</text><path d="M200.0 596.0 L390.0 612.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><path d="M580.0 596.0 L390.0 612.0" stroke="#dc2626" stroke-width="1.5" fill="none" stroke-dasharray="4 4" marker-end="url(#ar)"/><rect x="40.0" y="614.0" width="700.0" height="66.0" rx="7" fill="#f0fdfa" stroke="#5eead4" stroke-width="1.3"/><text x="390.0" y="630.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="700" fill="#0f766e">父块装配 assemble_parent_contexts（仅 chunk_type == "child"）</text><text x="390.0" y="644.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">批量回表 query(parent_chunk_id in [...], limit=16384) → 按 sequence_in_parent 升序拼接</text><text x="390.0" y="658.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">→ 写入 metadata["context_text"]（不改 page_content）</text><text x="390.0" y="672.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10" font-weight="400" fill="#64748b">熔断：全文 ≤6000 字直接用；超限降级为命中块 ±1 邻居；仍超限则只保留命中子块</text><path d="M390.0 682.0 L390.0 696.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="40.0" y="698.0" width="700.0" height="44.0" rx="7" fill="#dcfce7" stroke="#86efac" stroke-width="1.3"/><text x="390.0" y="724.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="10.5" font-weight="700" fill="#15803d">输出 ≤11 个带分文档（score_type = reranker | rrf）　→　进入生成侧 format_docs / build_citations</text><text x="790.0" y="26.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="11.5" font-weight="700" fill="#64748b">降级矩阵（dense_only_retrieve）</text><rect x="790.0" y="48.0" width="290.0" height="58.0" rx="7" fill="#fef2f2" stroke="#fecaca" stroke-width="1.3"/><text x="935.0" y="73.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">collection / embeddings 缺失</text><text x="935.0" y="88.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">native_collection_or_embeddings_missing</text><path d="M935.0 106.0 L935.0 120.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="790.0" y="126.0" width="290.0" height="58.0" rx="7" fill="#fef2f2" stroke="#fecaca" stroke-width="1.3"/><text x="935.0" y="151.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">Schema 无 sparse_vector 字段</text><text x="935.0" y="166.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">sparse_vector_field_missing（strict=true 时抛错）</text><path d="M935.0 184.0 L935.0 198.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="790.0" y="204.0" width="290.0" height="58.0" rx="7" fill="#fef2f2" stroke="#fecaca" stroke-width="1.3"/><text x="935.0" y="229.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">混合检索任意异常</text><text x="935.0" y="244.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">hybrid_error:{异常类名}</text><path d="M935.0 262.0 L935.0 276.0" stroke="#64748b" stroke-width="1.5" fill="none" marker-end="url(#ar)"/><rect x="790.0" y="282.0" width="290.0" height="58.0" rx="7" fill="#fef2f2" stroke="#fecaca" stroke-width="1.3"/><text x="935.0" y="307.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#dc2626">候选为空</text><text x="935.0" y="322.5" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">RetrievalMode.REFUSAL → 拒答</text><rect x="790.0" y="360.0" width="290.0" height="92.0" rx="7" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.3"/><text x="935.0" y="380.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#1e293b">dense 自身两级兜底</text><text x="935.0" y="395.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">① 原生 search_with_full_fields(limit=30)</text><text x="935.0" y="410.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">　 → similarity_threshold 0.45 过滤 → 去重 → [:11]</text><text x="935.0" y="425.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">② 异常则 similarity_search_with_score(k=30) 同逻辑</text><text x="935.0" y="440.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">③ 再失败返回 []</text><text x="790.0" y="336.0" text-anchor="start" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9" font-weight="400" fill="#b45309">※ 无 LIKE 兜底、无全量扫描（属价格链）</text><rect x="790.0" y="476.0" width="290.0" height="108.0" rx="7" fill="#ecfeff" stroke="#a5f3fc" stroke-width="1.3"/><text x="935.0" y="489.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="700" fill="#0e7490">多跳召回（外层 N 次调用）</text><text x="935.0" y="504.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">L0：retrieval_top_k 5 → 11（零 LLM）</text><text x="935.0" y="519.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">L1：kb_search_expanded 子句拆解</text><text x="935.0" y="534.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">　 kb_light_decompose=true</text><text x="935.0" y="549.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">　 sub_top_k=5 · max_chunks=20</text><text x="935.0" y="564.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">L2：deep_agent 并行 EXECUTE</text><text x="935.0" y="579.0" text-anchor="middle" font-family="Inter,Segoe UI,Microsoft YaHei,sans-serif" font-size="9.5" font-weight="400" fill="#64748b">　 max_exec_rounds=2 · replan=true</text><path d="M740.0 120.0 L790.0 120.0" stroke="#64748b" stroke-width="1.2" fill="none" stroke-dasharray="4 4"/><path d="M740.0 720.0 L790.0 470.0" stroke="#64748b" stroke-width="1.2" fill="none" stroke-dasharray="4 4"/></svg></div><figcaption>图 3　链路三：检索与重排序架构图</figcaption></figure><div class="sec"></p>
+<h3 id="3-1-调用链">3.1 调用链</h3>
+<pre><code>PublicKnowledgeRAG.query()                       engine.py:102
+  └─ _qa_chain.invoke()  ← build_chain()        generation/chain.py:26
+       ├─ RunnableLambda(_retrieve)
+       │    └─ HybridRetriever.retrieve()        retrieval/retriever.py:68   （先查 kb 结果缓存）
+       │         └─ _retrieve_impl()                                    :93
+       │              ├─ _hybrid_retrieve()                            :205
+       │              └─ _dense_fallback()                             :327
+       │         └─ _attach_parent_context()                           :161  （回程统一走）
+       └─ RunnableLambda(_decide_and_answer) → format_docs / build_sources / build_citations
+</code></pre>
+<h3 id="3-2-各阶段">3.2 各阶段</h3>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>实现</th>
+<th>关键参数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>查询预处理</td>
+<td><code>validate_question()</code>：类型校验 + <code>strip()</code>，<strong>无改写 / 扩展 / 去噪</strong></td>
+<td>空串抛错</td>
+</tr>
+<tr>
+<td>时效过滤</td>
+<td><code>_effective_expr()</code> → <code>effective_date is null or &lt;= today</code></td>
+<td><code>enable_effective_filter=**false**</code>（默认关）</td>
+</tr>
+<tr>
+<td>Dense</td>
+<td><code>AnnSearchRequest(vector)</code></td>
+<td><strong>COSINE · HNSW · ef=64 · limit=30</strong></td>
+</tr>
+<tr>
+<td>Sparse</td>
+<td><code>AnnSearchRequest(question 原文)</code></td>
+<td><strong>服务端 BM25 · limit=30</strong>（客户端零计算）</td>
+</tr>
+<tr>
+<td>融合</td>
+<td>pymilvus <code>RRFRanker(k=60)</code></td>
+<td><code>limit=30</code>，<code>group_by_field=parent_chunk_id</code>、<code>group_size=2</code> → 候选最多 60</td>
+</tr>
+<tr>
+<td>重排</td>
+<td><code>SiliconFlowReranker.rerank()</code></td>
+<td><code>BAAI/bge-reranker-v2-m3</code> · <code>top_n=22</code> · timeout 30s · retries 2</td>
+</tr>
+<tr>
+<td>阈值</td>
+<td><code>adaptive_threshold()</code></td>
+<td>见 §3.3</td>
+</tr>
+<tr>
+<td>截断</td>
+<td><code>retrieval_top_k</code></td>
+<td><strong>11</strong></td>
+</tr>
+<tr>
+<td>父块装配</td>
+<td><code>assemble_parent_contexts()</code></td>
+<td><code>max_chars=6000</code>，超限降级 ±1 邻居</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Embedding</strong>：<code>core/embeddings/bge_m3.py::create_embeddings</code> → <code>OpenAIEmbeddings</code> 子类（超长截断到 <code>chunk_max_chars=2000</code>），model <code>BAAI/bge-m3</code>、dim <strong>1024</strong>、timeout 30、retries 1、入库 batch <strong>100</strong>。</p>
+<p><strong>Dense / Sparse 两路的关键差异</strong>：dense 传向量、走向量索引；sparse <strong>传原文字符串</strong>——Milvus 通过 Schema 上声明的 <code>Function(name="text_bm25_emb", FunctionType.BM25)</code> 在服务端自动生成稀疏向量（analyzer <code>chinese</code>、k1=1.2、b=0.75、<code>DAAT_MAXSCORE</code>）。这是本项目性价比最高的设计之一：省掉 IDF 词典维护与一套稀疏模型，同时补上纯语义检索在<strong>条号、专名、金额</strong>上的短板。</p>
+<h3 id="3-3-自适应阈值">3.3 自适应阈值</h3>
+<p><code>retrieval/strategies.py::adaptive_threshold(top_score, settings)</code>，输入是 <strong>rerank 后的 top1 分</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>top1 分数</th>
+<th>阈值</th>
+<th>语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>≥ 0.75</td>
+<td><strong>0.40</strong></td>
+<td>高置信，放宽以补充上下文</td>
+</tr>
+<tr>
+<td>≥ 0.50</td>
+<td><strong>0.45</strong></td>
+<td>中等置信</td>
+</tr>
+<tr>
+<td>&lt; 0.50</td>
+<td><strong>0.50</strong></td>
+<td>低置信，收紧（由 <code>_decide_and_answer</code> 判断是否拒答）</td>
+</tr>
+</tbody>
+</table>
+<p>校验：<code>high ≤ medium ≤ low</code> 且均 ∈ [0,1]，否则 <code>ValueError</code>。<strong>这是分段常量，不是统计值</strong>——不假设得分分布，行为可预测、易调参。</p>
+<h3 id="3-4-父块装配">3.4 父块装配</h3>
+<p><code>parent_assembly.py::assemble_parent_contexts()</code>，仅处理 <code>chunk_type=="child"</code>：</p>
+<ol>
+<li><code>_fetch_children()</code> 批量回表：<code>query(filter="parent_chunk_id in [...]", limit=16384)</code>；</li>
+<li>按 <code>sequence_in_parent</code> 升序拼接，结果写入 <code>metadata["context_text"]</code>（<strong>不改 <code>page_content</code></strong>）；</li>
+<li>长度熔断（<code>:110</code>）：全文 ≤ <strong>6000</strong> 字直接用；超限降级为命中块 <strong>±1 邻居</strong>；仍超限则只保留命中子块。</li>
+</ol>
+<p>去重：<code>is_duplicate_parent()</code> 按 <code>parent_chunk_id</code> 保留首次出现（=高分者），在 rerank 后与 fallback 两处生效。</p>
+<h3 id="3-5-降级矩阵">3.5 降级矩阵</h3>
+<table>
+<thead>
+<tr>
+<th>触发条件</th>
+<th>行为</th>
+<th><code>fallback_reason</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>collection / embeddings 缺失</td>
+<td><code>_dense_fallback()</code></td>
+<td><code>native_collection_or_embeddings_missing</code></td>
+</tr>
+<tr>
+<td>Schema 无 <code>sparse_vector</code> 字段</td>
+<td>降级 dense；<code>strict_hybrid_validation=true</code> 时抛 <code>HybridRetrievalError</code></td>
+<td><code>sparse_vector_field_missing</code></td>
+</tr>
+<tr>
+<td>混合检索任意异常</td>
+<td>降级 dense</td>
+<td><code>hybrid_error:{异常类名}</code></td>
+</tr>
+<tr>
+<td>Reranker 抛错 / 超时</td>
+<td><strong>保留 RRF 原序，不构造虚假分数</strong></td>
+<td><code>reranker_failed</code></td>
+</tr>
+<tr>
+<td>Reranker 成功但返回空</td>
+<td>保留 RRF 原序</td>
+<td><code>reranker_empty</code></td>
+</tr>
+<tr>
+<td>候选为空</td>
+<td>拒答</td>
+<td><code>RetrievalMode.REFUSAL</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>dense_only_retrieve()</code> 自身还有两级：① pymilvus 原生 <code>search_with_full_fields</code>（limit=30）→ 按 <code>similarity_threshold=0.45</code> 过滤 → <code>dedupe_by_parent</code> → <code>[:11]</code>；② 抛异常则 <code>similarity_search_with_score(k=30)</code> 同逻辑；③ 再失败返回 <code>[]</code>。</p>
+<blockquote>
+<p><strong>无 LIKE 兜底、无全量扫描</strong>（<code>price_allow_full_scan</code> 属价格链，不在本链路）。</p>
+</blockquote>
+<h3 id="3-6-多跳召回-L0-L1-L2">3.6 多跳召回 L0 / L1 / L2</h3>
+<p>不是检索包内的循环，而是<strong>外层对检索的 N 次调用</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>层</th>
+<th>实现</th>
+<th>开关 / 参数</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>L0</strong></td>
+<td><code>retrieval_top_k</code> 由 5 提到 11</td>
+<td>已落地</td>
+<td>零 LLM</td>
+</tr>
+<tr>
+<td><strong>L1</strong></td>
+<td><code>public_kb/tools.py::kb_search_expanded</code>（:297）：基线 top-11 + 按 <code>[？?。；;，,\n]</code> 切子句（≥8 字）→ 每子句检索 <code>sub_top_k=5</code> → 按 <code>_norm_key</code> 去重并集，基线原序保持、新块按 score 降序追加，<code>max_chunks=20</code></td>
+<td><strong><code>kb_light_decompose=true</code></strong>，在 <code>agent/nodes/knowledge_qa/subgraph.py:162</code> 按开关路由</td>
+<td>1 次基线 + N 子句</td>
+</tr>
+<tr>
+<td><strong>L2</strong></td>
+<td>deep_agent EXECUTE 并行化（ThreadPool ≤4）</td>
+<td><code>deep_agent_max_exec_rounds=2</code>、<code>deep_agent_replan_enabled=true</code></td>
+<td>3 次 LLM / ~15.8s 每题</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-参数速查">4. 参数速查</h2>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>参数</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PDF 路由</td>
+<td><code>pdf_tiered_routing_enabled</code></td>
+<td><strong>false</strong>（默认）</td>
+</tr>
+<tr>
+<td></td>
+<td><code>pdf_tiered_min_text_chars</code> / <code>img_min_text_chars</code></td>
+<td>80 / 200</td>
+</tr>
+<tr>
+<td></td>
+<td><code>pdf_tiered_image_area_ratio</code> / <code>background_img_ratio</code></td>
+<td>0.35 / 0.70</td>
+</tr>
+<tr>
+<td></td>
+<td><code>pdf_tiered_two_col_confidence</code></td>
+<td>0.80</td>
+</tr>
+<tr>
+<td></td>
+<td><code>pdf_tiered_expand_boundary_pages</code></td>
+<td>1</td>
+</tr>
+<tr>
+<td></td>
+<td><code>pdf_tiered_fast_max_workers</code> / <code>profile_max_workers</code></td>
+<td>4 / 16</td>
+</tr>
+<tr>
+<td></td>
+<td><code>pdf_tiered_book_timeout_sec</code> / <code>mineru_api_timeout</code></td>
+<td>7200 / 1800</td>
+</tr>
+<tr>
+<td></td>
+<td><code>pdf_skip_front_matter</code></td>
+<td>true</td>
+</tr>
+<tr>
+<td>清洗</td>
+<td><code>pdf_min_table_rows</code></td>
+<td>2</td>
+</tr>
+<tr>
+<td></td>
+<td><code>enable_pdf_toc_filter</code> / <code>enable_external_md_normalize</code></td>
+<td>true / true</td>
+</tr>
+<tr>
+<td>分块</td>
+<td><code>chunk_max_chars_law</code> / <code>_law_compilation</code> / <code>_qa</code> / <code>_book_practical</code></td>
+<td>700 / 700 / 900 / 1000</td>
+</tr>
+<tr>
+<td></td>
+<td><code>chunk_max_chars</code>（回落路径）</td>
+<td>2000</td>
+</tr>
+<tr>
+<td>向量</td>
+<td><code>embedding_model</code> / <code>embedding_dim</code> / <code>batch_size</code></td>
+<td>BAAI/bge-m3 / 1024 / 100</td>
+</tr>
+<tr>
+<td>索引</td>
+<td><code>milvus_dense_index_type</code> / <code>hnsw_m</code> / <code>ef_construction</code> / <code>search_ef</code></td>
+<td>HNSW / 16 / 128 / 64</td>
+</tr>
+<tr>
+<td></td>
+<td><code>milvus_sparse_index_type</code> / <code>bm25_k1</code> / <code>bm25_b</code></td>
+<td>SPARSE_INVERTED_INDEX / 1.2 / 0.75</td>
+</tr>
+<tr>
+<td>检索</td>
+<td><code>retrieval_top_k</code></td>
+<td><strong>11</strong></td>
+</tr>
+<tr>
+<td></td>
+<td><code>hybrid_dense_limit</code> / <code>hybrid_sparse_limit</code> / <code>hybrid_fusion_limit</code></td>
+<td>30 / 30 / 30</td>
+</tr>
+<tr>
+<td></td>
+<td><code>rrf_k</code></td>
+<td>60</td>
+</tr>
+<tr>
+<td></td>
+<td><code>retrieval_group_by_parent</code> / <code>group_size</code></td>
+<td>true / 2</td>
+</tr>
+<tr>
+<td></td>
+<td><code>retrieval_parent_max_chars</code></td>
+<td>6000</td>
+</tr>
+<tr>
+<td></td>
+<td><code>similarity_threshold</code></td>
+<td>0.45</td>
+</tr>
+<tr>
+<td>重排</td>
+<td><code>reranker_model</code> / <code>timeout</code> / <code>max_retries</code> / <code>backoff</code></td>
+<td>BAAI/bge-reranker-v2-m3 / 30s / 2 / 0.25s</td>
+</tr>
+<tr>
+<td></td>
+<td><code>rerank_high/medium/low_confidence_threshold</code></td>
+<td>0.40 / 0.45 / 0.50</td>
+</tr>
+<tr>
+<td></td>
+<td><code>rerank_high/medium_confidence_score</code></td>
+<td>0.75 / 0.50</td>
+</tr>
+<tr>
+<td>其他</td>
+<td><code>kb_light_decompose</code> / <code>enable_effective_filter</code> / <code>strict_hybrid_validation</code></td>
+<td>true / false / false</td>
+</tr>
+<tr>
+<td></td>
+<td><code>cache_enabled</code> / <code>cache_maxsize</code> / <code>cache_kb_ttl_seconds</code></td>
+<td>true / 512 / 3600</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5-现状与风险提示">5. 现状与风险提示</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>问题</th>
+<th>影响</th>
+<th>建议</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>分档路由默认关闭</strong>（<code>pdf_tiered_routing_enabled=false</code>）</td>
+<td>默认仍是全量 MinerU 链路，分档的工程收益未默认生效</td>
+<td>汇报时明确"分档是显式开启能力"；若已验证稳定，建议翻转默认值</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>Tier B 空转</strong></td>
+<td>有框表格全部走远程 MinerU，成本与耗时高</td>
+<td>接入 <code>table_extract.ENGINES</code> 或明确放弃 B 档并简化判定树</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>超大表无切分</strong></td>
+<td>表格原子块不细分，整表入库（VARCHAR 65535）</td>
+<td>统计实际长度分布，必要时为大表加切分或摘要</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>分块无 overlap 且无最小长度</strong></td>
+<td>碎块可能进入检索；父子块是主要补偿手段</td>
+<td>已有 <code>parent_assembly</code> 兜底，可补 chunk 级 min_chars</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>doc_type 靠文件名</strong></td>
+<td>文件名不规范即回落 <code>book_practical</code>（1000 字），法规类可能被过粗切分</td>
+<td>增加内容规则或入库时显式声明</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Milvus 服务端 <code>enable_bm25</code> 生效状态</td>
+<td>代码默认 true，需实机 <code>describe_collection</code> 核对</td>
+<td>部署检查项</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>quality_score</code> 硬写 1.0</td>
+<td>PDF 质量门禁形同虚设</td>
+<td>接入真实质量分或移除该字段</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>本文事实核对于 2026-09-17，基准为当前工作区代码。</em></p></div></main></div></body></html>
