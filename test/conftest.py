@@ -7,6 +7,8 @@ W4-2：检索缓存（core.cache）是**进程级单例**，跨用例会互相�
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 # ── 非 live 用例的网络闸门（P1-1）──────────────────────────────────
@@ -121,6 +123,14 @@ def _hermetic_backends(monkeypatch, _network_gate):
     # （见 test/orchestration/test_agent_gate.py、test/core/test_registry.py）。
     monkeypatch.setenv("CAPABILITY_ENABLED", "")
     monkeypatch.setenv("CAPABILITY_DISABLED", "")
+    # 模型客户端的**占位凭据**：这批用例都会打桩（不发真实请求），但 ChatOpenAI /
+    # OpenAIEmbeddings 在**构造期**就要 api_key，缺了直接抛
+    # `openai.OpenAIError: Missing credentials`。本机因为 .env 里有真 key 而看不出问题；
+    # 2026-11-27 GitHub CI（仓库里没有 .env）实测 17 例因此失败。
+    # 只在环境里没有真 key 时补占位，避免覆盖本地联调用的真凭据。
+    for _key in ("LLM_API_KEY", "EMBEDDING_API_KEY", "OPENAI_API_KEY"):
+        if not os.environ.get(_key):
+            monkeypatch.setenv(_key, "test-placeholder-key")
     # C1：文档索引复用 filestore 后端配置 → 同样是进程级单例，跨用例会互相污染
     # （同一 file_id+session 命中上一用例的索引）。
     from core import doc_index, filestore
