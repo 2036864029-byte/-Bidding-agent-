@@ -84,6 +84,12 @@ warn_unused_ignores = false
 [tool.pytest.ini_options]
 testpaths = ["test"]
 addopts = "-q --strict-markers"
+# 必须显式把仓库根放进 sys.path：`pytest`（console script）与 `python -m pytest` 行为不同 ——
+# 前者不把 CWD 加入 sys.path，pytest 的 prepend 导入模式于是把 test/ 插到最前，
+# 导致 `import core` 命中 test/core/（无 __init__.py，但仍是 namespace 包），
+# 收集期直接报 141 条 "No module named 'core.config'"。
+# 2026-11-27 GitHub CI 首次跑测试时踩到；local_ci.py 用 `python -m pytest`，所以本机不暴露。
+pythonpath = ["."]
 markers = [
     "unit: 纯离线单测（无外部依赖）",
     "integration: 需要桩件或本地 DB/Milvus",
