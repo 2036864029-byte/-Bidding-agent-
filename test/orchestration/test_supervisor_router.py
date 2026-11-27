@@ -7,6 +7,8 @@ fake llm_router。覆盖：规则命中 / 语义命中 / LLM 兜底 / 全 miss�
 
 from __future__ import annotations
 
+import pytest
+
 from _support.fakes import HashEmbeddings
 from orchestration.handoff import HandoffMeta
 from orchestration.supervisor import (
@@ -16,6 +18,18 @@ from orchestration.supervisor import (
     route_question,
     route_question_full,
 )
+
+
+@pytest.fixture(autouse=True)
+def _semantic_off_by_default(monkeypatch):
+    """本文件默认关 L2：这些用例断言的是 L1/L3 与级联顺序，L2 打开会引入真实
+    embedder 调用（违反离线约束）且可能抢先命中、改变预期落点。
+    需要验证语义层的用例自行把开关打开。
+    """
+    import orchestration.supervisor as sup
+
+    monkeypatch.setattr(sup, "SEMANTIC_ROUTE_ENABLED", False)
+    sup.reset_semantic_cache()
 
 # ── L1 规则快路径 ─────────────────────────────────────────────
 
@@ -65,9 +79,43 @@ def test_semantic_below_threshold_returns_none():
     assert hit is None
 
 
-def test_semantic_disabled_without_embedder_skips():
-    # 开关关 + 无注入 embedder → 直接 None（不建默认 API embedder）
+def test_semantic_switch_off_skips_without_embedder(monkeypatch):
+    """开关关 + 无注入 embedder → 直接 None（不建默认 API embedder）。"""
+    import orchestration.supervisor as sup
+
+    monkeypatch.setattr(sup, "SEMANTIC_ROUTE_ENABLED", False)
     assert classify_semantic("评标委员会怎么组成？") is None
+
+
+def test_semantic_example_vectors_cached(monkeypatch):
+    """示例向量预计算：第二次调用只多 1 次嵌入（问题本身），这是语义层能默认开启的前提。"""
+    import orchestration.supervisor as sup
+
+    monkeypatch.setattr(sup, "SEMANTIC_ROUTE_ENABLED", True)
+    sup.reset_semantic_cache()
+    emb = HashEmbeddings()
+
+    first = classify_semantic("评标委员会怎么组成？", embedder=emb)
+    calls_after_first = emb.query_calls
+    second = classify_semantic("评标委员会怎么组成？", embedder=emb)
+
+    assert first == second == "knowledge_qa"
+    assert calls_after_first > 1  # 首次：问题 + 全部能力示例
+    assert emb.query_calls - calls_after_first == 1  # 第二次：只嵌入问题
+
+
+def test_semantic_degrades_when_embedder_fails(monkeypatch):
+    """嵌入不可用 → 返回 None（让过 L2 交 L3），不抛错阻断路由。"""
+    import orchestration.supervisor as sup
+
+    monkeypatch.setattr(sup, "SEMANTIC_ROUTE_ENABLED", True)
+    sup.reset_semantic_cache()
+
+    class BrokenEmbeddings(HashEmbeddings):
+        def embed_query(self, text: str):
+            raise RuntimeError("embedding api down")
+
+    assert classify_semantic("评标委员会怎么组成？", embedder=BrokenEmbeddings()) is None
 
 
 # ── 三级级联 route_question ──────────────────────────────────

@@ -69,6 +69,20 @@ def _reset_capability_overrides():
 
 
 @pytest.fixture(autouse=True)
+def _semantic_route_off(monkeypatch):
+    """L2 语义路由**生产默认开启**（示例向量已预计算，单请求 1 次嵌入）；
+    测试必须离线，故整场默认关掉，需要验证语义层的用例自行 monkeypatch 打开
+    （见 test/orchestration/test_supervisor_router.py 的缓存/降级用例）。
+    """
+    import orchestration.supervisor as sup
+
+    monkeypatch.setattr(sup, "SEMANTIC_ROUTE_ENABLED", False)
+    sup.reset_semantic_cache()
+    yield
+    sup.reset_semantic_cache()
+
+
+@pytest.fixture(autouse=True)
 def _reset_inflight_gate():
     """C1：在飞闸门是进程级单例，跨用例会残留计数与配置 → 每个用例前后重置。"""
     from core.concurrency.limits import reset_inflight_gate
@@ -119,6 +133,25 @@ def _hermetic_backends(monkeypatch, _network_gate):
     reset_caches()
     filestore.reset_store()
     doc_index.reset_index()
+
+
+@pytest.fixture(autouse=True)
+def _reset_feishu():
+    """并行线 A：事件订阅 / 绑定表 / 推送器单例跨用例会串，需重置。
+
+    create_app 会在进程启动时装配进度推送器（订阅 core.events）——若不清订阅，
+    前一个用例 emit 的进度事件会被后一个用例的断言捡到（或反之漏掉）。
+    """
+    from channels.feishu.push import reset_notifier
+    from core import events, feishu_binding
+
+    events.clear_subscribers()
+    feishu_binding.reset_bindings()
+    reset_notifier()
+    yield
+    events.clear_subscribers()
+    feishu_binding.reset_bindings()
+    reset_notifier()
 
 
 @pytest.fixture
