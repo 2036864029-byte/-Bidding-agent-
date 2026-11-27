@@ -4,11 +4,16 @@ import { ArrowLeft, Wrench } from 'lucide-react';
 import { Brand } from '@/components/common/Brand';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ChatDock } from '@/components/layout/ChatDock';
+import { ChatFocusPanel } from '@/components/chat/ChatFocusPanel';
 
 /**
- * ModulePageLayout —— 模块页骨架。
- * 顶部：品牌（点击回首页）+「返回首页」按钮；中部：模块名 + 阶段徽章 + 内容区。
- * 三模块内容在 Phase 3 落地；此处提供稳定的页面容器。
+ * ModulePageLayout —— 模块页骨架（V2）。
+ * 顶部：品牌（点击回首页）+「返回首页」按钮；中部：模块名 + 阶段徽章 + 内容区；
+ * 底部：**常驻对话框**（sticky），三个模块页面都带同一条输入条，
+ * 与首页共用同一个 chat store —— 换个页面不丢会话。
+ *
+ * 浮窗（ChatFocusPanel）也一并挂在这里，否则在模块页发送后没有可看的结果面。
  */
 export function ModulePageLayout({
   name,
@@ -58,6 +63,9 @@ export function ModulePageLayout({
         </div>
         {children}
       </main>
+
+      <ChatDock variant="sticky" />
+      <ChatFocusPanel />
     </div>
   );
 }

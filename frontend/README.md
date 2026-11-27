@@ -25,6 +25,10 @@ npm run build
 npm run preview
 ```
 
+> 生产构建变量在 [`.env.production`](.env.production)（**已入库**）：`VITE_CHAT_MODE=api`。
+> 不要依赖 `.env.local`（被 gitignore）——服务器上拿不到，构建出来对话栏会是演示数据。
+> `VITE_API_BASE` 保持不设（走同域 `/api`）。细则见 `docs/部署手册_百度云轻量.md` §4。
+
 > 本机 Node 在 `D:\Zhao327\`（不在 PATH），可用 `$env:Path="D:\Zhao327;"+$env:Path; npm ...` 调用。
 
 ## 目录

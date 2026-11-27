@@ -388,3 +388,34 @@ export async function fetchReference(
 }
 
 // 智能询价**没有**独立端点：报价参考由 /chat 的 price_records 派生（见 lib/inquiry.ts）。
+
+/* ── 飞书（并行线 A：任务进度推送的网页端「连接飞书」） ──────────── */
+
+export interface FeishuBinding {
+  bound: boolean;
+  session_id?: string;
+}
+
+/** GET /feishu/binding —— 查询本会话是否已绑定飞书（前端情况1/情况2 判定）。 */
+export async function getFeishuBinding(sessionId: string): Promise<FeishuBinding> {
+  const qs = new URLSearchParams({ session_id: sessionId });
+  return request<FeishuBinding>(`/feishu/binding?${qs.toString()}`);
+}
+
+export interface FeishuAuthUrl {
+  auth_url: string;
+  state?: string;
+}
+
+/**
+ * GET /feishu/auth_url —— 生成飞书 OAuth 授权跳转链。
+ * redirect 传当前页完整 URL：授权回调会 302 回该地址并追加 ?feishu=bound。
+ * 503 = 后端未配置飞书（此时按钮不应可用，见 UI）。
+ */
+export async function getFeishuAuthUrl(
+  sessionId: string,
+  redirect: string
+): Promise<FeishuAuthUrl> {
+  const qs = new URLSearchParams({ session_id: sessionId, redirect });
+  return request<FeishuAuthUrl>(`/feishu/auth_url?${qs.toString()}`);
+}

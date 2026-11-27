@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { StatTiles } from '@/components/kanban/StatTiles';
 import { FILTER_ALL, KanbanFilterRow } from '@/components/kanban/KanbanFilterRow';
 import { IndustryTrendChart } from '@/components/kanban/IndustryTrendChart';
-import { RegionHeatmap } from '@/components/kanban/RegionHeatmap';
+import { ChinaMapHeatmap } from '@/components/kanban/ChinaMapHeatmap';
 import { IndustryBars } from '@/components/kanban/IndustryBars';
 import { Badge } from '@/components/ui/badge';
 import { useAsyncData } from '@/hooks/use-async-data';
@@ -19,7 +19,8 @@ import { api, dataConfig } from '@/services/api';
  * 数据链路：页面只依赖 `api.kanban`（Mock↔API 开关）与 `@/types/kanban` 领域契约，
  * 不触碰任何后端原始字段（换成真数据只改 adapters/services，本文件零改动）。
  *
- * 版面：汇总指标 → 筛选行 → **行业走势（主角）** → 地区热力 / 行业占比。
+ * 版面：汇总指标 → 筛选行 → **地区分布（3D 中国地图，主角）** → 行业走势 → 行业占比。
+ * 地区分布置顶：它回答"哪里有机会"，是最先要看的一屏；行业走势回答"趋势如何"。
  *
  * **无金额维度**（数据只有单月 8 天）；**无产品榜**（产品频率分布无信号，
  * 最高 3 次 / 94% 只出现 1 次，任何排序都是并列时按名称排的假象，2026-09-15 撤掉）。
@@ -102,7 +103,25 @@ export function KanbanPage() {
         updatedAt={data.updatedAt}
       />
 
-      {/* ── 行业走势（主角）：交易类型 × 月，多序列（≤3 条） ── */}
+      {/* ── 地区分布（主角）：真实省界 + 立体台地，置顶 ── */}
+      <ChartCard
+        title="地区分布"
+        subtitle={
+          data.heatmapMonth
+            ? `省级 · 公共资源交易项目数（${data.heatmapMonth.slice(0, 7)}）· 颜色深浅表示数量`
+            : '省级 · 公共资源交易项目数 · 颜色深浅表示数量'
+        }
+        table={
+          <DataTable
+            columns={['地区', '项目数（个）']}
+            rows={heatmap.map((c) => [c.region, fmtInt(c.count)])}
+          />
+        }
+      >
+        <ChinaMapHeatmap cells={heatmap} />
+      </ChartCard>
+
+      {/* ── 行业走势：交易类型 × 月，多序列（≤3 条） ── */}
       <ChartCard
         title="行业走势"
         subtitle={
@@ -123,38 +142,19 @@ export function KanbanPage() {
         <IndustryTrendChart trend={data.industryTrend} height={230} />
       </ChartCard>
 
-      {/* ── 副图：地区热力 + 行业占比 ── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChartCard
-          title="地区分布"
-          subtitle={
-            data.heatmapMonth
-              ? `省级 · 公共资源交易项目数（${data.heatmapMonth.slice(0, 7)}）· 颜色深浅表示数量`
-              : '省级 · 公共资源交易项目数 · 颜色深浅表示数量'
-          }
-          table={
-            <DataTable
-              columns={['地区', '项目数（个）']}
-              rows={heatmap.map((c) => [c.region, fmtInt(c.count)])}
-            />
-          }
-        >
-          <RegionHeatmap cells={heatmap} />
-        </ChartCard>
-
-        <ChartCard
-          title="行业占比"
-          subtitle="按项目数量 · 条端标注为占比"
-          table={
-            <DataTable
-              columns={['行业', '项目数（个）', '占比']}
-              rows={composition.map((c) => [c.industry, fmtInt(c.count), `${c.pct.toFixed(1)}%`])}
-            />
-          }
-        >
-          <IndustryBars items={composition} />
-        </ChartCard>
-      </div>
+      {/* ── 行业占比 ── */}
+      <ChartCard
+        title="行业占比"
+        subtitle="按项目数量 · 条端标注为占比"
+        table={
+          <DataTable
+            columns={['行业', '项目数（个）', '占比']}
+            rows={composition.map((c) => [c.industry, fmtInt(c.count), `${c.pct.toFixed(1)}%`])}
+          />
+        }
+      >
+        <IndustryBars items={composition} />
+      </ChartCard>
     </div>
   );
 }

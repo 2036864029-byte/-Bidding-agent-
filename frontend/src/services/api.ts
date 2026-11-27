@@ -326,4 +326,16 @@ export const api = {
       return realUpload(file, key, sessionId, onUpdate, signal);
     },
   },
+
+  /** 飞书（并行线 A）：绑定状态查询 + OAuth 授权跳转。无 mock —— 直接走真实端点。 */
+  feishu: {
+    /** 本会话是否已绑定飞书（情况1/情况2 判定）；后端未配置/不可用时抛错由调用方兜底。 */
+    async binding(sessionId: string): Promise<boolean> {
+      return (await backend.getFeishuBinding(sessionId)).bound;
+    },
+    /** 生成 OAuth 授权跳转链（redirect 为授权回调落地页的完整 URL）。 */
+    async authUrl(sessionId: string, redirect: string): Promise<string> {
+      return (await backend.getFeishuAuthUrl(sessionId, redirect)).auth_url;
+    },
+  },
 };

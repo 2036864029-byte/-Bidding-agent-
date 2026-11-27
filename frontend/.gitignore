@@ -19,6 +19,9 @@ pnpm-debug.log*
 # 本地截图验证产物
 .shots/
 
+# 生成省界数据的源 GeoJSON（458 KB，用 scripts/gen_china_paths.py 自动下载）
+.cache/
+
 # 编辑器
 .vscode/*
 !.vscode/extensions.json

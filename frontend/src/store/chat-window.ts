@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import { clearSessionId, loadSessionId, saveSessionId, validateUpload } from '@/lib/chat';
+import {
+  clearSessionId,
+  feishuPrompted,
+  loadSessionId,
+  markFeishuPrompted,
+  saveSessionId,
+  validateUpload,
+} from '@/lib/chat';
 import { api, type UploadedFileState } from '@/services/api';
 import type { ChatMessage } from '@/types/chat';
 
@@ -29,6 +36,18 @@ const uid = () => `m_${++seq}_${Date.now()}`;
 /** 当前流的 abort 句柄（模块级：不需要触发渲染）。 */
 let currentAbort: AbortController | null = null;
 
+/**
+ * 顶层导航。真实浏览器 = 正常跳转；jsdom / 受限环境（location.assign 只读或
+ * not-implemented）会抛 —— 这里吞掉，避免授权跳转失败变成 unhandled rejection。
+ */
+export const assignHref = (url: string): void => {
+  try {
+    window.location.assign(url);
+  } catch {
+    /* 非浏览器环境：跳转本就不该发生 */
+  }
+};
+
 const patch = (
   messages: ChatMessage[],
   id: string,
@@ -47,6 +66,8 @@ interface ChatWindowState {
   busy: boolean;
   /** 即时提示（上传校验失败 / 正在退避重试等） */
   notice: string | null;
+  /** 飞书连接提醒：null=不弹；'unbound'=情况1（引导连接）；'bound'=情况2（已连接） */
+  feishuPrompt: 'unbound' | 'bound' | null;
 
   setInput: (v: string) => void;
   /** 发送：追加用户消息 + 占位 agent 消息，开流式 */
@@ -61,6 +82,14 @@ interface ChatWindowState {
   minimize: () => void;
   uploadFiles: (files: File[]) => void;
   removeFile: (id: string) => void;
+  /** 上传后检查飞书绑定：未弹过 → 查询 → 决定弹哪种提醒（异步，不阻塞上传） */
+  checkFeishuPrompt: () => void;
+  /** 点「连接飞书」：拿授权链 → 顶层跳转（授权后 302 回当前页 + ?feishu=bound） */
+  connectFeishu: () => void;
+  /** 关闭飞书提醒（并记下本会话已弹，避免反复打扰） */
+  dismissFeishuPrompt: () => void;
+  /** 设一条即时提示（授权回调落地页「绑定成功」用） */
+  notify: (message: string) => void;
   /** 清空会话（消息 + 会话 id + 文件） */
   reset: () => void;
 }
@@ -160,6 +189,7 @@ export const useChatWindowStore = create<ChatWindowState>((set, get) => {
     files: [],
     busy: false,
     notice: null,
+    feishuPrompt: null,
 
     setInput: (v) => set({ input: v }),
 
@@ -207,6 +237,8 @@ export const useChatWindowStore = create<ChatWindowState>((set, get) => {
         return true;
       });
       if (!accepted.length) return;
+      // 并行线 A：大文件进异步解析，弹「连接飞书」提醒（情况1/情况2，同会话只弹一次）
+      get().checkFeishuPrompt();
 
       // 串行上传：同一客户端快速连传会撞限流（429），串行最省事也最稳
       void (async () => {
@@ -240,6 +272,45 @@ export const useChatWindowStore = create<ChatWindowState>((set, get) => {
 
     removeFile: (id) => set((s) => ({ files: s.files.filter((f) => f.id !== id) })),
 
+    // ── 飞书连接提醒（并行线 A） ─────────────────────────────
+    checkFeishuPrompt: () => {
+      const { sessionId, feishuPrompt } = get();
+      if (feishuPrompt || !sessionId) return;
+      if (feishuPrompted(sessionId)) return; // 本会话已弹过
+      void api.feishu
+        .binding(sessionId)
+        .then((bound) => {
+          if (!get().sessionId) return; // 期间会话被清空 → 不弹
+          set({ feishuPrompt: bound ? 'bound' : 'unbound' });
+        })
+        .catch(() => {
+          /* 后端未配飞书 / 不可用：静默，不打扰用户 */
+        });
+    },
+
+    connectFeishu: () => {
+      const { sessionId } = get();
+      if (!sessionId) return;
+      markFeishuPrompted(sessionId); // 跳转前记下，避免授权页往返后重复弹
+      set({ feishuPrompt: null });
+      void api.feishu
+        .authUrl(sessionId, window.location.href)
+        .then((url) => {
+          assignHref(url); // 顶层导航；授权后 302 回当前页 + ?feishu=bound
+        })
+        .catch(() => {
+          set({ notice: '连接飞书暂时不可用，请稍后再试。' });
+        });
+    },
+
+    dismissFeishuPrompt: () => {
+      const { sessionId } = get();
+      if (sessionId) markFeishuPrompted(sessionId);
+      set({ feishuPrompt: null });
+    },
+
+    notify: (message) => set({ notice: message }),
+
     reset: () => {
       currentAbort?.abort();
       currentAbort = null;
@@ -251,6 +322,7 @@ export const useChatWindowStore = create<ChatWindowState>((set, get) => {
         busy: false,
         input: '',
         notice: null,
+        feishuPrompt: null,
         status: 'idle',
       });
     },

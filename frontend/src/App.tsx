@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { MotionConfig } from 'framer-motion';
 import { RouteFallback } from '@/components/layout/RouteFallback';
 import { ChatPage } from '@/pages/chat/ChatPage';
+import { ModulesPage } from '@/pages/modules/ModulesPage';
 import { IntroPage } from '@/pages/intro/IntroPage';
 import { FaqPage } from '@/pages/faq/FaqPage';
 import { MobilePage } from '@/pages/mobile/MobilePage';
@@ -10,7 +11,8 @@ import { LinksPage } from '@/pages/links/LinksPage';
 
 /**
  * 路由骨架。
- *   /chat      对话控制台（首页，四层落地页）
+ *   /chat      对话控制台（首页：首屏 + 对话框）
+ *   /modules   三模块整屏（导航「开始」的落点；独立路由，可后退/直链）
  *   /inquiry   智能询价    /kanban 商机看板    /supplier 供应商全景
  *   /intro /faq /mobile /links   导航占位页（内容后续填充）
  * MotionConfig reducedMotion="user"：Framer Motion 尊重系统减动效偏好
@@ -40,6 +42,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/chat" replace />} />
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/modules" element={<ModulesPage />} />
             <Route path="/inquiry" element={<InquiryPage />} />
             <Route path="/kanban" element={<KanbanPage />} />
             <Route path="/supplier" element={<SupplierPage />} />

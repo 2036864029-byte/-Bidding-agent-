@@ -270,6 +270,105 @@ h1, h2, h3 {
   to { opacity: 1; transform: none; }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * V2 · 主视觉层「黑白 + 酸性青柠」（2026-11-24）
+ *
+ * V2 · 主视觉层「黑白 + 政务蓝」（2026-11-24 / 修订 2026-11-24）
+ *
+ * 语言：厚黑描边 + 硬投影 + 胶囊控件（贴纸骨架保留），配色从"酸性青柠"
+ * 换为**招投标场景更稳的蓝系**：
+ *   - 主渐变：深蓝 → 品牌蓝（首屏产品卡、主按钮）
+ *   - 次渐变：淡蓝径向洗底（页面背景，仅 1 层）
+ * 硬约束：
+ *   1. 白字只压在两档深蓝之上（#005EFF 对白 5.19:1；#2E8BFF 仅 3.36:1，不可承载小字）
+ *   2. 渐变收敛为两级，全部蓝系；不再出现青柠/粉等跳脱色
+ *   3. 硬投影无模糊（0 blur），是"贴纸"语言而非拟物
+ * ══════════════════════════════════════════════════════════════════ */
+@theme {
+  --color-azure:       #005eff;   /* 品牌蓝（主色；勿用 --color-blue，会被保留色名吞掉） */
+  --color-azure-dp:    #0031c2;   /* 深蓝（主渐变起点 / 公告条） */
+  --color-azure-ink:   #00206e;   /* 最深蓝（主渐变 0% 端点） */
+  --color-azure-lt:    #2e8bff;   /* 浅蓝（次渐变端点 / 装饰，不可承载小字） */
+  --color-mist:        #e8f0ff;   /* 淡蓝底（图标底座 / 选中行） */
+  --color-ice:         #ddf2ff;   /* 冰蓝（气泡 / 次要块） */
+  --color-indigo:      #e6e9ff;   /* 淡靛（第三块语义） */
+  --color-edge:        #080808;   /* 硬描边/主墨 */
+  --radius-sticker:    26px;
+}
+
+:root {
+  --shadow-hard:    4px 4px 0 var(--color-edge);
+  --shadow-hard-sm: 3px 3px 0 var(--color-edge);
+}
+
+/* 首屏满屏：由父级 flex 分配（main 是 flex-1，hero 再吃满剩余高度），
+ * 不依赖「视口减去导航高度」这类魔法数字。此前用
+ * min-h-[calc(100dvh-var(--header-h))] 有两处坑：Tailwind arbitrary value 里
+ * 的 calc 少空格会被整条丢弃；即便修好，--header-h 也会随字体渲染漂移。 */
+
+/* 品牌中文词标：偏艺术风格的系统字体栈。
+ * 依次尝试 方正舒体 → 华文行楷 → 幼圆 → 苹方/雅黑；都没装时退回常规无衬线。
+ * 这些是 Windows 中文版自带字体，不引入外部资源。 */
+.brand-cjk {
+  font-family: "方正舒体", "FZShuTi", "华文行楷", "STXingkai", "幼圆", "YouYuan",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+/* hero 洗底：**左下深蓝 → 中部浅 → 右上白**（2026-11-24）
+ * 深色取自参考色块实测值 #0E59FF（与本页行动块同色）。
+ * 深色团锚在左下角，向右上放射衰减，约 55% 处化尽；再叠加一层
+ * "左下浅蓝 → 右上纯白"的斜向托底，保证中部已足够浅、右上完全留白。 */
+.hero-wash {
+  background:
+    radial-gradient(135% 125% at -12% 112%, #0e59ff 0%, rgba(14, 89, 255, 0.66) 24%, rgba(14, 89, 255, 0.22) 46%, rgba(14, 89, 255, 0) 68%),
+    linear-gradient(to top right, #d6e6ff 0%, #eef6ff 50%, #ffffff 100%);
+}
+
+/* ── 首屏对话示例卡（2026-11-24 · 淡蓝渐变卡面）──────────────────────
+ * 只改**卡面底色**：青柠 → 淡蓝渐变。三枚标签仍用参考图取的原始配色
+ * （蜜桃 / 薄荷 / 粉），行动块 #0E59FF 亦不变。
+ * 卡面换蓝后冰蓝气泡 #DEFAFF 会与卡面糊在一起，故气泡同步错开一档：
+ *   问句 #FFFFFF（纯白）/ 答句 #B9DDFF（比卡面深一档）。
+ * 文字一律 #080808，对卡面最浅端 ≈17.6:1、最深端 ≈15.6:1。 */
+:root {
+  --color-card-top:    #f7f3ec;   /* 卡面渐变起（中性暖米白） */
+  --color-card-bottom: #e9e0d2;   /* 卡面渐变止 */
+  --color-card-glow:   #ddd0bc;   /* 卡面左下沉降晕 */
+  --color-bubble-warm: #f5f5f0;   /* 问句气泡（暖白，取自参考图） */
+  --color-bubble-sky:  #defaff;   /* 答句气泡（冰蓝，取自参考图） */
+  --color-step-blue:   #0e59ff;   /* 「下一步」行动块（取自参考图） */
+  --color-chip-peach:  #ffd4c6;   /* 标签一：蜜桃（取自参考图） */
+  --color-chip-mint:   #e7ffff;   /* 标签二：薄荷（取自参考图） */
+  --color-chip-pink:   #fed7f9;   /* 标签三：粉（取自参考图） */
+}
+
+/* 卡面：**透明底**（2026-11-24）
+ * 只留 3px 墨边 + 无模糊硬投影，卡内直接透出加深后的 hero 洗底。
+ * 气泡恢复参考图配色（暖白 / 冰蓝）且**不加描边** —— 洗底足够蓝，
+ * 气泡轮廓靠色差自然成立，不必再补边。 */
+.card-grad {
+  background: transparent;
+}
+
+/* 三枚漂浮标签：顶部色 → 近白 的竖向渐变（与参考图一致） */
+.chip-peach { background-image: linear-gradient(180deg, var(--color-chip-peach) 0%, #fffcfb 100%); }
+.chip-mint  { background-image: linear-gradient(180deg, var(--color-chip-mint) 0%, #f8ffff 100%); }
+.chip-pink  { background-image: linear-gradient(180deg, var(--color-chip-pink) 0%, #fff9ff 100%); }
+
+/* 贴纸容器：2px 墨边 + 无模糊硬投影 */
+.sticker {
+  border: 2px solid var(--color-edge);
+  box-shadow: var(--shadow-hard);
+}
+.sticker-sm {
+  border: 2px solid var(--color-edge);
+  box-shadow: var(--shadow-hard-sm);
+}
+/* 胶囊按钮/标签 */
+.pill {
+  border-radius: 999px;
+}
+
 /* 减动效：一切空间动效折叠为 ≤150ms 透明度 */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -288,4 +387,29 @@ h1, h2, h3 {
   .gradient-edge {
     animation: none;
   }
+}
+
+/* ── 省份热力图（ChinaMapHeatmap）· 选中动效 ────────────────────
+ * 遵守三态纪律：只动 transform + opacity；
+ * prefers-reduced-motion 下退化为静态（涟漪不出现，卡片直接显示）。 */
+@keyframes cmh-pop-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.cmh-pop {
+  transform-box: view-box;
+  animation: cmh-pop-in 160ms var(--ease-out) both;
+}
+@keyframes cmh-ripple {
+  0%   { opacity: .85; transform: scale(1); }
+  75%  { opacity: 0;   transform: scale(1.055); }
+  100% { opacity: 0;   transform: scale(1.055); }
+}
+.cmh-ripple {
+  transform-box: view-box;
+  animation: cmh-ripple 1.8s var(--ease-out) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cmh-pop { animation: none; }
+  .cmh-ripple { animation: none; opacity: 0; }
 }

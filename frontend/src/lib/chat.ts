@@ -93,6 +93,28 @@ export function clearSessionId(): void {
   }
 }
 
+/* ── 飞书连接提醒（并行线 A：同一会话只弹一次） ────────────── */
+
+const feishuPromptKey = (sessionId: string) => `ztb.feishu_prompted_${sessionId}`;
+
+/** 本会话是否已弹过「连接飞书」提醒。 */
+export function feishuPrompted(sessionId: string): boolean {
+  try {
+    return localStorage.getItem(feishuPromptKey(sessionId)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** 记录本会话已弹过提醒。 */
+export function markFeishuPrompted(sessionId: string): void {
+  try {
+    localStorage.setItem(feishuPromptKey(sessionId), '1');
+  } catch {
+    /* 隐私模式等写入失败：不影响本次会话 */
+  }
+}
+
 /** 上传限制（与后端一致：20MB / 扩展名白名单）。前端先校验，免得白跑一趟。 */
 export const MAX_UPLOAD_MB = 20;
 export const ALLOWED_EXTS = [
