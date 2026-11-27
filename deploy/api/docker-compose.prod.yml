@@ -26,11 +26,10 @@
 
 services:
   api:
-    # 只绑回环：公网只能经 nginx 反代（https://ztb.openagent-lab.top/api/）访问，
-    # 避免 8000 端口直接暴露在公网（基础文件里是 "${API_PUBLISH_PORT:-8000}:8000"，
-    # 即 0.0.0.0）。这是叠加层的第二个理由，与上面的环境变量覆盖同等重要。
-    ports:
-      - "127.0.0.1:8000:8000"
+    # ⚠️ 这里**故意不写 ports**：compose 对 ports 是「追加」而非「替换」，
+    # 叠加后会有两条映射抢同一宿主端口 → address already in use（2026-11-27 踩到）。
+    # 端口只绑回环这件事已下沉到基础文件：`${API_BIND_ADDR:-127.0.0.1}:8000:8000`，
+    # 默认就是 127.0.0.1，所以这里无需重复。
     environment:
       # 云端 embedding（本机走隧道，服务器走公网直连）
       EMBEDDING_BASE_URL: "https://api.siliconflow.cn/v1"

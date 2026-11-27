@@ -51,7 +51,12 @@ services:
       - "host.docker.internal:host-gateway"
 
     ports:
-      - "${API_PUBLISH_PORT:-8000}:8000"
+      # 默认只绑回环：本机开发用 Vite 代理（127.0.0.1:8000）就够；服务器上由 nginx
+      # 反代 /api → 127.0.0.1:8000，不必对外暴露。要临时对外再设 API_BIND_ADDR=0.0.0.0。
+      # ⚠️ **不要在叠加文件（compose.prod.yml）里再写一条 ports**：compose 对 ports 是
+      # 「追加」而非「替换」，两条映射抢同一宿主端口 → `failed to bind host port
+      # 127.0.0.1:8000: address already in use`（2026-11-27 实际踩到）。
+      - "${API_BIND_ADDR:-127.0.0.1}:${API_PUBLISH_PORT:-8000}:8000"
 
     volumes:
       # 检查点/缓存/manifest 等运行时数据 → 卷挂载，不进镜像
