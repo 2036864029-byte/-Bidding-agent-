@@ -17,11 +17,19 @@
 #   而报错表现为网络超时，很难一眼看出是这个原因（这是本项目部署手册 §7 的坑之一）。
 #
 # 保持不动、无需在这里重复的项：
-#   MILVUS_HOST / MYSQL_HOST / CACHE_REDIS_URL / CHECKPOINTER_POSTGRES_URL
+#   MILVUS_HOST / CHECKPOINTER_POSTGRES_URL
 #     —— 基础文件已指向 host.docker.internal（容器访问宿主的正确取值）
 #   MILVUS_URI / MILVUS_TOKEN
 #     —— 由 .env 提供；`Settings.resolved_milvus_uri` 里 **URI 优先于 host:port**，
 #        所以 MILVUS_HOST 那行在云向量库模式下不生效，无需删改
+#
+# ⚠️ 2026-11-28 修正：MySQL / Redis **不能**走 host.docker.internal
+#    两台数据库容器把端口发布在**宿主 127.0.0.1**（`127.0.0.1:3306` / `127.0.0.1:6380`），
+#    而 host.docker.internal 解析到 `172.17.0.1`（默认网桥网关）。从容器连
+#    `172.17.0.1:3306` 打不到只监听回环的端口 → `Can't connect to MySQL server
+#    (timed out)`；表现是"智能询价/看板/供应商"三个模块全 500，而知识问答正常
+#    （问答只走云向量库，不碰 MySQL）。
+#    正解：把 api 容器接到数据库所在的 `ztb_network`，用**容器名**直连，不暴露端口。
 # ============================================================
 
 services:
@@ -38,3 +46,15 @@ services:
       PDF_PARSE_BASE_URL: ""
       # 服务器不跑 Langfuse（省 1.5G 内存），tracing 双保险关掉
       ENABLE_TRACING: "false"
+      # —— 同网段直连（见文件头 2026-11-28 修正）——
+      MYSQL_HOST: "ztb_mysql"
+      CACHE_REDIS_URL: "redis://ztb_redis:6379/0"
+
+    networks:
+      - default          # 容器自己的网段（出网 / 反向代理不受影响）
+      - ztb_network      # 与 ztb_mysql / ztb_redis 同网段
+
+networks:
+  ztb_network:
+    external: true       # 由 docker/mysql/docker-compose.yml 创建，名字固定
+
