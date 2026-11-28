@@ -1,0 +1,18 @@
+# 行尾统一：部署产物一律 LF
+#
+# 本机 `core.autocrlf=true`，检出时 LF 会被转成 CRLF。对 **要在 Linux 上执行的**
+# 文件这是致命的（不只是风格问题）：
+#   - shell 脚本：`$'\r': command not found`（2026-11-28 在服务器上踩过）
+#   - nginx.conf：nginx 能容忍 CRLF，但 `md5sum` 与本地对不上，会让「配置是否
+#     真的同步」这类校验恒假 —— 排查时极易误判成"没生效"
+# 因此对这些路径强制 eol=lf，本地编辑/检出都保持 LF。
+
+# 部署配置与容器定义
+deploy/**           text eol=lf
+docker/**           text eol=lf
+
+# 脚本与 SQL（都要在 Linux 侧执行）
+*.sh                text eol=lf
+*.sql               text eol=lf
+
+# 文档与代码走默认（Windows 检出 CRLF 不影响）
