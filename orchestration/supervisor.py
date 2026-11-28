@@ -47,7 +47,21 @@ logger = logging.getLogger(__name__)
 SEMANTIC_ROUTE_ENABLED = os.getenv("SUPERVISOR_SEMANTIC_ROUTE", "true").lower() in {
     "1", "true", "yes",
 }
-SEMANTIC_ROUTE_THRESHOLD = 0.5
+
+#: L2 命中阈值（余弦）。≥ 阈值即短路返回，**不再走 L3**（也就没有追问消解）。
+#:
+#: 2026-11-28 由 0.5 提到 0.7，线上实测依据（飞书 session
+#: `fs-p2p-ou_32655…`，服务器 api 日志）：
+#:
+#:   02:33:40  「评标规则」                      → knowledge_qa（kb_answer ✓）
+#:   02:35:08  「具体一点有什么适用的条例吗」    → L2 → deep_agent(score=0.561) ✗ 答非所问
+#:   02:36:40  「我说的是评标规则的适用条例」    → knowledge_qa（kb_answer ✓）
+#:
+#: 0.561 属于「像但不对」的灰区：短追问句与某能力的 examples 天然接近，却与真实意图
+#: 无关。抬高到 0.7 让这类灰区落到 L3（LLM 分类 + `resolved_question` 追问消解），
+#: 代价是 L3 调用变多、单轮延迟 +1~1.5s。可用 `SUPERVISOR_SEMANTIC_THRESHOLD` 覆盖，
+#: 调参不必再重建镜像。
+SEMANTIC_ROUTE_THRESHOLD = float(os.getenv("SUPERVISOR_SEMANTIC_THRESHOLD", "0.7"))
 
 #: 能力示例向量缓存：key=(embedder 身份, 能力集签名) → (embedder 引用, [向量...])。
 #: 存 embedder 引用是为了防 `id()` 复用（对象被回收后新对象拿到同一 id 会误命中）。
