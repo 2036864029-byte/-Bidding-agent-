@@ -1,0 +1,170 @@
+# CD —— 「构建镜像 → 推华为 SWR → 手动批准 → 服务器 pull」
+#
+# ── 为什么是 workflow_dispatch（手动触发）──
+#   部署不该在每次 push 时自动发生：main 上的一次文档提交也会把生产镜像换掉。
+#   日常流程是：push → CI 绿 → 需要发版时手动点一次本工作流。
+#
+# ── 与 2026-11-27 那次手工部署的差别 ──
+#   那次是「本机/服务器 docker build + docker push」，镜像**对不上任何 commit**，
+#   出问题无法说清"线上跑的是哪版代码"。本工作流把镜像 tag 钉成 **commit SHA**，
+#   从此「哪个 commit → 哪个镜像 → 线上跑的是哪个」是一条可查的链。
+#
+# ── 需要的仓库配置（Settings）──
+#   Secrets（必填，否则 build-and-push 会失败）：
+#     SWR_USERNAME  —— 形如 `cn-north-4@<AK>`（华为 SWR 的 docker login 用户名格式）
+#     SWR_PASSWORD  —— 对应长期登录密钥（**不是** AK/SK 本身）
+#   Secrets（仅自动部署需要）：
+#     DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY
+#   Variables：
+#     CD_DEPLOY_ENABLED = true   → 打开自动部署 job；不设则只构建并推 SWR（默认关）
+#   Environment：
+#     production —— 在 Settings → Environments 里给它的 **Required reviewers**
+#     加上审批人；本工作流的 deploy job 绑了这个 environment，于是它会停在那里
+#     等人工批准，批准后才连服务器。这正是流程里「手动批准」那一步。
+#
+# ── 为什么 deploy 默认关 ──
+#   打开它意味着把服务器 SSH 私钥交给 GitHub。这是个需要你自己拍板的决定，
+#   所以默认不打开：构建+推仓库这条链先跑通，服务器上照旧手工 pull 一次即可。
+
+name: CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      push_latest:
+        description: "是否同时更新 :latest 标签（默认只推 :<sha>）"
+        type: boolean
+        default: false
+
+concurrency:
+  # 同一时间只允许一次发版，避免两次 pull 交错把容器换到中间态
+  group: cd-production
+  cancel-in-progress: false
+
+env:
+  # 华为 SWR：区域固定的域名 + 组织/仓库名（非敏感，直接写死好排查）
+  SWR_REGISTRY: swr.cn-north-4.myhuaweicloud.com
+  SWR_IMAGE: swr.cn-north-4.myhuaweicloud.com/ztb-agent/ztb-api
+
+jobs:
+  # ── Job 1: 构建并推送（不需要审批，先出可部署的产物）──────────────
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      # deploy job 靠它拼镜像 tag；没有这行 `needs.*.outputs` 会是空串
+      sha_short: ${{ steps.meta.outputs.sha_short }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 计算镜像 tag（commit SHA 为准）
+        id: meta
+        run: |
+          SHA_SHORT=$(git rev-parse --short=7 HEAD)
+          echo "sha_short=$SHA_SHORT" >> "$GITHUB_OUTPUT"
+          TAGS="${SWR_IMAGE}:${SHA_SHORT}"
+          if [ "${{ inputs.push_latest }}" = "true" ]; then
+            TAGS="${TAGS}
+          ${SWR_IMAGE}:latest"
+          fi
+          {
+            echo "tags<<TAGS_EOF"
+            echo "$TAGS"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "本次产物: ${SWR_IMAGE}:${SHA_SHORT}"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 登录华为 SWR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.SWR_REGISTRY }}
+          username: ${{ secrets.SWR_USERNAME }}
+          password: ${{ secrets.SWR_PASSWORD }}
+
+      # 构建参数与本地/服务器保持一致，见 deploy/api/Dockerfile 的 ARG BASE_IMAGE。
+      # runner 在境外，docker.io 官方镜像可直连；国内服务器才需要 BASE_IMAGE 走加速。
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/api/Dockerfile
+          push: true
+          # 只出 amd64：服务器是 x86_64，多平台会显著拖慢且需要 QEMU
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: 输出部署指引
+        run: |
+          cat <<EOF
+          ## 产物
+          \`${SWR_IMAGE}:${{ steps.meta.outputs.sha_short }}\`  （commit ${{ github.sha }}）
+
+          ## 服务器上执行
+          \`\`\`bash
+          cd /root/ztb_demo
+          git fetch --depth 1 && git reset --hard ${{ github.sha }}
+          docker pull ${SWR_IMAGE}:${{ steps.meta.outputs.sha_short }}
+          docker tag  ${SWR_IMAGE}:${{ steps.meta.outputs.sha_short }} ztb-api:latest
+          docker compose -f deploy/api/docker-compose.yml -f deploy/api/docker-compose.prod.yml \\
+            up -d --no-build --force-recreate api feishu
+          curl -fsS http://127.0.0.1:8000/health
+          \`\`\`
+          EOF
+
+  # ── Job 2: 部署（绑 production environment → 需要人工批准）───────
+  deploy:
+    needs: build-and-push
+    # 默认关：打开它 = 把服务器 SSH 私钥交给 GitHub，需你拍板（见文件头）
+    if: ${{ vars.CD_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      IMAGE: ${{ env.SWR_IMAGE }}:${{ needs.build-and-push.outputs.sha_short }}
+    steps:
+      - name: 准备 SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      # 只做「拉镜像 + 重建容器 + 健康检查」三件事；
+      # 容器重建用 --force-recreate：restart / 普通 up -d 都不会重读环境变量
+      - name: 部署到服务器
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "SWR_REGISTRY='${{ env.SWR_REGISTRY }}' SWR_USERNAME='${{ secrets.SWR_USERNAME }}' \
+             SWR_PASSWORD='${{ secrets.SWR_PASSWORD }}' IMAGE='${{ env.SWR_IMAGE }}:${{ needs.build-and-push.outputs.sha_short }}' \
+             TARGET_SHA='${{ github.sha }}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /root/ztb_demo
+
+          echo "== 1/4 代码对齐到 $TARGET_SHA =="
+          git fetch --depth 1 origin "$TARGET_SHA" || git fetch --depth 1
+          git reset --hard "$TARGET_SHA"
+
+          echo "== 2/4 拉镜像 $IMAGE =="
+          printf '%s' "$SWR_PASSWORD" | docker login -u "$SWR_USERNAME" --password-stdin "$SWR_REGISTRY"
+          docker pull "$IMAGE"
+          docker tag  "$IMAGE" ztb-api:latest
+
+          echo "== 3/4 重建 api + feishu =="
+          docker compose -f deploy/api/docker-compose.yml -f deploy/api/docker-compose.prod.yml \
+            up -d --no-build --force-recreate api feishu
+
+          echo "== 4/4 健康检查 =="
+          for i in $(seq 1 30); do
+            sleep 4
+            if curl -fsS http://127.0.0.1:8000/health | grep -q agent_ready; then
+              echo "OK: 后端就绪"; exit 0
+            fi
+          done
+          echo "FAIL: 90s 内未就绪"; docker logs --tail 50 ztb-api; exit 1
+          REMOTE
