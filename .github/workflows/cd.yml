@@ -124,8 +124,10 @@ jobs:
     if: ${{ vars.CD_DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     environment: production
-    env:
-      IMAGE: ${{ env.SWR_IMAGE }}:${{ needs.build-and-push.outputs.sha_short }}
+    # ⚠️ 这里**不能**写 job 级 `env: IMAGE: ${{ env.SWR_IMAGE }}:...` ——
+    #    `env` 上下文在 `jobs.<id>.env` 里不可用（chicken-and-egg），GitHub 会直接
+    #    判「Invalid workflow file: Unrecognized named-value: 'env'」（2026-11-28 踩到）。
+    #    改为在 step 内用 shell 变量拼，workflow 级 env 会作为环境变量注入 step。
     steps:
       - name: 准备 SSH
         run: |
@@ -139,9 +141,11 @@ jobs:
       # 容器重建用 --force-recreate：restart / 普通 up -d 都不会重读环境变量
       - name: 部署到服务器
         run: |
+          IMAGE_REF="${SWR_IMAGE}:${{ needs.build-and-push.outputs.sha_short }}"
+          echo "目标镜像: $IMAGE_REF"
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "SWR_REGISTRY='${{ env.SWR_REGISTRY }}' SWR_USERNAME='${{ secrets.SWR_USERNAME }}' \
-             SWR_PASSWORD='${{ secrets.SWR_PASSWORD }}' IMAGE='${{ env.SWR_IMAGE }}:${{ needs.build-and-push.outputs.sha_short }}' \
+             SWR_PASSWORD='${{ secrets.SWR_PASSWORD }}' IMAGE='$IMAGE_REF' \
              TARGET_SHA='${{ github.sha }}' bash -s" <<'REMOTE'
           set -euo pipefail
           cd /root/ztb_demo
